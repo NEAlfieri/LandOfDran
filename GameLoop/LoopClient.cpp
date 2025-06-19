@@ -94,7 +94,9 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	while (SDL_PollEvent(&e))
 	{
 		if (pd.gui->handleInput(e, pd.input))
+		{
 			pd.context->setMouseLock(false);
+		}
 		pd.input->handleInput(e);
 
 		if (e.type == SDL_QUIT)
@@ -112,7 +114,9 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			}
 		}
 		else if (e.type == SDL_MOUSEMOTION && pd.context->getMouseLocked())
+		{
 			simulation.camera->turn(-(float)e.motion.xrel, -(float)e.motion.yrel);
+		}
 		else if (e.type == SDL_KEYDOWN)
 		{
 			//This one is not handled through input map because input map can be suppressed
@@ -127,7 +131,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 				else
 				{
 					pd.gui->closeOneWindow();
-					if (!pd.context->getMouseLocked() && !pd.gui->getOpenWindowCount())
+					if (!pd.context->getMouseLocked() && !pd.gui->getOpenWindowCount() && cmdArgs.gameState != NotInGame)
 						pd.context->setMouseLock(true);
 				}
 			}
@@ -176,13 +180,6 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		client->send(evalCommand(simulation.evalPassword, command), OtherReliable);
 	}
 
-	//Various keys were pressed that were bound to certain commands:
-	if (pd.input->pollCommand(MouseLock))
-		pd.context->setMouseLock(!pd.context->getMouseLocked());
-	
-	//Move camera around
-	simulation.camera->control(deltaT, pd.input);
-
 	if (pd.serverBrowser->serverPickReady())
 	{
 		std::string ip,userName;
@@ -227,10 +224,28 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			break;
 		}
 
+		case JoinServer:
+		{
+			pd.serverBrowser->open();
+			break;
+		}
+
 		case None:
 		default:
 			break;
 	}
+
+	if(cmdArgs.gameState == NotInGame)
+	{
+		return;
+	}
+
+	//Various keys were pressed that were bound to certain commands:
+	if (pd.input->pollCommand(MouseLock))
+		pd.context->setMouseLock(!pd.context->getMouseLocked());
+
+	//Move camera around
+	simulation.camera->control(deltaT, pd.input);
 
 	if (pd.input->pollCommand(FirstThirdPerson))
 		simulation.camera->swapPerson();
@@ -309,6 +324,8 @@ void LoopClient::renderEverything(float deltaT)
 	bool crossHair = false;
 	if (simulation.camera)
 		crossHair = pd.context->getMouseLocked() && simulation.camera->getFirstPerson();
+
+	pd.escapeMenu->showLeaveServer = client != nullptr;
 	pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair);
 
 	//End frame
@@ -573,16 +590,27 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	*/
 	{
 		BrickRenderData* tmp = new BrickRenderData;
-		tmp->w = 2;
+		tmp->w = 4;
 		tmp->h = 4;
-		tmp->l = 2;
-		tmp->x = 5;
+		tmp->l = 4;
+		tmp->x = 10;
+		tmp->y = 5;
+		tmp->z = 5;
+		testBricks.addBrick(tmp);
+	}
+
+	{
+		BrickRenderData* tmp = new BrickRenderData;
+		tmp->w = 1;
+		tmp->h = 1;
+		tmp->l = 1;
+		tmp->x = 15;
 		tmp->y = 5;
 		tmp->z = 5;
 		//testBricks.addBrick(tmp);
 	}
 
-	for (int i = 0; i < 100000; i++)
+	/*for (int i = 0; i < 100000; i++)
 	{
 		BrickRenderData * tmp = new BrickRenderData;
 		tmp->w = rand() % 5 + 1;
@@ -592,7 +620,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 		tmp->y = rand() % 300;
 		tmp->z = rand() % 500;
 		testBricks.addBrick(tmp);
-	}
+	}*/
 
 	testBricks.recompile();
 }

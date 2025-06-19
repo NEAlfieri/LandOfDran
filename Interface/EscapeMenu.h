@@ -11,7 +11,8 @@ enum EscapeButtonPressed
 	LeaveGame = 2,
 	OpenChat = 3,
 	OpenDebugMenu = 4,
-	OpenSettings = 5
+	OpenSettings = 5,
+	JoinServer = 6
 };
 
 class EscapeMenu : public Window
@@ -28,6 +29,7 @@ class EscapeMenu : public Window
 	EscapeMenu();
 
 public:
+	bool showLeaveServer = false;
 
 	//Get last button press type since the last time this was called
 	EscapeButtonPressed getLastButtonPress();

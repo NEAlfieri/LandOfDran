@@ -176,10 +176,14 @@ void SettingsMenu::render(ImGuiIO* io)
 				}
 			}
 			lastTabCreated = ImGui::BeginTabItem(path.c_str());
+			lastPath = path;
 			if (!lastTabCreated)
 				continue;
+		}
 
-			lastPath = path;
+		if (!lastTabCreated)
+		{
+			continue;
 		}
 
 		//What kind of input component should we make for the given preference

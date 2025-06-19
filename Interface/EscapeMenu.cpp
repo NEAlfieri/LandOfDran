@@ -18,11 +18,21 @@ void EscapeMenu::render(ImGuiIO* io)
 		ImGui::End();
 		return;
 	}
-
-	if (ImGui::Button("Leave Server"))
+	if (showLeaveServer)
 	{
-		lastButtonPress = EscapeButtonPressed::LeaveServer;
-		close();
+		if (ImGui::Button("Leave Server"))
+		{
+			lastButtonPress = EscapeButtonPressed::LeaveServer;
+			close();
+		}
+	}
+	else
+	{
+		if (ImGui::Button("Join Server"))
+		{
+			lastButtonPress = EscapeButtonPressed::JoinServer;
+			close();
+		}
 	}
 	if (ImGui::Button("Exit Land of Dran"))
 	{

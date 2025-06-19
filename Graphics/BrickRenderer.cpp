@@ -207,12 +207,29 @@ void BrickChunk::getFaces(int dir, std::vector<glm::vec3>& positions, std::vecto
 					
 				//std::cout << "Layer: " << layer << " Adding face with width : " << w << " height : " << h << " row: " << row << " y : " << y << "\n";
 
-				positions.push_back(glm::vec3(row, y, layer));
+				glm::vec3 pos = glm::vec3(row, y, layer);
+				if (dir < 0)
+				{
+					pos.z++;
+				}
+				if (abs(dir) == 2)
+				{
+					//pos = glm::vec3(pos.y, pos.z, pos.x);
+				}
+				else if (abs(dir) == 1)
+				{
+					//pos = glm::vec3(pos.z, pos.x, pos.y);
+				}
+				positions.push_back(pos);
+
 				sizes.push_back(glm::vec2(w, h));
+
 				int glDir = dir + 3;
 				if(glDir > 2)
 					glDir--;
 				directions.push_back(glDir);
+
+				std::cout << "Size: " << w << "," << h << " direction: " << glDir << " Position: "<<pos.x<<","<<pos.y<<","<<pos.z<<"\n";
 
 				/*if (dir < 0)
 				{
