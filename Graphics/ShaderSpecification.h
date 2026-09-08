@@ -61,13 +61,13 @@ class ShaderManager
 	CameraUniforms cameraUniforms;
 
 	//Program for drawing normal meshes to screen will full PBR based lighting
-	Program* modelShader = nullptr;
+	Program* modelShader = new Program();
 
 	//Program for drawing shadows of normal meshes to shadow texture
-	Program* modelShadowShader = nullptr;
+	Program* modelShadowShader = new Program();
 
 	//Program for drawing bricks to screen
-	Program* brickShader = nullptr;
+	Program* brickShader = new Program();
 
 	/*
 		Reads a text file to see where we should find the shader files for the above programs

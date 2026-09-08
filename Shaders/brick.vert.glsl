@@ -90,25 +90,25 @@ void main()
 	vec3 vertexPosition;
 	switch(FaceDirection)
 	{
-		case 0: 
+		case 0u:
 			vertexPosition.x = coords.x;
 			vertexPosition.y = coords.y;
-		case 1:
-			vertexPosition.x = coords.x;
-			vertexPosition.z = coords.y;
-		case 2:
-			vertexPosition.z = coords.x;
-			vertexPosition.y = coords.y;
-		case 3:
-			vertexPosition.z = coords.x;
-			vertexPosition.y = coords.y;
-		case 4:
+		case 1u:
 			vertexPosition.x = coords.x;
 			vertexPosition.z = coords.y;
-		case 5:
+		case 2u:
+			vertexPosition.z = coords.x;
+			vertexPosition.y = coords.y;
+		case 3u:
+			vertexPosition.z = coords.x;
+			vertexPosition.y = coords.y;
+		case 4u:
+			vertexPosition.x = coords.x;
+			vertexPosition.z = coords.y;
+		case 5u:
 			vertexPosition.x = coords.x;
 			vertexPosition.y = coords.y;
-		
+
 	}
 	vertexPosition += FacePosition;
 	vertexPosition += brickChunkPos;
