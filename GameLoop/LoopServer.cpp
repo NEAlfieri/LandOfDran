@@ -67,8 +67,11 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 	pd.evalPassword = settings->getString("hosting/evalpassword");
 	pd.useEvalPassword = settings->getBool("hosting/useevalpassword");
-	if (pd.evalPassword == " " || pd.evalPassword == "changeme" || pd.evalPassword.length() < 1)
+	if (pd.useEvalPassword && (pd.evalPassword == " " || pd.evalPassword == "changeme" || pd.evalPassword.length() < 1))
+	{
+		error("Eval password protection is enabled, but the password is still the default 'changeme' (or empty). Set a real password in Settings, under Hosting, then restart the server. Eval console logins are refused until then.");
 		pd.useEvalPassword = false;
+	}
 	//TODO: Hash password
 
 	//Start up Lua and give it access to all the default libraries, file io, debugging, math, etc.

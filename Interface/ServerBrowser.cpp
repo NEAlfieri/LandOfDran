@@ -84,6 +84,11 @@ void ServerBrowser::render(ImGuiIO* io)
 	if (!nameOkay)
 		ImGui::EndDisabled();
 
+	ImGui::SameLine();
+
+	if (ImGui::Button("Settings"))
+		settingsPicked = true;
+
 	if (connectionNote.length() > 0)
 		ImGui::Text(connectionNote.c_str());
 	else

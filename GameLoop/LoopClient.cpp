@@ -231,6 +231,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		hostSinglePlayer(cmdArgs, settings);
 	}
 
+	if (pd.serverBrowser->settingsReady())
+	{
+		pd.serverBrowser->clearSettingsReady();
+		pd.settingsMenu->open();
+	}
+
 	EscapeButtonPressed escapeMenuButton = pd.escapeMenu->getLastButtonPress();
 	switch (escapeMenuButton)
 	{
