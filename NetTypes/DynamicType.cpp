@@ -105,6 +105,7 @@ bool DynamicType::loadFromPacket(ENetPacket const* const packet, const ClientPro
 	}
 
 	loaded = true;
+	return false;
 }
 
 void DynamicType::render(std::shared_ptr<ShaderManager> graphics, bool useMaterials) const

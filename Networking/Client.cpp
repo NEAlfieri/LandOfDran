@@ -156,7 +156,7 @@ KickReason Client::run(const ClientProgramData& pd,Simulation &simulation, const
 	return NotKicked;
 }
 
-Client::Client(std::string ip,unsigned int port,unsigned int _packetHoldTime) : packetHoldTime(_packetHoldTime)
+Client::Client(std::string ip,unsigned int port,unsigned int _packetHoldTime, std::function<void()> pump) : packetHoldTime(_packetHoldTime)
 {
 	scope("Client::Client");
 
@@ -178,18 +178,36 @@ Client::Client(std::string ip,unsigned int port,unsigned int _packetHoldTime) : 
 		return;
 	}
 
+	//Wait up to 5000ms total for the connection, in short slices so we can call pump()
+	//between them. Without a pump, this behaves the same as one big 5000ms wait.
+	const unsigned int totalWaitMS = 5000;
+	const unsigned int pollStepMS = pump ? 20 : totalWaitMS;
+
 	ENetEvent event;
-	if (enet_host_service(client, &event, 5000) > 0 && ENET_EVENT_TYPE_CONNECT)
+	bool connected = false;
+	for (unsigned int waited = 0; waited < totalWaitMS; waited += pollStepMS)
+	{
+		int ret = enet_host_service(client, &event, pollStepMS);
+		if (ret > 0 && event.type == ENET_EVENT_TYPE_CONNECT)
+		{
+			connected = true;
+			break;
+		}
+		if (ret < 0)
+			break;
+		if (pump)
+			pump();
+	}
+
+	if (connected)
 	{
 		info("Connection made!");
 		valid = true;
-		return;
 	}
 	else
 	{
 		error("Could not connect!");
-		valid = false; 
-		return;
+		valid = false;
 	}
 }
 

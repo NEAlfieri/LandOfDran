@@ -71,6 +71,9 @@ public:
 	void send(const char* data, unsigned int len, PacketChannel channel);
 	void send(ENetPacket* packet, PacketChannel channel);
 
-	Client(std::string ip,unsigned int port,unsigned int _packetHoldTime);
+	//pump, if set, is called periodically while waiting for the connection to complete.
+	//Used for single player: the embedded local server needs to service its own ENet host
+	//for the handshake to complete, since nothing else is ticking it while we block here.
+	Client(std::string ip,unsigned int port,unsigned int _packetHoldTime, std::function<void()> pump = nullptr);
 	~Client();
 };

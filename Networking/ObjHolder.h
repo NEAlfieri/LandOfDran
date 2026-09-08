@@ -27,8 +27,10 @@ class ObjHolder
 {
 	/*
 		Each time a SimObject is created, this will be assigned to it and increment by one
+		Not static: the client and server each keep their own independent ID sequence per type,
+		and in single player both may live in the same process at once.
 	*/
-	static netIDType lastNetID;
+	netIDType lastNetID = 0;
 
 	/*
 		What type of objects does this hold
@@ -53,8 +55,9 @@ class ObjHolder
 	*/
 	std::vector<std::shared_ptr<T>> recentCreations;
 
+	//Non-owning: LoopServer owns the one Server instance and deletes it itself.
 	//Will be nullptr if this is the client
-	std::shared_ptr<Server> server = nullptr;
+	Server* server = nullptr;
 
 	std::string metatableName = "";
 
@@ -74,7 +77,7 @@ class ObjHolder
 		lua_setfield(L, -1, "__index");
 		lua_setglobal(L, metatableName.c_str());
 
-		delete functions;
+		delete[] functions;
 	}
 
 	/*

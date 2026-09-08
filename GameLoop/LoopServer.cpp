@@ -3,13 +3,13 @@
 #include "../LuaFunctions/Dynamic.h"
 #include "../LuaFunctions/Static.h"
 
-template <>
-netIDType ObjHolder<Dynamic>::lastNetID = 0;
-template <>
-netIDType ObjHolder<StaticObject>::lastNetID = 0;
-
 void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
+	//When embedded alongside a LoopClient in the same process (single player), both loops
+	//share this one static pointer. Reassert ours here since the client may have pointed it
+	//at its own PhysicsWorld since our last tick.
+	SimObject::world = pd.physicsWorld;
+
 	if (deltaT > slowestTickMS)
 		slowestTickMS = deltaT;
 
@@ -93,9 +93,16 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	if (luaL_dofile(pd.luaState, "serverstart.lua"))
 	{
 		error("Error loading serverstart.lua: " + std::string(lua_tostring(pd.luaState, -1)));
-		info("Input any text to exit.");
-		std::string holdForAWhile;
-		std::cin >> holdForAWhile;
+
+		//Only block on console input for a real standalone dedicated server.
+		//When embedded in the graphical client (single player), there's no console to read from.
+		if (cmdArgs.dedicated)
+		{
+			info("Input any text to exit.");
+			std::string holdForAWhile;
+			std::cin >> holdForAWhile;
+		}
+
 		valid = false;
 		return;
 	}

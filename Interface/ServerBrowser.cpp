@@ -74,6 +74,16 @@ void ServerBrowser::render(ImGuiIO* io)
 	if(!inputOkay)
 		ImGui::EndDisabled();
 
+	ImGui::SameLine();
+
+	bool nameOkay = userName.length() >= 1 && userName.length() <= 64;
+	if (!nameOkay)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("Start Server"))
+		singlePlayerPicked = true;
+	if (!nameOkay)
+		ImGui::EndDisabled();
+
 	if (connectionNote.length() > 0)
 		ImGui::Text(connectionNote.c_str());
 	else

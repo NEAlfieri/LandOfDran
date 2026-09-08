@@ -49,6 +49,13 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	pd.context->setMouseLock(false);
 
 	cmdArgs.gameState = NotInGame;
+
+	//Shut down our embedded single player server, if there was one
+	if (localServer)
+	{
+		delete localServer;
+		localServer = nullptr;
+	}
 }
 
 void LoopClient::connectToServer(std::string ip, unsigned int port, std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
@@ -67,7 +74,14 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 	settings->exportToFile("Config/settings.txt");
 
 	cmdArgs.gameState = Connecting;
-	client = new Client(ip, port, settings->getInt("network/packetholdtime"));
+
+	//If we're hosting our own local server, it needs to service its ENet host while
+	//we wait here for the handshake to complete - nothing else is ticking it right now.
+	std::function<void()> pump = nullptr;
+	if (localServer)
+		pump = [this, &cmdArgs, settings]() { localServer->run(0.f, cmdArgs, settings); };
+
+	client = new Client(ip, port, settings->getInt("network/packetholdtime"), pump);
 
 	//Connection to server failed
 	if (!client->isValid())
@@ -80,9 +94,32 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 	}
 
 	client->send(makeConnectionRequest(userName), JoinNegotiation);
-	
+
 	//From here, further initalization will actually take place in Networking/PacketsFromServer/AcceptConnection.cpp
 	//Assuming the server lets us join, of course
+}
+
+void LoopClient::hostSinglePlayer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
+{
+	if (cmdArgs.gameState != NotInGame)
+		leaveServer(cmdArgs);
+
+	info("Starting server");
+
+	localServer = new LoopServer(cmdArgs, settings);
+	if (!localServer->isValid())
+	{
+		pd.serverBrowser->setConnectionNote("Could not start local server, see error log.");
+		delete localServer;
+		localServer = nullptr;
+		return;
+	}
+
+	std::string userName = settings->getString("network/username");
+	if (userName.length() < 1)
+		userName = "Player";
+
+	connectToServer("127.0.0.1", DEFAULT_PORT, userName, cmdArgs, settings);
 }
 
 void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
@@ -186,6 +223,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		int port;
 		pd.serverBrowser->getServerData(ip, port,userName);
 		connectToServer(ip, port,userName,cmdArgs,settings);
+	}
+
+	if (pd.serverBrowser->singlePlayerReady())
+	{
+		pd.serverBrowser->clearSinglePlayerReady();
+		hostSinglePlayer(cmdArgs, settings);
 	}
 
 	EscapeButtonPressed escapeMenuButton = pd.escapeMenu->getLastButtonPress();
@@ -389,6 +432,15 @@ void LoopClient::updateControllers(float deltaT)
 
 void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
+	//Single player: tick our embedded server before doing any client work this frame.
+	//It shares the SimObject::world static with us, so reclaim it for our own PhysicsWorld once it's done.
+	if (localServer)
+	{
+		localServer->run(deltaT, cmdArgs, settings);
+		if (pd.physicsWorld)
+			SimObject::world = pd.physicsWorld;
+	}
+
 	if (client)
 	{
 		//We're in game, equivalent to gameState == InGame
@@ -641,7 +693,10 @@ LoopClient::~LoopClient()
 	pd.shaders.reset();
 	pd.textures.reset();
 
-	//This one is actually useful because the server will learn we disconnected faster if we do it properly 
+	//This one is actually useful because the server will learn we disconnected faster if we do it properly
 	if(client)
 		delete client;
+
+	if (localServer)
+		delete localServer;
 }

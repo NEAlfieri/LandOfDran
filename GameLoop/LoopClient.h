@@ -7,6 +7,7 @@
 #include "Simulation.h"
 #include "../Networking/ClientPacketCreators.h"
 #include "../Graphics/BrickRenderer.h"
+#include "LoopServer.h"
 
 /*
 	This is the big bad class that allows us to separate our client playing loop from
@@ -23,6 +24,9 @@ class LoopClient
 	//Network connection manager, its methods take ClientProgramData as a parameter, so it's separate
 	//This could be nullptr so be careful, cmdArgs should be NotInGame if that's the case as well
 	Client* client = nullptr;
+
+	//Non-null only for single player: a server hosted in-process that we also connect to as a client
+	LoopServer* localServer = nullptr;
 
 	bool valid = false;
 
@@ -53,6 +57,9 @@ public:
 
 	//Joining new server from main menu or another server
 	void connectToServer(std::string ip,unsigned int port,std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
+
+	//Hosts a server in-process on localhost, then connects to it as a client. Used for the "Start Server" button
+	void hostSinglePlayer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
 
 	//Called every frame the program runs. Every frame: in a game, not in a game, loading into a game...
 	void run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);

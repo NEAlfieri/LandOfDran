@@ -15,6 +15,9 @@ class ServerBrowser : public Window
 	//This is set when user clicks join button and reset when you call getServerData
 	bool serverPicked = false;
 
+	//This is set when the user clicks the single player button and reset when you call clearSinglePlayerReady
+	bool singlePlayerPicked = false;
+
 	//Set with passLoadProgress, from cmdArgs signals typesToLoad
 	int desiredTypes = 0;
 	//Set with passLoadProgress, from cmdArgs simulation dynamicTypes.size
@@ -48,6 +51,12 @@ public:
 
 	//Get the parameters after serverPicked returns true
 	void getServerData(std::string &ip,int &port,std::string &username);
+
+	//Has the user clicked the single player button recently
+	bool singlePlayerReady() const { return singlePlayerPicked; }
+
+	//Acknowledge the single player button press
+	void clearSinglePlayerReady() { singlePlayerPicked = false; }
 
 	~ServerBrowser();
 };
