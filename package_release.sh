@@ -83,3 +83,10 @@ chmod +x "$PKG_DIR/LandOfDran.sh"
 tar -czf "$OUTPUT" -C "$STAGING_DIR" LandOfDran
 
 echo "Created $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+
+if command -v objdump >/dev/null; then
+    MIN_GLIBC="$(objdump -T "$PKG_DIR/LandOfDran" "$PKG_DIR"/lib/*.so* 2>/dev/null | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -Vu | tail -1)"
+    if [[ -n "$MIN_GLIBC" ]]; then
+        echo "Requires glibc >= ${MIN_GLIBC#GLIBC_} — players on an older distro than this build machine may hit a 'GLIBC_x.xx not found' error."
+    fi
+fi
