@@ -4,8 +4,7 @@
   "configurePresets": [
     {
       "name": "windows",
-      "displayName": "Windows (vcpkg, Visual Studio 2022)",
-      "generator": "Visual Studio 17 2022",
+      "displayName": "Windows (vcpkg)",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/cmake-build-windows",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
