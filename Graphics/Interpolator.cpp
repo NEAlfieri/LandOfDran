@@ -16,12 +16,15 @@ void Interpolator::addSnapshot(const glm::vec3& pos, const glm::quat& rot,float 
 		}
 	}
 
-	if (msSinceLastSend == 255)
-		msSinceLastSend = 0;
-
+	//lastSentTime on the server only tracks its own send cadence, not what the client actually received -
+	//under packet loss the real gap since our last received update can be much larger than msSinceLastSend
+	//implies, and 255 here means "clamped, was at least this long" rather than "unknown"/zero
 	float lastFrameTime = getTicksMS();
 	if (snapshots.size() > 0)
-		lastFrameTime = snapshots.back().time; 
+		//Anchoring to at least getTicksMS() (instead of a possibly-stale buffered snapshot time) guarantees
+		//this new snapshot lands in the future, so a catch-up after a starved buffer interpolates smoothly
+		//instead of teleporting to a target time that's already in the past
+		lastFrameTime = std::max(lastFrameTime, snapshots.back().time);
 
 	//std::cout << "Current time: " << getTicksMS() << " Last frame time : " << lastFrameTime << " snapshots: " << snapshots.size() << "\n";
 	int callTimeDiff = getTicksMS() - testLastRemoveMe;
