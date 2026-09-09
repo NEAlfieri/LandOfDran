@@ -49,7 +49,7 @@ bool globalStartup(std::shared_ptr<SettingManager> settings,const ExecutableArgu
         error("Setting attribute SDL_GL_MULTISAMPLESAMPLES failed: " + std::string(SDL_GetError()));
     
     if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-        settings->getBool("grahpics/compatibilityprofile") ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE
+        settings->getBool("graphics/compatibilityprofile") ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE
     ) != 0)
     {
         error("Setting attribute SDL_GL_CONTEXT_PROFILE_MASK failed: " + std::string(SDL_GetError()));

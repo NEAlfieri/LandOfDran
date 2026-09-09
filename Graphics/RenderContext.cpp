@@ -83,6 +83,9 @@ RenderContext::RenderContext(std::shared_ptr<SettingManager> settings)
 	int version = GAME_VERSION;
 	std::string windowName = "Land of Dran v" + std::to_string(version);
 
+	//Context version/profile (graphics/openglmajor, openglminor, compatibilityprofile) is
+	//requested via SDL_GL_SetAttribute in GlobalStartup::globalStartup, which runs before
+	//this constructor.
 	window = SDL_CreateWindow(windowName.c_str(),SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,width,height,SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | flag);
 	if(!window)
 	{
