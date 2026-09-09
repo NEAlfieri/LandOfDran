@@ -79,6 +79,15 @@ class Dynamic : public SimObject
 	//server remains authoritative and the next real snapshot will correct us if we predicted wrong. See LoopClient::predictLocalCollisions
 	unsigned int predictLocallyUntil = 0;
 
+	//Client only, whether we rendered off the live physics transform last frame because of predictLocallyUntil -
+	//used to notice the exact frame prediction ends so we can hand off smoothly, see handOffFromPrediction
+	bool wasPredictingLocally = false;
+
+	//Client only: called the moment local collision prediction ends. Injects our current live transform as a fresh
+	//interpolator snapshot so playback continues smoothly from here instead of jumping to whatever (stale, pre-collision)
+	//position the interpolator still had buffered from before the server noticed anything
+	void handOffFromPrediction(float idealBufferSize);
+
 	void updateSnapshot(bool forceUsePhysicsTransform = false);
 
 	//Client only

@@ -335,6 +335,11 @@ void LoopClient::renderEverything(float deltaT)
 		{
 			std::shared_ptr<Dynamic> d = simulation.dynamics->get(a);
 			bool predictingLocally = getTicksMS() < d->predictLocallyUntil;
+
+			if (d->wasPredictingLocally && !predictingLocally)
+				d->handOffFromPrediction(simulation.idealBufferSize);
+			d->wasPredictingLocally = predictingLocally;
+
 			d->updateSnapshot(pd.input->isCommandKeydown(DebugView) || predictingLocally);
 		}
 	}

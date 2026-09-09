@@ -138,20 +138,29 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 			{
 				if (!toUpdate->clientControlled || forcePlayerUpdate)
 				{
+					//While we're locally predicting a collision response for this object (see LoopClient::predictLocalCollisions),
+					//don't let a server update - which is still describing the pre-collision state it hasn't caught up to yet -
+					//stomp our local physics body mid-prediction. Still feed the interpolator so it has accurate history ready
+					//for when prediction ends and Dynamic::handOffFromPrediction hands control back to it
+					bool predictingLocally = getTicksMS() < toUpdate->predictLocallyUntil;
+
 					if (needPosRot)
 					{
 						toUpdate->interpolator.addSnapshot(pos, rot, simulation.idealBufferSize, msSinceLastSend);
 
-						btTransform t;
-						t.setRotation(btQuaternion(rot.x, rot.y, rot.z, rot.w));
-						t.setOrigin(btVector3(pos.x, pos.y, pos.z));
-						toUpdate->body->setWorldTransform(t);
+						if (!predictingLocally)
+						{
+							btTransform t;
+							t.setRotation(btQuaternion(rot.x, rot.y, rot.z, rot.w));
+							t.setOrigin(btVector3(pos.x, pos.y, pos.z));
+							toUpdate->body->setWorldTransform(t);
+						}
 					}
 
-					if (needVel)
+					if (needVel && !predictingLocally)
 						toUpdate->body->setLinearVelocity(btVector3(linVel.x, linVel.y, linVel.z));
 
-					if (needAngVel)
+					if (needAngVel && !predictingLocally)
 						toUpdate->body->setAngularVelocity(btVector3(angVel.x, angVel.y, angVel.z));
 
 					if (playWalkAnimation)

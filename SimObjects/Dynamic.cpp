@@ -45,6 +45,14 @@ void Dynamic::updateSnapshot(bool forceUsePhysicsTransform)
 	}
 }
 
+void Dynamic::handOffFromPrediction(float idealBufferSize)
+{
+	const btTransform& t = body->getWorldTransform();
+	const btVector3& v = t.getOrigin();
+	const btQuaternion& q = t.getRotation();
+	interpolator.addSnapshot(glm::vec3(v.x(), v.y(), v.z()), glm::quat(q.w(), q.x(), q.y(), q.z()), idealBufferSize, 0);
+}
+
 void Dynamic::setPosition(const btVector3& pos)
 {
 	btTransform t = body->getWorldTransform();
