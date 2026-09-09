@@ -1,76 +1,75 @@
 #!/usr/bin/env bash
 #
-# Packages the latest release binary along with the files it needs at
-# runtime (Assets, Shaders, serverstart.lua) into a single tar.gz archive.
+# Packages a release binary along with the files it needs at runtime
+# (Assets, Shaders, serverstart.lua) into a single tar.gz archive.
 #
-# Some of the binary's shared library dependencies (Bullet, assimp, etc.)
-# use sonames that change between distro releases, so relying on the
-# player's system package manager for those is fragile — a "libbullet3.24"
-# on the build machine might be "libbullet3.06" or similar elsewhere, which
-# won't satisfy the exact soname the binary was linked against. To avoid
-# that, this script bundles those specific libraries into a lib/ folder and
-# ships a launcher script that points LD_LIBRARY_PATH at it. Libraries tied
-# to the host's graphics driver / display server / audio daemon (OpenGL,
-# X11, Wayland, ALSA, PulseAudio, ...) are left to the system, since they
-# must match the host anyway and are near-universally already present.
+# By default the binary is built inside a Docker container pinned to an
+# older Ubuntu baseline (see docker/release.Dockerfile), so its glibc and
+# shared library requirements stay compatible with systems older than this
+# machine — glibc compatibility only goes forward, not backward, so a
+# binary built on a newer distro simply won't run on an older one.
 #
-# Usage: ./package_release.sh [build_dir] [output_file]
-#   build_dir   Directory containing the built LandOfDran binary
-#               (default: cmake-build-release)
-#   output_file Name of the archive to create
-#               (default: LandOfDran-release-<git short hash or date>.tar.gz)
+# Several of the binary's shared library dependencies (Bullet, assimp,
+# ENet, Lua, GLEW, SDL2) also use sonames that aren't stable across distro
+# releases, so rather than relying on the player's package manager to have
+# a matching version, those specific libraries get bundled into a lib/
+# folder alongside a LandOfDran.sh launcher that points LD_LIBRARY_PATH at
+# it (see scripts/bundle-libs.sh).
+#
+# Usage: ./package_release.sh [output_file]
+#        ./package_release.sh --local [build_dir] [output_file]
+#
+#   (default)  Builds the release inside Docker. Requires Docker.
+#   --local    Skips Docker and packages an already-built binary from
+#              build_dir (default: cmake-build-release) instead. Faster for
+#              local testing, but the result is only guaranteed to run on
+#              systems with a glibc at least as new as this machine's.
 
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-BUILD_DIR="${1:-cmake-build-release}"
-BINARY="$BUILD_DIR/LandOfDran"
-
-if [[ ! -f "$BINARY" ]]; then
-    echo "error: no binary found at '$BINARY' — build the project first (or pass the build dir as the first argument)" >&2
-    exit 1
-fi
-
 VERSION="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d)"
-OUTPUT="${2:-LandOfDran-release-$VERSION.tar.gz}"
 
 STAGING_DIR="$(mktemp -d)"
 trap 'rm -rf "$STAGING_DIR"' EXIT
 
 PKG_DIR="$STAGING_DIR/LandOfDran"
-mkdir -p "$PKG_DIR/lib"
+mkdir -p "$PKG_DIR"
 
-cp "$BINARY" "$PKG_DIR/"
+if [[ "${1:-}" == "--local" ]]; then
+    shift
+    BUILD_DIR="${1:-cmake-build-release}"
+    [[ $# -gt 0 ]] && shift
+    OUTPUT="${1:-LandOfDran-release-$VERSION.tar.gz}"
+
+    BINARY="$BUILD_DIR/LandOfDran"
+    if [[ ! -f "$BINARY" ]]; then
+        echo "error: no binary found at '$BINARY' — build the project first (or pass the build dir as the first argument)" >&2
+        exit 1
+    fi
+
+    cp "$BINARY" "$PKG_DIR/"
+    ./scripts/bundle-libs.sh "$PKG_DIR/LandOfDran" "$PKG_DIR/lib"
+else
+    OUTPUT="${1:-LandOfDran-release-$VERSION.tar.gz}"
+
+    if ! command -v docker >/dev/null; then
+        echo "error: docker not found — install Docker, or pass --local to package an already-built binary instead" >&2
+        exit 1
+    fi
+
+    echo "Building release inside Docker (docker/release.Dockerfile)..."
+    docker build -f docker/release.Dockerfile -t landofdran-release-builder .
+
+    CONTAINER_ID="$(docker create landofdran-release-builder)"
+    docker cp "$CONTAINER_ID:/out/." "$PKG_DIR/"
+    docker rm "$CONTAINER_ID" >/dev/null
+fi
+
 cp -r Assets "$PKG_DIR/"
 cp -r Shaders "$PKG_DIR/"
 cp serverstart.lua "$PKG_DIR/"
-
-# Libraries whose soname isn't stable across distro releases, so we bundle
-# our own copy rather than trust the player's package manager to have a
-# matching version.
-BUNDLE_LIB_PREFIXES=(
-    libSDL2-2.0.so
-    libassimp.so
-    liblua5.4.so
-    libGLEW.so
-    libBulletDynamics.so
-    libBulletCollision.so
-    libLinearMath.so
-    libenet.so
-    libdraco.so
-    libminizip.so
-    libpugixml.so
-)
-
-while read -r soname respath; do
-    for prefix in "${BUNDLE_LIB_PREFIXES[@]}"; do
-        if [[ "$soname" == "$prefix"* && -f "$respath" ]]; then
-            cp -L "$respath" "$PKG_DIR/lib/$soname"
-            break
-        fi
-    done
-done < <(ldd "$BINARY" | awk '/=>/{print $1, $3}')
 
 cat > "$PKG_DIR/LandOfDran.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -87,6 +86,6 @@ echo "Created $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
 if command -v objdump >/dev/null; then
     MIN_GLIBC="$(objdump -T "$PKG_DIR/LandOfDran" "$PKG_DIR"/lib/*.so* 2>/dev/null | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -Vu | tail -1)"
     if [[ -n "$MIN_GLIBC" ]]; then
-        echo "Requires glibc >= ${MIN_GLIBC#GLIBC_} — players on an older distro than this build machine may hit a 'GLIBC_x.xx not found' error."
+        echo "Requires glibc >= ${MIN_GLIBC#GLIBC_}"
     fi
 fi

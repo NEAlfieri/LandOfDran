@@ -1,0 +1,10 @@
+.git
+cmake-build-debug
+cmake-build-release
+Logs
+Config
+.idea
+Assets
+Shaders
+*.tar.gz
+imgui.ini
