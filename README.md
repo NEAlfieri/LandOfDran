@@ -52,6 +52,14 @@ Once you've built a release binary, `./package_release.sh` will bundle it with t
 
 By default it looks for the binary in `cmake-build-release/`; pass a different build directory as the first argument if yours lives elsewhere, e.g. `./package_release.sh build`.
 
+Several of the binary's shared library dependencies (Bullet, assimp, ENet, Lua, GLEW, SDL2) use sonames that aren't stable across distro releases — a `libbullet3.24` built on Ubuntu 24.04 won't satisfy a system that only has `libbullet3.06`, for example. To avoid making players chase down exact package versions, the script copies those specific libraries into a `lib/` folder inside the archive and ships a `LandOfDran.sh` launcher that points `LD_LIBRARY_PATH` at it.
+
+### Running a packaged release
+
+Extract the archive and run `./LandOfDran.sh` (not the `LandOfDran` binary directly) — it loads the bundled libraries above and should work out of the box on most Linux desktops.
+
+The libraries left unbundled are tied to your graphics driver, display server, and audio daemon (OpenGL, X11/Wayland, ALSA/PulseAudio), which need to match the host system anyway and are already present on essentially any Linux desktop install. If launching still fails with a missing shared library error, it'll name the library — install its runtime package with your distro's package manager (e.g. `sudo apt-get install <package>` on Debian/Ubuntu; `apt-cache search <libname>` or `apt-file search <libname>` will find the package name if you're not sure).
+
 ## Community
 
 ### Website / forum
