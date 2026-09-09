@@ -106,7 +106,12 @@ void DebugMenu::render(ImGuiIO* io)
 		{
 			ImGui::BeginGroup();
 			float windowWidth = ImGui::GetContentRegionAvail().x;
-			ImGui::BeginChild("debugScroll", ImVec2(windowWidth, 200));
+
+			//Reserve space for what's below the scroll region (checkbox row, repeat/submit row, and the input box)
+			//so the log area actually grows/shrinks with the window instead of staying a fixed height
+			const float inputBoxHeight = 200.0f;
+			float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2 + inputBoxHeight + ImGui::GetStyle().ItemSpacing.y;
+			ImGui::BeginChild("debugScroll", ImVec2(windowWidth, -footerHeight));
 			ImGui::PushTextWrapPos(0.0f);
 
 			//This line would be for showing client side logs
@@ -171,7 +176,7 @@ void DebugMenu::render(ImGuiIO* io)
 				ImGui::EndTooltip();
 			}
 
-			if (ImGui::InputTextMultiline("<- Lua", consoleCommandBuffer, 10000, ImVec2(windowWidth * 0.9, 200), ImGuiInputTextFlags_EnterReturnsTrue | (enterBehavior ? ImGuiInputTextFlags_CtrlEnterForNewLine : 0) | ImGuiInputTextFlags_AllowTabInput))
+			if (ImGui::InputTextMultiline("<- Lua", consoleCommandBuffer, 10000, ImVec2(windowWidth * 0.9, inputBoxHeight), ImGuiInputTextFlags_EnterReturnsTrue | (enterBehavior ? ImGuiInputTextFlags_CtrlEnterForNewLine : 0) | ImGuiInputTextFlags_AllowTabInput))
 				wantsSubmit = true; //Hit enter/return while typing
 
 			if(wantsSubmit)
