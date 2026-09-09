@@ -102,6 +102,16 @@ RenderContext::RenderContext(std::shared_ptr<SettingManager> settings)
 		return;
 	}
 
+	//Logged unconditionally (not debug()) since a driver can silently hand back a much
+	//older/different context than what was requested (e.g. software rendering fallback),
+	//and this is the only direct way to see what we actually got.
+	auto glStr = [](GLenum name) -> std::string
+	{
+		const GLubyte* str = glGetString(name);
+		return str ? reinterpret_cast<const char*>(str) : "(null)";
+	};
+	info("OpenGL version: " + glStr(GL_VERSION) + " | vendor: " + glStr(GL_VENDOR) + " | renderer: " + glStr(GL_RENDERER));
+
 	debug("Starting GLEW");
 
 	glewExperimental = GL_TRUE; //Used to need this, might not be needed anymore
