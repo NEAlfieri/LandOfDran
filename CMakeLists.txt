@@ -1,7 +1,9 @@
 ﻿# CMakeList.txt : CMake project for LandOfDran, include source and define
-# 
-# Note: Ubuntu/Debian build should work out of the box just do cmake build
-# Windows build however needs some work as it's specific to my home set up and vcpkg
+#
+# Note: Ubuntu/Debian build should work out of the box, just do cmake build.
+# Windows builds need a vcpkg toolchain file passed in (see CMakePresets.json
+# and the README's Windows section) but otherwise need no machine-specific
+# edits to this file.
 #
 cmake_minimum_required (VERSION 3.8)
 
@@ -42,8 +44,15 @@ if(UNIX AND NOT APPLE)
 	FIND_PATH( ENET_INCLUDE_PATH /usr/include )
 	FIND_LIBRARY( ENET_LIBRARY /usr/lib/x86_64-linux-gnu )
 else()
-	include(C:/Users/Syerjchep/vcpkg/scripts/buildsystems/vcpkg.cmake)
+	if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+		message(FATAL_ERROR
+			"Windows builds need vcpkg's toolchain file. Either configure with:\n"
+			"  -DCMAKE_TOOLCHAIN_FILE=<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake\n"
+			"or set the VCPKG_ROOT environment variable and use the 'windows-debug' / "
+			"'windows-release' presets in CMakePresets.json (see README.md).")
+	endif()
 	find_package(glew CONFIG REQUIRED)
+	find_package(unofficial-enet CONFIG REQUIRED)
 endif()
 
 find_package(ZLIB REQUIRED)
@@ -52,7 +61,6 @@ find_package(Bullet CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(Lua REQUIRED)
-#find_package(unofficial-enet CONFIG REQUIRED)
 
 # Add source to this project's executable.
 add_executable (LandOfDran 
@@ -242,8 +250,7 @@ else()
 	target_link_libraries(LandOfDran PRIVATE GLEW::glew)
 	target_link_libraries(LandOfDran PRIVATE ${BULLET_LIBRARIES})
 	target_link_libraries(LandOfDran PRIVATE wsock32 ws2_32 winmm)
-	include_directories("C:/Users/Syerjchep/Downloads/enet-1.3.18.tar/enet-1.3.18/include")
-	target_link_libraries(LandOfDran PRIVATE "C:/Users/Syerjchep/Downloads/enet-1.3.18.tar/enet-1.3.18/enet64.lib")
+	target_link_libraries(LandOfDran PRIVATE unofficial::enet::enet)
 endif()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)

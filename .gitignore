@@ -3,7 +3,6 @@ vcpkg_installed*
 out*
 build/
 build*
-CMakePresets.json
 vcpkg-configuration.json
 CMakeFiles/
 CMakeCache.txt

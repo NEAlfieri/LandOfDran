@@ -28,11 +28,19 @@ About half the dependencies are used on the client only, but at the moment they 
 
 ### Windows
 
-At the moment I'm primarily making the project as a MSVC CMake project using vcpkg to manage libraries. ImGui, stb image, and CRC++ are included with the project code itself, and all other libraries can be found on vcpkg except for ENet. 
+The project is an MSVC CMake project using vcpkg (manifest mode) to manage libraries, including ENet — every dependency in `vcpkg.json` is fetched and built by vcpkg, so there's nothing to download or configure by hand. ImGui, stb_image, and CRC++ are included with the project code itself.
 
-I am using the origional version of ENet: 
-https://github.com/lsalzman/enet 
-It only requires system default libraries and is somewhat small and cross platform, so it should not be too difficult to build. There is a separate header only version ZPL/Enet but I have no clue how much work it would take to get to work with Land of Dran.
+1. Install Visual Studio 2022 (or the standalone Build Tools) with the "Desktop development with C++" workload — this brings MSVC, CMake, and Ninja.
+2. Install [vcpkg](https://github.com/microsoft/vcpkg) somewhere (`git clone https://github.com/microsoft/vcpkg && .\vcpkg\bootstrap-vcpkg.bat`), then set a `VCPKG_ROOT` environment variable pointing at that folder.
+3. Open the project folder in CLion (it will pick up `CMakePresets.json` and offer the `windows-debug` / `windows-release` profiles), or from a "Developer PowerShell for VS":
+   ```
+   cmake --preset windows-release
+   cmake --build --preset windows-release
+   ```
+   The first configure will take a while — vcpkg is compiling every dependency from source for your triplet.
+4. Run `cmake-build-windows-release/LandOfDran.exe`. vcpkg's default `VCPKG_APPLOCAL_DEPS` behavior copies the required DLLs (SDL2, assimp, etc.) next to the executable automatically, so no manual DLL wrangling is needed.
+
+If you'd rather not use the presets, pass `-DCMAKE_TOOLCHAIN_FILE=<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake` when configuring.
 
 ### Unix
 
