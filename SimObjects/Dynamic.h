@@ -73,6 +73,12 @@ class Dynamic : public SimObject
 	//Client only, true if object is in Simulation::controlledDynamics
 	bool clientControlled = false;
 
+	//Client only, ms timestamp (getTicksMS) until which we should render off the live physics transform instead of the
+	//interpolated one - set briefly after locally touching the player's controlled body, so bumping into something feels
+	//immediate instead of waiting for the server to notice and broadcast the reaction. Purely a visual prediction; the
+	//server remains authoritative and the next real snapshot will correct us if we predicted wrong. See LoopClient::predictLocalCollisions
+	unsigned int predictLocallyUntil = 0;
+
 	void updateSnapshot(bool forceUsePhysicsTransform = false);
 
 	//Client only

@@ -51,6 +51,41 @@ PhysicsWorld::~PhysicsWorld()
   delete pairCallback;
 }
 
+std::vector<btRigidBody*> PhysicsWorld::getTouching(const btRigidBody* body) const
+{
+  std::vector<btRigidBody*> touching;
+
+  int numManifolds = dispatcher->getNumManifolds();
+  for (int i = 0; i < numManifolds; i++)
+  {
+    btPersistentManifold* manifold = dispatcher->getManifoldByIndexInternal(i);
+
+    const btCollisionObject* other = nullptr;
+    if (manifold->getBody0() == body)
+      other = manifold->getBody1();
+    else if (manifold->getBody1() == body)
+      other = manifold->getBody0();
+    else
+      continue;
+
+    //A manifold can exist for objects that are merely close (within Bullet's collision margin) without actually touching
+    bool actuallyTouching = false;
+    for (int c = 0; c < manifold->getNumContacts(); c++)
+    {
+      if (manifold->getContactPoint(c).getDistance() < 0.0f)
+      {
+        actuallyTouching = true;
+        break;
+      }
+    }
+
+    if (actuallyTouching)
+      touching.push_back((btRigidBody*)other);
+  }
+
+  return touching;
+}
+
 btRigidBody* PhysicsWorld::boxSweepTest(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore)
 {
     btClosestNotMeConvexResultCallback callback(ignore, from.getOrigin(), to.getOrigin(), world->getPairCache(), world->getDispatcher());

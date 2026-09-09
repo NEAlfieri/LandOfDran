@@ -45,6 +45,11 @@ class LoopClient
 	//Handle controllers bound to dynamics
 	void updateControllers(float deltaT);
 
+	//Gives dynamics the player's own body is actually touching an immediate local visual reaction instead of waiting
+	//for the server to notice the same contact and broadcast a correction. Purely a client-side prediction - see
+	//Dynamic::predictLocallyUntil for the tradeoffs
+	void predictLocalCollisions();
+
 	BrickRenderer testBricks;
 
 public:

@@ -300,13 +300,43 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		simulation.camera->swapPerson();
 }
 
+void LoopClient::predictLocalCollisions()
+{
+	if (!pd.physicsWorld)
+		return;
+
+	//How long a predicted local reaction is trusted before falling back to the (by-then-hopefully-arrived) server state
+	const unsigned int predictionWindowMS = 250;
+
+	for (unsigned int i = 0; i < simulation.controlledDynamics.size(); i++)
+	{
+		std::shared_ptr<Dynamic> controlled = simulation.controlledDynamics[i];
+		if (!controlled || !controlled->body)
+			continue;
+
+		for (btRigidBody* other : pd.physicsWorld->getTouching(controlled->body))
+		{
+			if (other->getUserIndex() != dynamicBody)
+				continue;
+
+			std::shared_ptr<Dynamic> touched = dynamicFromBody(other);
+			if (touched && !touched->clientControlled)
+				touched->predictLocallyUntil = getTicksMS() + predictionWindowMS;
+		}
+	}
+}
+
 void LoopClient::renderEverything(float deltaT)
 {
 	//TODO: Get rid of this
 	if (simulation.dynamics)
 	{
 		for (unsigned a = 0; a < simulation.dynamics->size(); a++)
-			simulation.dynamics->get(a)->updateSnapshot(pd.input->isCommandKeydown(DebugView));
+		{
+			std::shared_ptr<Dynamic> d = simulation.dynamics->get(a);
+			bool predictingLocally = getTicksMS() < d->predictLocallyUntil;
+			d->updateSnapshot(pd.input->isCommandKeydown(DebugView) || predictingLocally);
+		}
 	}
 
 	//Technically rendering related calculations based on previously inputted transform data
@@ -534,6 +564,8 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 
 	if (pd.physicsWorld)
 		pd.physicsWorld->step(deltaT);
+
+	predictLocalCollisions();
 
 	renderEverything(deltaT);
 }

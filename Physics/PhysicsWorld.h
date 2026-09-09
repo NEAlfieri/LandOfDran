@@ -66,6 +66,10 @@ class PhysicsWorld
 	//Performs a sweep test using the body from its current transform to the supplied, and returns the closest non-from body contacted if any
 	btRigidBody* boxSweepTest(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore);
 
+	//Bodies with an actual (penetrating) contact against the given body as of the most recent step() - cheap, since Bullet
+	//already computes these each step, just reads the dispatcher's cached manifolds rather than testing anything itself
+	std::vector<btRigidBody*> getTouching(const btRigidBody* body) const;
+
 	btRigidBody *doRaycast(const btVector3 &start,const btVector3 &end,btRigidBody *ignore,btVector3 &hitPos,btVector3 &hitNormal) const;
 	btRigidBody *doRaycast(const btVector3 &start,const btVector3 &end,btRigidBody *ignore) const;
 
