@@ -3,6 +3,9 @@
 
 //Client only, send last inputs to server for caching and reflection
 //Can return nullptr if object was deleted or packet was recently sent
+//Always resends the current full state (not just on change) since this goes out unreliably -
+//that way one dropped packet only leaves the server stale for one more interval instead of
+//potentially forever if the player holds a key with no further state changes to trigger a resend
 ENetPacket* PlayerController::makeMovementInputsPacket()
 {
 	if (getTicksMS() - lastSentControls < 100)
@@ -13,23 +16,6 @@ ENetPacket* PlayerController::makeMovementInputsPacket()
 	std::shared_ptr<Dynamic> targetLock = target.lock();
 	if (!targetLock)
 		return nullptr;
-
-	if (lastJump == lastJumpSent
-		&& lastForward == lastForwardSent
-		&& lastBackward == lastBackwardSent
-		&& lastLeft == lastLeftSent
-		&& lastRight == lastRightSent)
-	{
-		if(glm::distance(lastCameraDirection, lastCameraDirectionSent) < 0.02)
-			return nullptr;
-	}
-
-	lastJumpSent = lastJump;
-	lastBackwardSent = lastBackward;
-	lastForwardSent = lastForward;
-	lastLeftSent = lastLeft;
-	lastRightSent = lastRight;
-	lastCameraDirectionSent = lastCameraDirection;
 
 	return makeMovementInputs(
 		targetLock->getID(),

@@ -24,14 +24,6 @@ struct PlayerController
 	bool lastJump, lastForward, lastBackward, lastLeft, lastRight;
 	glm::vec3 lastCameraDirection = glm::vec3(0.01,1.0,0.01);
 
-	//Client only, last inputs sent to server, used to prevent sending redundant packets
-	bool lastJumpSent = false;
-	bool lastForwardSent = false;
-	bool lastBackwardSent = false;
-	bool lastLeftSent = false;
-	bool lastRightSent = false;
-	glm::vec3 lastCameraDirectionSent = glm::vec3(0.01, 1.0, 0.01);
-
 	//Client only, last time we sent a packet to the server
 	unsigned int lastSentControls = 0;
 

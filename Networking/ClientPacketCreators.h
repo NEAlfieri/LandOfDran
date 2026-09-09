@@ -51,6 +51,9 @@ inline ENetPacket* makeConnectionRequest(std::string name)
 */
 inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump,bool forward,bool backward,bool left,bool right, glm::vec3 cameraDirection)
 {
+	//Unreliable and resent every interval regardless of whether the state changed (see PlayerController::makeMovementInputsPacket) -
+	//losing any single one just means the server acts on a stale input state for one more interval before the next resend corrects it,
+	//rather than risking head-of-line blocking other client->server reliable traffic under sustained loss
 	ENetPacket* ret = enet_packet_create(NULL, 18, getFlagsFromChannel(Unreliable));
 
 	unsigned char movementFlags = 0;
