@@ -30,15 +30,15 @@ About half the dependencies are used on the client only, but at the moment they 
 
 The project is an MSVC CMake project using vcpkg (manifest mode) to manage libraries, including ENet — every dependency in `vcpkg.json` is fetched and built by vcpkg, so there's nothing to download or configure by hand. ImGui, stb_image, and CRC++ are included with the project code itself.
 
-1. Install Visual Studio 2022 (or the standalone Build Tools) with the "Desktop development with C++" workload — this brings MSVC, CMake, and Ninja.
+1. Install Visual Studio 2022 (or the standalone Build Tools) with the "Desktop development with C++" workload — this brings MSVC and CMake.
 2. Install [vcpkg](https://github.com/microsoft/vcpkg) somewhere (`git clone https://github.com/microsoft/vcpkg && .\vcpkg\bootstrap-vcpkg.bat`), then set a `VCPKG_ROOT` environment variable pointing at that folder.
-3. Open the project folder in CLion (it will pick up `CMakePresets.json` and offer the `windows-debug` / `windows-release` profiles), or from a "Developer PowerShell for VS":
+3. Open the project folder in CLion (it will pick up `CMakePresets.json` and offer the `windows` profile), or from a plain command prompt in the project root:
    ```
-   cmake --preset windows-release
+   cmake --preset windows
    cmake --build --preset windows-release
    ```
-   The first configure will take a while — vcpkg is compiling every dependency from source for your triplet.
-4. Run `cmake-build-windows-release/LandOfDran.exe`. vcpkg's default `VCPKG_APPLOCAL_DEPS` behavior copies the required DLLs (SDL2, assimp, etc.) next to the executable automatically, so no manual DLL wrangling is needed.
+   The first configure will take a while — vcpkg is compiling every dependency from source for your triplet. The preset uses the Visual Studio generator, so no Developer Command Prompt or extra Ninja component is required.
+4. Run `cmake-build-windows/Release/LandOfDran.exe` (or `Debug/` if you built the `windows-debug` preset). vcpkg's default `VCPKG_APPLOCAL_DEPS` behavior copies the required DLLs (SDL2, assimp, etc.) next to the executable automatically, so no manual DLL wrangling is needed.
 
 If you'd rather not use the presets, pass `-DCMAKE_TOOLCHAIN_FILE=<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake` when configuring.
 
