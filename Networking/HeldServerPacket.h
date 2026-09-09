@@ -28,6 +28,9 @@ public:
 
 	virtual ~HeldServerPacket() {}
 
-	//Returns true if the packet can be discarded (it was applied or it expired)
+	//Returns true if the packet was successfully applied (and can be discarded)
 	virtual bool applyPacket(const ClientProgramData& pd,Simulation &simulation, const ExecutableArguments& cmdArgs) = 0;
+
+	//True once deletionTime has passed, meaning the packet has been held too long and should be discarded even though it was never applied
+	bool isExpired() const { return SDL_GetTicks() > deletionTime; }
 };

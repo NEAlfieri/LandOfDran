@@ -34,7 +34,7 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->addString("network/username",			"Guest", false,	"Guest name if not logged in");
 	settings->addString("network/lastip",			"localhost", false, "Last IP connected to");
 	settings->addInt("network/port",				DEFAULT_PORT, false, "Hosting port", 1, 65535);
-	//settings->addInt("network/packetholdtime",		10000, false, "Max packet hold time MS", 1, 65535);
+	settings->addInt("network/packetholdtime",		10000, false, "Max packet hold time MS", 1, 65535);
 	settings->addInt("network/snapshotbuffer",			4, true,  "Snapshot buffer size", 2, 8);
 	
 	//GUI Settings

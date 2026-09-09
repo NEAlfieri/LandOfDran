@@ -6,6 +6,7 @@
 #include "Utility/SettingManager.h"
 #include "Utility/DefaultPreferences.h"
 #include "Utility/GlobalStartup.h"
+#include <thread>
 
 int main(int argc, char* argv[])
 {
@@ -73,17 +74,20 @@ int main(int argc, char* argv[])
 		auto frameEnd = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double,std::milli> frameDuration = frameEnd - frameStart;
 
-		/*if (cmdArgs.dedicated && frameDuration.count() < 25.f)
+		if (cmdArgs.dedicated)
 		{
-			//Volatile is needed or else the compiler will optimize out the whole loop
-			volatile int num = 0;
-			//Busy wait is far more accurate, this_thread::sleep_for may sleep for longer than requested
-			while (std::chrono::high_resolution_clock::now() < frameEnd + std::chrono::milliseconds(25) - frameDuration)
-				num++;
-			//std::this_thread::sleep_for(std::chrono::milliseconds(25) - frameDuration);
-		}*/
-
-		SDL_Delay(1);
+			//Keeps the server ticking at a steady SERVER_TICK_MS instead of free-spinning as fast as the OS scheduler allows,
+			//which is important since PhysicsWorld::step relies on the caller not passing wildly inconsistent deltaT values
+			if (frameDuration.count() < SERVER_TICK_MS)
+			{
+				//Busy wait is far more accurate than this_thread::sleep_for, which may oversleep by several ms on some platforms
+				//yield() still lets other threads/processes run between clock checks, unlike a plain spin loop
+				while (std::chrono::high_resolution_clock::now() < frameStart + std::chrono::duration<double, std::milli>(SERVER_TICK_MS))
+					std::this_thread::yield();
+			}
+		}
+		else
+			SDL_Delay(1);
 	}
 
 	//Deallocate client if this wasn't a dedicated server

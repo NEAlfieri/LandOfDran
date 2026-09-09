@@ -2,6 +2,9 @@
 
 bool MeshAppearancePacket::applyPacket(const ClientProgramData& pd, Simulation& simulation, const ExecutableArguments& cmdArgs)
 {
+	if (cmdArgs.gameState != InGame)
+		return false;
+
 	if (packet->dataLength < 3 + sizeof(netIDType) + sizeof(glm::vec4))
 		return true;
 

@@ -54,6 +54,15 @@ class PhysicsWorld
 
 	public:
 
+	//Bullet internally simulates in increments of this size (seconds), regardless of how much real time a step() call covers
+	//Keeping this fixed (rather than handing Bullet the raw frame delta) is what makes the simulation deterministic between server and client
+	static constexpr float fixedTimeStep = 1.0f / 60.0f;
+
+	//Upper bound on how many fixedTimeStep increments a single step() call can run
+	//Without this, a hitch/debugger pause producing a huge deltaT would make Bullet take one enormous, unstable step (tunneling risk)
+	//Instead the simulation just falls behind real time slightly in that case, which is far safer
+	static constexpr int maxSubSteps = 8;
+
 	//Performs a sweep test using the body from its current transform to the supplied, and returns the closest non-from body contacted if any
 	btRigidBody* boxSweepTest(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore);
 

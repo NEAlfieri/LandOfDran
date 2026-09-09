@@ -36,6 +36,13 @@ void Client::tryApplyHeldPackets(const ClientProgramData& pd, Simulation& simula
 			tmp = 0;
 			iter = packets.erase(iter);
 		}
+		else if (tmp->isExpired())
+		{
+			error("Discarding held packet that expired without being applied");
+			delete tmp;
+			tmp = 0;
+			iter = packets.erase(iter);
+		}
 		else
 			++iter;
 	}

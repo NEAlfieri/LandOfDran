@@ -1,10 +1,12 @@
 #include "PhysicsWorld.h"
 
 
-//I think it returns how many substeps were used or something? 
+//Returns how many fixedTimeStep substeps were actually simulated (0 to maxSubSteps)
 int PhysicsWorld::step(float deltaT)
 {
-  return world->stepSimulation(deltaT / 1000.0f);
+  //Clamp so a hitch/debugger pause can't hand Bullet more time than maxSubSteps can cover in one call - see the comment on maxSubSteps
+  float seconds = std::clamp(deltaT / 1000.0f, 0.0f, fixedTimeStep * maxSubSteps);
+  return world->stepSimulation(seconds, maxSubSteps, fixedTimeStep);
 }
 
 PhysicsWorld::PhysicsWorld()

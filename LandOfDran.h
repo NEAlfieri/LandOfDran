@@ -38,3 +38,6 @@
 
 //Default port for land of dran
 #define DEFAULT_PORT 8765
+
+//Target time between dedicated server ticks, in milliseconds. Matches ObjHolder's snapshot broadcast throttle so the server doesn't do physics work it won't send out yet
+#define SERVER_TICK_MS 25.0
