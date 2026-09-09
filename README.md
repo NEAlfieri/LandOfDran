@@ -46,6 +46,12 @@ Getting this working on debian/ubuntu should be as easy as:
 5. `cmake build`
 6. `make`
 
+## Packaging a release
+
+Once you've built a release binary, `./package_release.sh` will bundle it with the files it needs at runtime (`Assets/`, `Shaders/`, `serverstart.lua`) into a single `LandOfDran-release-<hash>.tar.gz` archive.
+
+By default it looks for the binary in `cmake-build-release/`; pass a different build directory as the first argument if yours lives elsewhere, e.g. `./package_release.sh build`.
+
 ## Community
 
 ### Website / forum

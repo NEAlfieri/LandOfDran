@@ -17,3 +17,5 @@ imgui.ini
 LandOfDran.cbp
 
 .idea/
+
+LandOfDran-release-*.tar.gz
