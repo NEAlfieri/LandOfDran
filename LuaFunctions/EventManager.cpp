@@ -267,6 +267,12 @@ int EventManager::unregisterEventListener(lua_State* L)
 
 EventManager::EventManager(lua_State* L)
 {
+    //events is static (Lua's C API needs plain function pointers, so the callbacks below can't be
+    //bound to a particular instance) but only one EventManager is ever alive at a time - each new
+    //one belongs to a brand new LoopServer/lua_State, so start with a clean slate rather than piling
+    //another copy of these events (and whatever got registered to them) onto whatever came before.
+    events.clear();
+
     events.push_back(LuaEvent("ClientJoin"));
     events.push_back(LuaEvent("ClientChat"));
     events.push_back(LuaEvent("ClientLeave"));

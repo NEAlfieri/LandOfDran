@@ -171,6 +171,9 @@ void SettingsMenu::render(ImGuiIO* io)
 					if (lastPath == "gui")
 						renderThemeSettings(io);
 
+					if (lastPath == "hosting")
+						ImGui::TextWrapped("Hosting settings only apply to servers started after saving. If you're already hosting, leave and start hosting again for changes to take effect.");
+
 					ImGui::EndTabItem();
 					lastTabCreated = false;
 				}
