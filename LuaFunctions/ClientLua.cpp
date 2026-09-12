@@ -132,6 +132,40 @@ static int LUA_clientMessage(lua_State* L)
 	return 0;
 }
 
+static int LUA_messageAll(lua_State* L)
+{
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument messageAll(message)");
+		return 0;
+	}
+
+	const char* msg = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
+	if (!msg)
+	{
+		error("Expected string for message");
+		return 0;
+	}
+
+	std::string message = std::string(msg);
+	if (message.length() < 1)
+		return 0;
+	if (message.length() > 255)
+		message = message.substr(0, 255);
+
+	if (!LUA_server)
+	{
+		error("Server not set");
+		return 0;
+	}
+
+	LUA_server->broadcastChat(message);
+
+	return 0;
+}
+
 static int LUA_getNumClients(lua_State* L)
 {
 	if (lua_gettop(L) != 0)
@@ -737,6 +771,7 @@ void registerClientFunctions(lua_State* L)
 	lua_register(L, "getNumClients", LUA_getNumClients);
 	lua_register(L, "getClientIdx", LUA_getClientIdx);
 	lua_register(L, "centerPrintAll", LUA_centerPrintAll);
+	lua_register(L, "messageAll", LUA_messageAll);
 
 	luaL_Reg regs[] = {
 		{ "message", LUA_clientMessage},

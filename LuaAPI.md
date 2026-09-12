@@ -149,6 +149,7 @@ A "client" represents one connected player/connection.
 |---|---|---|---|
 | `getNumClients()` | none | count | How many clients are currently connected. |
 | `getClientIdx(index)` | 0-based index | Client | Looks up a connected client by index. |
+| `messageAll(text)` | text (max 255 chars) | none | Broadcasts a chat message from the server to every connected client, as a single packet. Empty strings are silently ignored, same as `client:message`. |
 | `centerPrintAll(text)` / `centerPrintAll(text, durationMS)` / `centerPrintAll(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Broadcasts a temporary message to the center of every connected client's screen, as a single packet. |
 
 ### `client:` methods
