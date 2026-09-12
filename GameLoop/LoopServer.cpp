@@ -52,6 +52,26 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 		}
 	}
 
+	//Drive any dynamics currently snapped to a client's cursor (see dynamic:snapToCursor)
+	for (unsigned int a = 0; a < pd.dynamics->size(); a++)
+	{
+		std::shared_ptr<Dynamic> dynamic = pd.dynamics->get(a);
+		if (!dynamic->isSnappedToCursor())
+			continue;
+
+		std::shared_ptr<JoinedClient> owner = dynamic->snappedToClient.lock();
+		std::shared_ptr<ClientData> ownerData = owner ? pd.getClient(owner) : nullptr;
+
+		//Owning client disconnected (or otherwise lost its controller) since this was snapped - drop it back into normal physics
+		if (!ownerData || ownerData->controllers.size() == 0)
+		{
+			dynamic->unsnapFromCursor();
+			continue;
+		}
+
+		dynamic->updateCursorSnapPosition(ownerData->controllers[0].lastCameraPosition, ownerData->controllers[0].lastCameraDirection);
+	}
+
 	scheduler->run(pd.luaState);
 }
 

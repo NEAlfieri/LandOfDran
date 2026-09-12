@@ -96,6 +96,58 @@ btVector3 Dynamic::getPosition() const
 	return body->getWorldTransform().getOrigin();
 }
 
+void Dynamic::snapToCursor(std::shared_ptr<JoinedClient> client, const glm::vec3& offset)
+{
+	//Only stash gravity the first time - re-snapping (new client/offset) shouldn't clobber the real pre-snap value
+	if (!isSnappedToCursor())
+		preSnapGravity = body->getGravity();
+
+	snappedToClient = client;
+	snapOffset = offset;
+
+	gravityUpdated = true;
+	body->setGravity(btVector3(0, 0, 0));
+	body->setLinearVelocity(btVector3(0, 0, 0));
+	body->setAngularVelocity(btVector3(0, 0, 0));
+	activate();
+}
+
+void Dynamic::unsnapFromCursor()
+{
+	if (!isSnappedToCursor())
+		return;
+
+	snappedToClient.reset();
+
+	gravityUpdated = true;
+	body->setGravity(preSnapGravity);
+	body->setLinearVelocity(btVector3(0, 0, 0));
+	activate();
+}
+
+void Dynamic::updateCursorSnapPosition(const glm::vec3& cameraPosition, const glm::vec3& cameraDirection)
+{
+	glm::vec3 forward = glm::normalize(cameraDirection);
+
+	glm::vec3 worldUp(0, 1, 0);
+	glm::vec3 right = glm::cross(forward, worldUp);
+	//Looking (near) straight up/down, cross product degenerates - fall back to an arbitrary right vector
+	if (glm::length(right) < 0.001f)
+		right = glm::vec3(1, 0, 0);
+	else
+		right = glm::normalize(right);
+
+	glm::vec3 up = glm::normalize(glm::cross(right, forward));
+
+	glm::vec3 target = cameraPosition + right * snapOffset.x + up * snapOffset.y + forward * snapOffset.z;
+
+	setPosition(btVector3(target.x, target.y, target.z));
+	body->setLinearVelocity(btVector3(0, 0, 0));
+	body->setAngularVelocity(btVector3(0, 0, 0));
+	forcePlayerUpdate = true;
+	activate();
+}
+
 const bool noVelUpdates = false;
 
 bool Dynamic::requiresNetUpdate() //const

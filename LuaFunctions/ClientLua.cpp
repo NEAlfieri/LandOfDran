@@ -1,4 +1,5 @@
 #include "ClientLua.h"
+#include "Dynamic.h" //pushRaycastResult
 
 Server * LUA_server = nullptr;
 
@@ -84,6 +85,7 @@ std::shared_ptr<JoinedClient> popClientLua(lua_State* L)
 		return nullptr;
 	}
 
+	lua_pop(L, 1);
 	return obj->lock();
 }
 
@@ -574,6 +576,56 @@ static int LUA_clientSetDefaultController(lua_State* L)
 	return 0;
 }
 
+static int LUA_clientGetCursorItem(lua_State* L)
+{
+	if (lua_gettop(L) != 2)
+	{
+		error("Expected 2 arguments client:getCursorItem(maxDistance)");
+		return 0;
+	}
+
+	float maxDistance = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<JoinedClient> jc = popClientLua(L);
+
+	if (!jc)
+	{
+		error("Invalid client object passed to client:getCursorItem");
+		return 0;
+	}
+
+	std::shared_ptr<ClientData> client = LUA_pd->getClient(jc);
+
+	if (!client)
+	{
+		error("Invalid client object passed to client:getCursorItem");
+		return 0;
+	}
+
+	if (client->controllers.size() == 0)
+	{
+		error("Client has no default controller set, call client:setDefaultController first");
+		return 0;
+	}
+
+	//Only the first/default controller's camera state is tracked, matching how bindCamera/setDefaultController are used elsewhere
+	glm::vec3 cameraPosition = client->controllers[0].lastCameraPosition;
+	glm::vec3 cameraDirection = client->controllers[0].lastCameraDirection;
+
+	btRigidBody* ignore = nullptr;
+	if (client->controlledObjects.size() > 0)
+		ignore = client->controlledObjects[0]->body;
+
+	btVector3 start = btVector3(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+	btVector3 end = start + btVector3(cameraDirection.x, cameraDirection.y, cameraDirection.z) * maxDistance;
+
+	btRigidBody* result = LUA_pd->physicsWorld->doRaycast(start, end, ignore);
+	pushRaycastResult(L, result);
+
+	return 1;
+}
+
 void registerClientFunctions(lua_State* L)
 {
 	//Register client global functions:
@@ -596,6 +648,7 @@ void registerClientFunctions(lua_State* L)
 		{ "staticCamera", LUA_clientStaticCamera },
 		{ "setDefaultController", LUA_clientSetDefaultController },
 		{ "getPacketLoss", LUA_clientGetPacketLoss },
+		{ "getCursorItem", LUA_clientGetCursorItem },
 		{ NULL, NULL }
 	};
 

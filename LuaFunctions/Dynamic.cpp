@@ -1131,10 +1131,17 @@ static int LUA_raycast(lua_State* L)
 	btVector3 end = btVector3(endX, endY, endZ);
 
 	btRigidBody * result = LUA_pd->physicsWorld->doRaycast(start, end, ignore);
-	if(!result)
+	pushRaycastResult(L, result);
+	return 1;
+}
+
+//Shared by raycast() and client:getCursorItem() - pushes the Dynamic/Static Lua wrapper for a raycast hit, or nil
+void pushRaycastResult(lua_State* L, btRigidBody* result)
+{
+	if (!result)
 	{
 		lua_pushnil(L);
-		return 1;
+		return;
 	}
 
 	if (result->getUserIndex() == dynamicBody)
@@ -1144,7 +1151,7 @@ static int LUA_raycast(lua_State* L)
 		if (resultDynamic)
 		{
 			LUA_pd->dynamics->pushLua(L, resultDynamic);
-			return 1;
+			return;
 		}
 	}
 	else if (result->getUserIndex() == staticBody)
@@ -1154,12 +1161,11 @@ static int LUA_raycast(lua_State* L)
 		if (resultStatic)
 		{
 			LUA_pd->statics->pushLua(L, resultStatic);
-			return 1;
+			return;
 		}
 	}
 
 	lua_pushnil(L);
-	return 1;
 }
 
 static int LUA_dynamicGetNumControllers(lua_State* L)
@@ -1269,6 +1275,152 @@ static int LUA_dynamicGetControllerIdx(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicSnapToCursor(lua_State* L)
+{
+	scope("(LUA) dynamic:snapToCursor");
+
+	int args = lua_gettop(L);
+
+	if (args != 5)
+	{
+		error("Expected 5 arguments dynamic:snapToCursor(client,xOffset,yOffset,zOffset)");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	float zOffset = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float yOffset = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float xOffset = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<JoinedClient> client = popClientLua(L);
+
+	if (!client)
+	{
+		error("Invalid client passed to dynamic:snapToCursor");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	dynamic->snapToCursor(client, glm::vec3(xOffset, yOffset, zOffset));
+
+	return 0;
+}
+
+static int LUA_dynamicUnsnap(lua_State* L)
+{
+	scope("(LUA) dynamic:unsnap");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument dynamic:unsnap()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	dynamic->unsnapFromCursor();
+
+	return 0;
+}
+
+static int LUA_dynamicIsSnapped(lua_State* L)
+{
+	scope("(LUA) dynamic:isSnapped");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument dynamic:isSnapped()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	lua_pushboolean(L, dynamic->isSnappedToCursor());
+
+	return 1;
+}
+
+static int LUA_dynamicGetSnapClient(lua_State* L)
+{
+	scope("(LUA) dynamic:getSnapClient");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument dynamic:getSnapClient()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	std::shared_ptr<JoinedClient> client = dynamic->snappedToClient.lock();
+
+	if (!client)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+
+	pushClientLua(L, client);
+	return 1;
+}
+
 luaL_Reg* getDynamicFunctions(lua_State *L)
 {
 	//Register dynamic global functions:
@@ -1282,7 +1434,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "raycast", LUA_raycast);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[24];
+	luaL_Reg* regs = new luaL_Reg[28];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1308,6 +1460,10 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
 	regs[iter++] = { "getNumControllers", LUA_dynamicGetNumControllers };
 	regs[iter++] = { "getControllerIdx", LUA_dynamicGetControllerIdx };
+	regs[iter++] = { "snapToCursor", LUA_dynamicSnapToCursor };
+	regs[iter++] = { "unsnap", LUA_dynamicUnsnap };
+	regs[iter++] = { "isSnapped", LUA_dynamicIsSnapped };
+	regs[iter++] = { "getSnapClient", LUA_dynamicGetSnapClient };
 	regs[iter++] = { NULL, NULL };
 
 	return regs;

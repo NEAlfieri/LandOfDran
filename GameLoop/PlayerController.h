@@ -23,6 +23,10 @@ struct PlayerController
 	//Server cachces these and applies them each frame until a new packet comes in
 	bool lastJump, lastForward, lastBackward, lastLeft, lastRight;
 	glm::vec3 lastCameraDirection = glm::vec3(0.01,1.0,0.01);
+	//Server: taken from the client's periodic movement input packets. Client: taken from the local Camera each frame.
+	//Used for cursor-based features (dynamic:snapToCursor, client:getCursorItem) - only meaningful once at least one
+	//movement input packet has arrived, see the comment on the default value above
+	glm::vec3 lastCameraPosition = glm::vec3(0,0,0);
 
 	//Client only, last time we sent a packet to the server
 	unsigned int lastSentControls = 0;
@@ -35,7 +39,7 @@ struct PlayerController
 	bool controlWithLastInput(std::shared_ptr<PhysicsWorld> world, float deltaT);
 
 	//Server and client side, called per frame, server caches last inputs from clients
-	bool control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, bool jump, bool forward, bool backward, bool left, bool right);
+	bool control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool forward, bool backward, bool left, bool right);
 
 	/*
 	    Client side wrapper

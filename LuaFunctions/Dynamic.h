@@ -22,3 +22,6 @@ extern ServerProgramData* LUA_pd;
 	This function needs to be updated with each dynamic related function added to the Lua API
 */
 luaL_Reg *getDynamicFunctions(lua_State *L);
+
+//Shared by raycast() and client:getCursorItem() - pushes the Dynamic/Static Lua wrapper for a raycast hit, or nil
+void pushRaycastResult(lua_State* L, btRigidBody* result);

@@ -5,6 +5,7 @@
 #include "../NetTypes/DynamicType.h"
 #include "../Graphics/Interpolator.h"
 #include "../Networking/Quantization.h"
+#include "../Networking/JoinedClient.h"
 #include "../Utility/GlobalStartup.h" //getTicksMS
 
 /*
@@ -136,6 +137,29 @@ class Dynamic : public SimObject
 
 	//Server side: returns a fully created packet ready to broadcast to relay the mesh color update
 	ENetPacket* setMeshColor(const std::string& meshName, const glm::vec4& color);
+
+	/*
+		Server only: cursor-snapping (see dynamic:snapToCursor in Lua). While snapped, LoopServer drives this
+		object's position every tick from the owning client's cached camera position/direction instead of physics.
+	*/
+
+	//Non-owning: does not keep the client alive. Gravity is disabled while snapped, so this also flags "is snapped"
+	std::weak_ptr<JoinedClient> snappedToClient;
+	//View-space offset used while snapped: x = right, y = up, z = forward (away from the camera)
+	glm::vec3 snapOffset = glm::vec3(0, 0, 0);
+	//Gravity from just before snapping, restored on unsnap
+	btVector3 preSnapGravity = btVector3(0, 0, 0);
+
+	bool isSnappedToCursor() const { return !snappedToClient.expired(); }
+
+	//Attach to a client's cursor. Disables gravity until unsnapFromCursor() is called (or the client disconnects)
+	void snapToCursor(std::shared_ptr<JoinedClient> client, const glm::vec3& offset);
+
+	//Detach from the cursor if snapped, restoring the gravity it had before snapping. No-op if not snapped
+	void unsnapFromCursor();
+
+	//Server only, called once per tick by LoopServer for each snapped dynamic with its owner's current camera state
+	void updateCursorSnapPosition(const glm::vec3& cameraPosition, const glm::vec3& cameraDirection);
 
 	~Dynamic();
 };

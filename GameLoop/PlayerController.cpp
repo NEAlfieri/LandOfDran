@@ -24,7 +24,8 @@ ENetPacket* PlayerController::makeMovementInputsPacket()
 		lastBackward,
 		lastLeft,
 		lastRight,
-		lastCameraDirection
+		lastCameraDirection,
+		lastCameraPosition
 	);
 }
 
@@ -32,13 +33,14 @@ ENetPacket* PlayerController::makeMovementInputsPacket()
 bool PlayerController::controlWithLastInput(std::shared_ptr<PhysicsWorld> world, float deltaT)
 {
 	serverSide = true;
-	return control(world, deltaT, lastCameraDirection, lastJump, lastForward, lastBackward, lastLeft, lastRight);
+	return control(world, deltaT, lastCameraDirection, lastCameraPosition, lastJump, lastForward, lastBackward, lastLeft, lastRight);
 }
 
 //Server and client side, called per frame, server caches last inputs from clients
-bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, bool jump, bool forward, bool backward, bool left, bool right)
+bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool forward, bool backward, bool left, bool right)
 {
 	lastCameraDirection = cameraDirection;
+	lastCameraPosition = cameraPosition;
 	lastJump = jump;
 	lastForward = forward;
 	lastBackward = backward;
@@ -162,5 +164,5 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 bool PlayerController::control(const std::shared_ptr<InputMap> input, const std::shared_ptr<Camera> camera, float deltaT, std::shared_ptr<PhysicsWorld> world)
 {
 	serverSide = false;
-	return control(world, deltaT, camera->getDirection(), input->pollCommand(Jump), input->isCommandKeydown(WalkForward), input->isCommandKeydown(WalkBackward), input->isCommandKeydown(WalkLeft), input->isCommandKeydown(WalkRight));
+	return control(world, deltaT, camera->getDirection(), camera->getPosition(), input->pollCommand(Jump), input->isCommandKeydown(WalkForward), input->isCommandKeydown(WalkBackward), input->isCommandKeydown(WalkLeft), input->isCommandKeydown(WalkRight));
 }

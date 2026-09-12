@@ -48,19 +48,22 @@ inline ENetPacket* makeConnectionRequest(std::string name)
 	4 bytes		-		camera x direction
 	4 bytes		-		camera y direction
 	4 bytes		-		camera z direction
+	4 bytes		-		camera x position
+	4 bytes		-		camera y position
+	4 bytes		-		camera z position
 */
-inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump,bool forward,bool backward,bool left,bool right, glm::vec3 cameraDirection)
+inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump,bool forward,bool backward,bool left,bool right, glm::vec3 cameraDirection, glm::vec3 cameraPosition)
 {
 	//Unreliable and resent every interval regardless of whether the state changed (see PlayerController::makeMovementInputsPacket) -
 	//losing any single one just means the server acts on a stale input state for one more interval before the next resend corrects it,
 	//rather than risking head-of-line blocking other client->server reliable traffic under sustained loss
-	ENetPacket* ret = enet_packet_create(NULL, 18, getFlagsFromChannel(Unreliable));
+	ENetPacket* ret = enet_packet_create(NULL, 30, getFlagsFromChannel(Unreliable));
 
 	unsigned char movementFlags = 0;
 	movementFlags |= (jump ? 1 : 0);
 	movementFlags |= (forward ? 2 : 0);
 	movementFlags |= (backward ? 4 : 0);
-	movementFlags |= (left ? 8 : 0); 
+	movementFlags |= (left ? 8 : 0);
 	movementFlags |= (right ? 16 : 0);
 
 	ret->data[0] = (unsigned char)MovementInputs;
@@ -69,6 +72,9 @@ inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump,b
 	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 0, &cameraDirection.x, sizeof(float));
 	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 1, &cameraDirection.y, sizeof(float));
 	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 2, &cameraDirection.z, sizeof(float));
+	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 3, &cameraPosition.x, sizeof(float));
+	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 4, &cameraPosition.y, sizeof(float));
+	memcpy(ret->data + 1 + sizeof(netIDType) + 1 + sizeof(float) * 5, &cameraPosition.z, sizeof(float));
 
 	return ret;
 }
