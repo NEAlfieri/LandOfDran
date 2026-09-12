@@ -225,7 +225,7 @@ void UserInterface::initAll()
 		windows[a]->init();
 }
 
-void UserInterface::render(int screenX,int screenY,bool drawCrossHair)
+void UserInterface::render(int screenX,int screenY,bool drawCrossHair,const std::vector<std::string>& hudLines)
 {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
@@ -249,6 +249,17 @@ void UserInterface::render(int screenX,int screenY,bool drawCrossHair)
 		draw->AddCircle(ImVec2(screenX / 2, screenY / 2), 6, IM_COL32(255, 0, 0, 255), 100, 0.0f);
 	}
 	//ImGui::End();
+
+	if (!hudLines.empty())
+	{
+		auto draw = ImGui::GetBackgroundDrawList();
+		float y = 10.0f;
+		for (const std::string& line : hudLines)
+		{
+			draw->AddText(ImVec2(10.0f, y), IM_COL32(255, 190, 0, 255), line.c_str());
+			y += ImGui::GetFontSize() + 4.0f;
+		}
+	}
 
 	ImGui::Render(); 
 	ImDrawData* data = ImGui::GetDrawData();

@@ -30,12 +30,22 @@ void Interpolator::addSnapshot(const glm::vec3& pos, const glm::quat& rot,float 
 	int callTimeDiff = getTicksMS() - testLastRemoveMe;
 	testLastRemoveMe = getTicksMS();
 
+	snapshotsEverAdded++;
+
 	//If we're running low on snapshots (server lag?) then interpolate slower, and vice-versa
 	float timeBetween = msSinceLastSend;
 	float diff = snapshots.size() - idealBufferSize;
 	diff = 1.0 - (diff * 0.1);
 	if (diff < 1.0)
 		diff = sqrt(diff);
+
+	//Don't apply the slowdown side of that while still ramping up right after creation - a small buffer here just
+	//means the object hasn't existed long enough yet to have idealBufferSize snapshots, not that the network is
+	//struggling to keep up. Without this, every newly created object visibly moves in slow motion for its first
+	//several updates while the buffer fills, and how long that takes scales directly with latency
+	if (diff > 1.0 && snapshotsEverAdded <= (unsigned int)idealBufferSize)
+		diff = 1.0;
+
 	timeBetween *= diff;
 
 	float time = lastFrameTime + timeBetween;

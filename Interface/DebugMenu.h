@@ -80,7 +80,12 @@ public:
 	std::string getPassword() { wantsToAuthenticate = false; return std::string(passwordBuffer); }
 
 	std::string adminLoginComment = "";
-	 
+
+	//Toggled by the DebugView command (LoopClient.cpp) - while true, all dynamics render off their live physics
+	//transform instead of the interpolated one, for comparing "true" physics state against what's being displayed.
+	//A toggle (rather than held-key) since holding a key while also typing in the Lua console isn't practical
+	bool showDebugPhysicsView = false;
+
 	//When leaving a server
 	void reset();
 

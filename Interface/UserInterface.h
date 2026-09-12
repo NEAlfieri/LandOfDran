@@ -97,8 +97,9 @@ class UserInterface
 		return window;
 	}
 
-	//Call every frame
-	void render(int screenX,int screenH,bool crossHair);
+	//Call every frame. hudLines are drawn directly on screen (top-left, one per line) with no window container -
+	//for transient debug/status text that should be visible regardless of which windows are open, unlike a Window
+	void render(int screenX,int screenH,bool crossHair,const std::vector<std::string>& hudLines = {});
 
 	/*
 		Call after all windows have been added :

@@ -306,6 +306,9 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	if (pd.input->pollCommand(FirstThirdPerson))
 		simulation.camera->swapPerson();
+
+	if (pd.input->pollCommand(DebugView))
+		pd.debugMenu->showDebugPhysicsView = !pd.debugMenu->showDebugPhysicsView;
 }
 
 void LoopClient::predictLocalCollisions()
@@ -315,6 +318,21 @@ void LoopClient::predictLocalCollisions()
 
 	//How long a predicted local reaction is trusted before falling back to the (by-then-hopefully-arrived) server state
 	const unsigned int predictionWindowMS = 250;
+
+	//A pushed object almost always outruns the player's own walk speed within a frame or two, so contact - and with it,
+	//the window above - ends almost immediately even though the object is still clearly sliding from the push. Without
+	//this, the server's still-stale (pre-push) position would stomp it mid-slide, and since the player keeps walking
+	//into it, that repeats continuously and looks like rubber-banding rather than a single correction
+	const float stillMovingSpeedThreshold = 0.5f;
+
+	//Upper bound on how long continued motion can keep extending prediction *after we've lost contact* with the
+	//object (e.g. it slides/falls on past the point where we last touched it). Client and server resolve a many-body
+	//pileup independently and can diverge into totally unrelated resting positions the longer prediction runs
+	//unmoored from an actual confirmed touch, so we want to cap that divergence risk - but this must NOT count time
+	//spent still actively touching the object (see predictLocallyStartedAt below), or a long sustained push (e.g.
+	//walking a cube toward a ledge) gets cut off mid-fall once it goes over, handing back to a server position that
+	//hasn't caught up yet and causing a visible correction right in the middle of an otherwise-normal interaction
+	const unsigned int maxPredictionDurationMS = 1500;
 
 	for (unsigned int i = 0; i < simulation.controlledDynamics.size(); i++)
 	{
@@ -329,7 +347,29 @@ void LoopClient::predictLocalCollisions()
 
 			std::shared_ptr<Dynamic> touched = dynamicFromBody(other);
 			if (touched && !touched->clientControlled)
+			{
+				//Refreshed every frame we're actually touching it, so continuous pushing never runs into the cap
+				//below - it only starts counting once contact actually ends, which is the point it's meant to bound
+				touched->predictLocallyStartedAt = getTicksMS();
 				touched->predictLocallyUntil = getTicksMS() + predictionWindowMS;
+			}
+		}
+	}
+
+	if (simulation.dynamics)
+	{
+		for (unsigned int i = 0; i < simulation.dynamics->size(); i++)
+		{
+			std::shared_ptr<Dynamic> d = simulation.dynamics->get(i);
+			if (!d || !d->body || d->clientControlled)
+				continue;
+
+			bool stillPredicting = getTicksMS() < d->predictLocallyUntil;
+			bool stillMovingFast = d->body->getLinearVelocity().length2() > stillMovingSpeedThreshold * stillMovingSpeedThreshold;
+			bool underEpisodeCap = getTicksMS() < d->predictLocallyStartedAt + maxPredictionDurationMS;
+
+			if (stillPredicting && stillMovingFast && underEpisodeCap)
+				d->predictLocallyUntil = getTicksMS() + predictionWindowMS;
 		}
 	}
 }
@@ -348,7 +388,7 @@ void LoopClient::renderEverything(float deltaT)
 				d->handOffFromPrediction(simulation.idealBufferSize);
 			d->wasPredictingLocally = predictingLocally;
 
-			d->updateSnapshot(pd.input->isCommandKeydown(DebugView) || predictingLocally);
+			d->updateSnapshot(pd.debugMenu->showDebugPhysicsView || predictingLocally);
 		}
 	}
 
@@ -417,8 +457,12 @@ void LoopClient::renderEverything(float deltaT)
 	if (simulation.camera)
 		crossHair = pd.context->getMouseLocked() && simulation.camera->getFirstPerson();
 
+	std::vector<std::string> hudLines;
+	if (pd.debugMenu->showDebugPhysicsView)
+		hudLines.push_back("Debug physics view ON (Left Shift toggles)");
+
 	pd.escapeMenu->showLeaveServer = client != nullptr;
-	pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair);
+	pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair,hudLines);
 
 	//End frame
 	pd.context->swap();

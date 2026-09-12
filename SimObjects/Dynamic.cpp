@@ -3,6 +3,12 @@
 Dynamic::Dynamic(std::shared_ptr<DynamicType> _type, const btVector3& initialPos, const btQuaternion &initialRot)
 	: type(_type)
 {
+	//Without this, lastSentTime stays 0 until the first successful send, so the very first update this object
+	//ever sends computes msSinceLastSend as getTicksMS() - 0 (the server's entire uptime), which gets clamped to
+	//255 during quantization and makes the interpolator schedule that first real snapshot ~250ms+ in the future
+	//instead of almost immediately - looks like the object sits still for a beat right after being created
+	lastSentTime = getTicksMS();
+
 	body = type->createBody();
 	world->addBody(body);
 

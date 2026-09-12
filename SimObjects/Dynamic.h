@@ -79,6 +79,13 @@ class Dynamic : public SimObject
 	//server remains authoritative and the next real snapshot will correct us if we predicted wrong. See LoopClient::predictLocalCollisions
 	unsigned int predictLocallyUntil = 0;
 
+	//Client only, ms timestamp (getTicksMS) of the last time the player's own body was actually touching this object -
+	//refreshed every frame contact continues, so it only starts "aging" once contact ends. Used to cap how long
+	//continued motion can keep extending predictLocallyUntil *after* losing contact (a chaotic multi-body event can
+	//otherwise diverge client vs. server unboundedly), without cutting off a long sustained push while it's still
+	//ongoing - see LoopClient::predictLocalCollisions
+	unsigned int predictLocallyStartedAt = 0;
+
 	//Client only, whether we rendered off the live physics transform last frame because of predictLocallyUntil -
 	//used to notice the exact frame prediction ends so we can hand off smoothly, see handOffFromPrediction
 	bool wasPredictingLocally = false;

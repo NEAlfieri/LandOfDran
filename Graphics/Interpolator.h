@@ -21,6 +21,11 @@ class Interpolator
 	std::vector<Snapshot> snapshots;
 	int testLastRemoveMe = 0;
 
+	//How many snapshots this interpolator has ever received, used to tell "still ramping up right after creation"
+	//(buffer is small because the object hasn't existed long enough yet) apart from "buffer shrank because the
+	//network is struggling" (an established object should have already reached idealBufferSize) - see addSnapshot
+	unsigned int snapshotsEverAdded = 0;
+
 	public:
 
 	int getNumSnapshots() const { return snapshots.size(); }
