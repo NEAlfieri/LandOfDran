@@ -324,3 +324,37 @@ end
 function me()
 	return gp(gc())
 end
+
+--Debug functions for testing physics
+
+function resetCubePositions()
+	for i=0, getNumDynamics()-1, 1 do
+		d = getDynamicIdx(i)
+		if d:getNumControllers() == 0 then
+			d:setPosition(0,50,0)
+		end
+	end
+end
+
+function spawnNewCubes(numCubes, spread)
+	numCubes = numCubes or 20
+	spread = spread or 0
+
+	--Iterate backwards since destroying shifts later indices down
+	for i=getNumDynamics()-1, 0, -1 do
+		d = getDynamicIdx(i)
+		if d:getNumControllers() == 0 then
+			d:destroy()
+		end
+	end
+
+	for i=1, numCubes, 1 do
+		local x = 0
+		local z = 0
+		if spread > 0 then
+			x = (math.random() - 0.5) * spread
+			z = (math.random() - 0.5) * spread
+		end
+		createDynamic(getDynamicType("small"),x,50,z)
+	end
+end

@@ -19,6 +19,18 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 
 	info(source->name + " finished loading phase 1");
 
+	//Single player: this is the host's own client connecting to its own embedded server over loopback, so log
+	//them into the eval console automatically instead of making them enter a password for their own game
+	if (pd->isTrustedLocalAdmin(source) && !source->isAdmin)
+	{
+		source->isAdmin = true;
+
+		char ret[2];
+		ret[0] = EvalLoginResponse;
+		ret[1] = 255;
+		source->send(ret, 2, OtherReliable);
+	}
+
 	//They finished loading types, now send pre-existing SimObjects
 	pd->dynamics->sendAll(source);
 	pd->statics->sendAll(source);

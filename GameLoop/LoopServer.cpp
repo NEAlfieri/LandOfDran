@@ -72,6 +72,10 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 		error("Eval password protection is enabled, but the password is still the default 'changeme' (or empty). Set a real password in Settings, under Hosting, then restart the server. Eval console logins are refused until then.");
 		pd.useEvalPassword = false;
 	}
+
+	//Not a dedicated server means we're embedded in the graphical client (single player/"Start Server"), so the
+	//only client that can reach us over loopback is our own host - let them straight into the eval console
+	pd.autoAdminForLoopback = !cmdArgs.dedicated;
 	//TODO: Hash password
 
 	//Start up Lua and give it access to all the default libraries, file io, debugging, math, etc.

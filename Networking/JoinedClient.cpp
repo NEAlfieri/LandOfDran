@@ -46,6 +46,11 @@ JoinedClient::JoinedClient(ENetEvent& event,unsigned int _netID)
 	char host[256];
 	enet_address_get_host(&event.peer->address, host, 256);
 	ip = std::string(host);
+
+	char numericHost[256];
+	enet_address_get_host_ip(&event.peer->address, numericHost, 256);
+	loopback = std::string(numericHost) == "127.0.0.1";
+
 	info("Someone connected from " + ip);
 	peer = event.peer;
 	peer->data = this;

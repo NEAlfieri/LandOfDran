@@ -15,6 +15,11 @@ class JoinedClient
 
 	std::string ip = "";
 
+	//Whether this connection came in over loopback, used to auto-admin the host's own client in single player.
+	//Computed from the raw numeric address, not ip above, since that's resolved through DNS/hosts and can come
+	//back as "localhost" instead of "127.0.0.1" depending on the OS
+	bool loopback = false;
+
 public:
 
 	float getPing() const { return peer->roundTripTime; }
@@ -32,6 +37,8 @@ public:
 	std::string name = "";
 
 	std::string getIP() const { return ip; }
+
+	bool isLoopback() const { return loopback; }
 
 	netIDType getNetId() const { return netID; }
 

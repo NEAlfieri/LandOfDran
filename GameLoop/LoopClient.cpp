@@ -138,6 +138,14 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 		if (e.type == SDL_QUIT)
 		{
+			//Remember the window size we're closing at so next launch starts at the same size
+			//instead of the fixed default, which is what left saved ImGui window positions
+			//(and the server browser) partially off-screen after a resize.
+			glm::vec2 resolution = pd.context->getResolution();
+			settings->addInt("graphics/startresolutionx", (int)resolution.x, true, "Program X resolution to start with", 1, 4096);
+			settings->addInt("graphics/startresolutiony", (int)resolution.y, true, "Program Y resolution to start with", 1, 4096);
+			settings->exportToFile("Config/settings.txt");
+
 			leaveServer(cmdArgs);
 			cmdArgs.mainLoopRun = false;
 			break;

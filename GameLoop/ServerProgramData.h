@@ -21,6 +21,18 @@ struct ServerProgramData
 	//The password, only works if useEvalPassword is true
 	std::string evalPassword = "changeme";
 
+	//True for the embedded server behind "Start Server" (single player): the only way in is the host's own
+	//client connecting to itself over loopback, so that connection can safely skip the eval password entirely -
+	//useEvalPassword is about remote access, which doesn't apply to it. A real (dedicated) server leaves this
+	//false, since it's reachable over the network and always needs the password. See LoopServer's constructor
+	bool autoAdminForLoopback = false;
+
+	//Should this client be trusted as admin without going through the eval password?
+	bool isTrustedLocalAdmin(JoinedClient* client) const
+	{
+		return autoAdminForLoopback && client->isLoopback();
+	}
+
 	std::shared_ptr<PhysicsWorld>	physicsWorld = nullptr;
 	
 	lua_State * luaState = nullptr;

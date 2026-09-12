@@ -1,4 +1,5 @@
 #include "Dynamic.h"
+#include "ClientLua.h"
 
 ServerProgramData* LUA_pd = nullptr;
 
@@ -1161,6 +1162,113 @@ static int LUA_raycast(lua_State* L)
 	return 1;
 }
 
+static int LUA_dynamicGetNumControllers(lua_State* L)
+{
+	scope("(LUA) dynamic:getNumControllers");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument dynamic:getNumControllers()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	int count = 0;
+	for (int b = 0; b < LUA_pd->clients.size(); b++)
+	{
+		for (int c = 0; c < LUA_pd->clients[b]->controlledObjects.size(); c++)
+		{
+			if (LUA_pd->clients[b]->controlledObjects[c]->getID() == dynamic->getID())
+			{
+				count++;
+				break;
+			}
+		}
+	}
+
+	lua_pushinteger(L, count);
+
+	return 1;
+}
+
+static int LUA_dynamicGetControllerIdx(lua_State* L)
+{
+	scope("(LUA) dynamic:getControllerIdx");
+
+	int args = lua_gettop(L);
+
+	if (args != 2)
+	{
+		error("Expected 2 arguments dynamic:getControllerIdx(index)");
+		return 0;
+	}
+
+	int index = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	if (index < 0)
+	{
+		error("Index " + std::to_string(index) + " out of bounds for dynamic:getControllerIdx");
+		return 0;
+	}
+
+	int count = 0;
+	for (int b = 0; b < LUA_pd->clients.size(); b++)
+	{
+		bool found = false;
+		for (int c = 0; c < LUA_pd->clients[b]->controlledObjects.size(); c++)
+		{
+			if (LUA_pd->clients[b]->controlledObjects[c]->getID() == dynamic->getID())
+			{
+				found = true;
+				break;
+			}
+		}
+
+		if (found)
+		{
+			if (count == index)
+			{
+				pushClientLua(L, LUA_pd->clients[b]->client);
+				return 1;
+			}
+			count++;
+		}
+	}
+
+	error("Index " + std::to_string(index) + " out of bounds for dynamic:getControllerIdx");
+	return 0;
+}
+
 luaL_Reg* getDynamicFunctions(lua_State *L)
 {
 	//Register dynamic global functions:
@@ -1174,7 +1282,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "raycast", LUA_raycast);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[22];
+	luaL_Reg* regs = new luaL_Reg[24];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1198,6 +1306,8 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "getMass",    LUA_dynamicGetMass };
 	regs[iter++] = { "setMassProps",    LUA_dynamicSetMassProps };
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
+	regs[iter++] = { "getNumControllers", LUA_dynamicGetNumControllers };
+	regs[iter++] = { "getControllerIdx", LUA_dynamicGetControllerIdx };
 	regs[iter++] = { NULL, NULL };
 
 	return regs;

@@ -1,4 +1,31 @@
 #include "UserInterface.h"
+#include "../External/Imgui/imgui_internal.h"
+
+//ImGui windows can restore a saved position from imgui.ini that no longer fits the current
+//display (e.g. imgui.ini was written on a larger monitor). Pull any window fully back onto the
+//viewport the moment it appears so it never starts up (partially) off-screen.
+static void clampAppearingWindowsToViewport()
+{
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+	for (ImGuiWindow* window : ImGui::GetCurrentContext()->Windows)
+	{
+		if (!window->Appearing || (window->Flags & ImGuiWindowFlags_ChildWindow))
+			continue;
+
+		ImVec2 minPos = viewport->Pos;
+		ImVec2 maxPos = ImVec2(
+			minPos.x + ImMax(0.0f, viewport->Size.x - window->Size.x),
+			minPos.y + ImMax(0.0f, viewport->Size.y - window->Size.y));
+
+		ImVec2 pos = window->Pos;
+		pos.x = ImClamp(pos.x, minPos.x, maxPos.x);
+		pos.y = ImClamp(pos.y, minPos.y, maxPos.y);
+
+		if (pos.x != window->Pos.x || pos.y != window->Pos.y)
+			ImGui::SetWindowPos(window, pos);
+	}
+}
 
 void UserInterface::updateSettings(std::shared_ptr<SettingManager> settings)
 {
@@ -211,6 +238,7 @@ void UserInterface::render(int screenX,int screenY,bool drawCrossHair)
 		ImGui::SetNextWindowBgAlpha(globalInterfaceTransparency);
 		windows[a]->render(io);
 	}
+	clampAppearingWindowsToViewport();
 	io->FontGlobalScale = uiScaling;
 
 	//Crosshair

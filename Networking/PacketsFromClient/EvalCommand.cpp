@@ -16,7 +16,9 @@ void parseEvalCommand(JoinedClient* source, Server const* const server, ENetPack
 	if (packet->dataLength < 4)
 		return;
 
-	if (!pd->useEvalPassword)
+	bool trustedLocal = pd->isTrustedLocalAdmin(source);
+
+	if (!pd->useEvalPassword && !trustedLocal)
 		return;
 
 	//Is the client logged in?
@@ -44,7 +46,7 @@ void parseEvalCommand(JoinedClient* source, Server const* const server, ENetPack
 
 	std::string password = std::string((char*)packet->data + 4 + commandLength, passwordLength);
 
-	if(password != pd->evalPassword)
+	if (!trustedLocal && password != pd->evalPassword)
 	{
 		error("Client " + source->name + " tried to do an eval statement with the wrong password.");
 		return;
