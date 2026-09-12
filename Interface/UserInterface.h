@@ -10,6 +10,15 @@
 
 class UserInterface;
 
+//A temporary message shown centered on screen, see UserInterface::addCenterPrint
+struct CenterPrintMessage
+{
+	std::string text;
+	//SDL_GetTicks() value after which this message is removed
+	unsigned int expireTicksMS = 0;
+	ImU32 color = IM_COL32_WHITE;
+};
+
 /*
 	A Imgui window of some sort
 	Every window with Imgui should be based around a class that inherits this one
@@ -68,8 +77,14 @@ class UserInterface
 
 	//Opacity/Transparency for all windows unless they stack or something
 	float globalInterfaceTransparency = 1.0;
-	
+
+	//Currently showing center-of-screen messages, see addCenterPrint. Pruned (expired ones removed) in render()
+	std::vector<CenterPrintMessage> centerPrints;
+
 	public:
+
+	//Queue a temporary message shown centered on screen for durationMS, in the given color (0-1 range each)
+	void addCenterPrint(const std::string& text, unsigned int durationMS, float red, float green, float blue);
 
 	std::string popupErrorMessage = "";
 

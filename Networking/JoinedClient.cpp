@@ -9,6 +9,43 @@ void JoinedClient::sendChat(std::string message) const
 	send(ret, OtherReliable);
 }
 
+ENetPacket* JoinedClient::makeCenterPrintPacket(std::string text, unsigned int durationMS, float red, float green, float blue)
+{
+	if (text.length() > 255)
+		text = text.substr(0, 255);
+
+	durationMS = std::min(durationMS, 60000u);
+
+	unsigned int size = 1 + sizeof(unsigned int) + sizeof(float) * 3 + 1 + text.length();
+	ENetPacket* ret = enet_packet_create(NULL, size, getFlagsFromChannel(OtherReliable));
+
+	int byteIterator = 0;
+	ret->data[byteIterator] = (unsigned char)CenterPrint;
+	byteIterator += 1;
+
+	memcpy(ret->data + byteIterator, &durationMS, sizeof(unsigned int));
+	byteIterator += sizeof(unsigned int);
+
+	memcpy(ret->data + byteIterator, &red, sizeof(float));
+	byteIterator += sizeof(float);
+	memcpy(ret->data + byteIterator, &green, sizeof(float));
+	byteIterator += sizeof(float);
+	memcpy(ret->data + byteIterator, &blue, sizeof(float));
+	byteIterator += sizeof(float);
+
+	ret->data[byteIterator] = (unsigned char)text.length();
+	byteIterator += 1;
+
+	memcpy(ret->data + byteIterator, text.c_str(), text.length());
+
+	return ret;
+}
+
+void JoinedClient::sendCenterPrint(std::string text, unsigned int durationMS, float red, float green, float blue) const
+{
+	send(makeCenterPrintPacket(std::move(text), durationMS, red, green, blue), OtherReliable);
+}
+
 void JoinedClient::send(ENetPacket* packet, PacketChannel channel) const
 {
 	if (!peer)

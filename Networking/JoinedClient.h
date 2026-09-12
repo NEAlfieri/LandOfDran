@@ -54,6 +54,11 @@ public:
 
 	void sendChat(std::string message) const;
 
+	//Builds a CenterPrint packet, shared by sendCenterPrint (one client) and centerPrintAll (broadcast) so the latter only builds it once
+	static ENetPacket* makeCenterPrintPacket(std::string text, unsigned int durationMS, float red, float green, float blue);
+
+	void sendCenterPrint(std::string text, unsigned int durationMS, float red, float green, float blue) const;
+
 	//Similar to the destructor, but can be called before it to specify a reason
 	void kick(KickReason reason);
 

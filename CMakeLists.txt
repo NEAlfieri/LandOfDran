@@ -192,8 +192,10 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/MovementSettings.cpp" 
 "Networking/PacketsFromServer/MeshAppearance.h" 
 "Networking/PacketsFromServer/MeshAppearance.cpp" 
-"Networking/PacketsFromServer/ServerPerformanceDetails.cpp" 
+"Networking/PacketsFromServer/ServerPerformanceDetails.cpp"
 "Networking/PacketsFromServer/ServerPerformanceDetails.h"
+"Networking/PacketsFromServer/CenterPrint.h"
+"Networking/PacketsFromServer/CenterPrint.cpp"
 
 "Networking/PacketsFromClient/ConnectionRequest.cpp" 
 "Networking/PacketsFromClient/FinishedLoading.cpp" 

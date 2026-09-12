@@ -219,6 +219,20 @@ std::shared_ptr<Window> UserInterface::getWindowByName(const std::string &name)
 	return nullptr;
 }
 
+void UserInterface::addCenterPrint(const std::string& text, unsigned int durationMS, float red, float green, float blue)
+{
+	CenterPrintMessage msg;
+	msg.text = text;
+	msg.expireTicksMS = SDL_GetTicks() + durationMS;
+	msg.color = IM_COL32(
+		(int)(std::clamp(red, 0.0f, 1.0f) * 255.0f),
+		(int)(std::clamp(green, 0.0f, 1.0f) * 255.0f),
+		(int)(std::clamp(blue, 0.0f, 1.0f) * 255.0f),
+		255);
+
+	centerPrints.push_back(msg);
+}
+
 void UserInterface::initAll()
 {
 	for (unsigned int a = 0; a < windows.size(); a++)
@@ -261,7 +275,24 @@ void UserInterface::render(int screenX,int screenY,bool drawCrossHair,const std:
 		}
 	}
 
-	ImGui::Render(); 
+	if (!centerPrints.empty())
+	{
+		unsigned int now = SDL_GetTicks();
+		centerPrints.erase(std::remove_if(centerPrints.begin(), centerPrints.end(),
+			[now](const CenterPrintMessage& msg) { return now > msg.expireTicksMS; }), centerPrints.end());
+
+		auto draw = ImGui::GetBackgroundDrawList();
+		float lineHeight = ImGui::GetFontSize() + 4.0f;
+		float y = screenY / 2.0f - (centerPrints.size() * lineHeight) / 2.0f;
+		for (const CenterPrintMessage& msg : centerPrints)
+		{
+			ImVec2 textSize = ImGui::CalcTextSize(msg.text.c_str());
+			draw->AddText(ImVec2(screenX / 2.0f - textSize.x / 2.0f, y), msg.color, msg.text.c_str());
+			y += lineHeight;
+		}
+	}
+
+	ImGui::Render();
 	ImDrawData* data = ImGui::GetDrawData();
 	ImGui_ImplOpenGL3_RenderDrawData(data);
 }

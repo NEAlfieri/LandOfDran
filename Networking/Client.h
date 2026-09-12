@@ -15,6 +15,7 @@
 #include "PacketsFromServer/MovementSettings.h"
 #include "PacketsFromServer/MeshAppearance.h"
 #include "PacketsFromServer/ServerPerformanceDetails.h"
+#include "PacketsFromServer/CenterPrint.h"
 #include "../GameLoop/ClientProgramData.h"
 #include "../GameLoop/Simulation.h"
 

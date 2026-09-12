@@ -626,11 +626,117 @@ static int LUA_clientGetCursorItem(lua_State* L)
 	return 1;
 }
 
+//durationMS is clamped to 60000 (60s) in JoinedClient::makeCenterPrintPacket
+static int LUA_clientCenterPrint(lua_State* L)
+{
+	int args = lua_gettop(L);
+
+	if (args != 2 && args != 3 && args != 6)
+	{
+		error("Expected client:centerPrint(text[,durationMS[,red,green,blue]])");
+		return 0;
+	}
+
+	float red = 1.0f, green = 1.0f, blue = 1.0f;
+	unsigned int durationMS = 3000;
+
+	if (args == 6)
+	{
+		blue = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+		green = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+		red = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	}
+
+	if (args >= 3)
+	{
+		durationMS = lua_tointeger(L, -1);
+		lua_pop(L, 1);
+	}
+
+	const char* text = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
+	if (!text)
+	{
+		error("Invalid text passed to client:centerPrint");
+		return 0;
+	}
+
+	std::string message = std::string(text);
+
+	std::shared_ptr<JoinedClient> client = popClientLua(L);
+
+	if (!client)
+	{
+		error("Invalid client object passed to client:centerPrint");
+		return 0;
+	}
+
+	client->sendCenterPrint(message, durationMS, red, green, blue);
+
+	return 0;
+}
+
+//durationMS is clamped to 60000 (60s) in JoinedClient::makeCenterPrintPacket
+static int LUA_centerPrintAll(lua_State* L)
+{
+	int args = lua_gettop(L);
+
+	if (args != 1 && args != 2 && args != 5)
+	{
+		error("Expected centerPrintAll(text[,durationMS[,red,green,blue]])");
+		return 0;
+	}
+
+	float red = 1.0f, green = 1.0f, blue = 1.0f;
+	unsigned int durationMS = 3000;
+
+	if (args == 5)
+	{
+		blue = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+		green = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+		red = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	}
+
+	if (args >= 2)
+	{
+		durationMS = lua_tointeger(L, -1);
+		lua_pop(L, 1);
+	}
+
+	const char* text = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
+	if (!text)
+	{
+		error("Invalid text passed to centerPrintAll");
+		return 0;
+	}
+
+	if (!LUA_server)
+	{
+		error("Server not set");
+		return 0;
+	}
+
+	ENetPacket* packet = JoinedClient::makeCenterPrintPacket(std::string(text), durationMS, red, green, blue);
+	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
 void registerClientFunctions(lua_State* L)
 {
 	//Register client global functions:
 	lua_register(L, "getNumClients", LUA_getNumClients);
 	lua_register(L, "getClientIdx", LUA_getClientIdx);
+	lua_register(L, "centerPrintAll", LUA_centerPrintAll);
 
 	luaL_Reg regs[] = {
 		{ "message", LUA_clientMessage},
@@ -649,6 +755,7 @@ void registerClientFunctions(lua_State* L)
 		{ "setDefaultController", LUA_clientSetDefaultController },
 		{ "getPacketLoss", LUA_clientGetPacketLoss },
 		{ "getCursorItem", LUA_clientGetCursorItem },
+		{ "centerPrint", LUA_clientCenterPrint },
 		{ NULL, NULL }
 	};
 
