@@ -1,4 +1,5 @@
 #include "Dynamic.h"
+#include <cmath>
 
 Dynamic::Dynamic(std::shared_ptr<DynamicType> _type, const btVector3& initialPos, const btQuaternion &initialRot)
 	: type(_type)
@@ -34,21 +35,45 @@ void Dynamic::onCreation()
 	body->setUserPointer((void*)new std::shared_ptr<SimObject>(getMe()));
 }
 
-void Dynamic::updateSnapshot(bool forceUsePhysicsTransform)
+void Dynamic::updateSnapshot(float deltaT, bool forceUsePhysicsTransform)
 {
+	glm::vec3 targetPos;
+	glm::quat targetRot;
+
 	if (clientControlled || forceUsePhysicsTransform)
 	{
 		const btTransform& t = body->getWorldTransform();
 		const btVector3& v = t.getOrigin();
 		const btQuaternion &q = t.getRotation();
-		modelInstance->setModelTransform(glm::translate(glm::vec3(v.x(), v.y(), v.z())) * glm::toMat4(glm::quat(q.w(), q.x(), q.y(), q.z())));
+		targetPos = glm::vec3(v.x(), v.y(), v.z());
+		targetRot = glm::quat(q.w(), q.x(), q.y(), q.z());
 	}
 	else
 	{
-		const glm::vec3& pos = interpolator.getPosition();
-		const glm::quat &quat = interpolator.getRotation();
-		modelInstance->setModelTransform(glm::translate(pos) * glm::toMat4(quat));
+		targetPos = interpolator.getPosition();
+		targetRot = interpolator.getRotation();
 	}
+
+	if (!renderedTransformInitialized)
+	{
+		renderedPosition = targetPos;
+		renderedRotation = targetRot;
+		renderedTransformInitialized = true;
+	}
+	else
+	{
+		//While driven directly by physics (predicting a local collision, or the debug physics view), track the
+		//target essentially instantly - the whole point of local prediction is immediate feedback, so this shouldn't
+		//add lag on top of it. The smoothing is for reconciling with the authoritative/interpolated target instead,
+		//where a sudden jump (rather than the continuous motion physics/interpolation normally produce) is possible
+		float correctionRatePerSecond = (clientControlled || forceUsePhysicsTransform) ? 1000.0f : 15.0f;
+		float t = 1.0f - std::exp(-correctionRatePerSecond * (deltaT / 1000.0f));
+
+		renderedPosition = glm::mix(renderedPosition, targetPos, t);
+		renderedRotation = glm::slerp(renderedRotation, targetRot, t);
+	}
+
+	modelInstance->setModelTransform(glm::translate(renderedPosition) * glm::toMat4(renderedRotation));
 }
 
 void Dynamic::handOffFromPrediction(float idealBufferSize)

@@ -334,6 +334,25 @@ void LoopClient::predictLocalCollisions()
 	//hasn't caught up yet and causing a visible correction right in the middle of an otherwise-normal interaction
 	const unsigned int maxPredictionDurationMS = 1500;
 
+	//True if this object is touching some OTHER (non-player) dynamic right now - not safe to predict, since that's
+	//exactly where tiny numeric/ordering differences between the client's and server's independently-run simulations
+	//get amplified into completely different outcomes. A lone object interacting only with the player and static
+	//geometry (ground, bricks - identical on both sides since they don't move) stays close enough to the server's
+	//own version to predict safely; a multi-body pileup does not. See the brainstorm on why piles teleport on settle
+	auto touchingOtherDynamics = [&](const std::shared_ptr<Dynamic>& obj) -> bool
+	{
+		for (btRigidBody* other : pd.physicsWorld->getTouching(obj->body))
+		{
+			if (other->getUserIndex() != dynamicBody)
+				continue;
+
+			std::shared_ptr<Dynamic> otherDynamic = dynamicFromBody(other);
+			if (otherDynamic && !otherDynamic->clientControlled)
+				return true;
+		}
+		return false;
+	};
+
 	for (unsigned int i = 0; i < simulation.controlledDynamics.size(); i++)
 	{
 		std::shared_ptr<Dynamic> controlled = simulation.controlledDynamics[i];
@@ -346,7 +365,7 @@ void LoopClient::predictLocalCollisions()
 				continue;
 
 			std::shared_ptr<Dynamic> touched = dynamicFromBody(other);
-			if (touched && !touched->clientControlled)
+			if (touched && !touched->clientControlled && !touchingOtherDynamics(touched))
 			{
 				//Refreshed every frame we're actually touching it, so continuous pushing never runs into the cap
 				//below - it only starts counting once contact actually ends, which is the point it's meant to bound
@@ -368,7 +387,9 @@ void LoopClient::predictLocalCollisions()
 			bool stillMovingFast = d->body->getLinearVelocity().length2() > stillMovingSpeedThreshold * stillMovingSpeedThreshold;
 			bool underEpisodeCap = getTicksMS() < d->predictLocallyStartedAt + maxPredictionDurationMS;
 
-			if (stillPredicting && stillMovingFast && underEpisodeCap)
+			//Stop extending (letting the existing window run out naturally) the moment it touches another dynamic -
+			//e.g. a cube pushed off a ledge lands on top of a different cube mid-fall
+			if (stillPredicting && stillMovingFast && underEpisodeCap && !touchingOtherDynamics(d))
 				d->predictLocallyUntil = getTicksMS() + predictionWindowMS;
 		}
 	}
@@ -388,7 +409,7 @@ void LoopClient::renderEverything(float deltaT)
 				d->handOffFromPrediction(simulation.idealBufferSize);
 			d->wasPredictingLocally = predictingLocally;
 
-			d->updateSnapshot(pd.debugMenu->showDebugPhysicsView || predictingLocally);
+			d->updateSnapshot(deltaT, pd.debugMenu->showDebugPhysicsView || predictingLocally);
 		}
 	}
 

@@ -82,6 +82,9 @@ function gravityOn(d)
 	end
 end
 
+--From NetTypes/NetType.h's SimObjectType enum
+local STATIC_TYPE_ID = 2
+
 function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 
 	ignore = nil
@@ -89,11 +92,18 @@ function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 		ignore = client:getControlledIdx(0)
 	end
 	result = raycast(posX,posY,posZ,posX + dirX * 30,posY + dirY * 30,posZ + dirZ * 30,ignore)
-	
+
 	if result == nil then
 		return client,posX,posY,posZ,dirX,dirY,dirZ,mask
 	end
-	
+
+	--All of the buttons matched by id below are statics, and a static's id is only unique among other statics -
+	--a dynamic can easily share the same id, so without this a click on some unrelated dynamic could
+	--accidentally match one of these buttons
+	if result.type ~= STATIC_TYPE_ID then
+		return client,posX,posY,posZ,dirX,dirY,dirZ,mask
+	end
+
 	if result.id == jumpButton.id then
 		ignore:setPosition(50,50,0)
 	end

@@ -258,7 +258,28 @@ void ModelInstance::clearHighlight()
 
 void ModelInstance::renderSelfOutline() const
 {
-	type->renderSingleInstance(bufferOffset);
+	/*
+		Deliberately not using the bufferOffset field here. It's maintained incrementally (decremented on a
+		sibling instance's destruction - see ~ModelInstance), which can drift from this instance's true
+		position under bursts of creation/destruction, particularly client-side where object lifetime is
+		driven by network packets that aren't guaranteed to finish arriving in lockstep with the order they
+		were sent (confirmed empirically: spawning/despawning ~100 instances in quick succession left
+		bufferOffset corrupted). The main render path (Mesh::recompileInstances, called every frame) never
+		notices this because it rewrites its entire buffer from the live instances list by direct array
+		position every frame regardless of bufferOffset, silently self-healing any drift. This path draws
+		exactly one instance by index though, so a stale offset here doesn't cause a one-frame glitch, it
+		draws the wrong instance (or an out-of-bounds one) every frame. Look up the true current position
+		instead - cheap, since only a small number of instances are ever highlighted at once.
+	*/
+	if (type->allMeshes.empty())
+		return;
+
+	const std::vector<ModelInstance*>& liveInstances = type->allMeshes[0]->instances;
+	auto pos = std::find(liveInstances.begin(), liveInstances.end(), this);
+	if (pos == liveInstances.end())
+		return;
+
+	type->renderSingleInstance((unsigned int)(pos - liveInstances.begin()));
 }
 
 void Node::getFrame(const AnimationPlayback& anim, glm::vec3& pos, glm::mat4& rot) const
@@ -837,6 +858,12 @@ void Mesh::render(std::shared_ptr<ShaderManager> graphics, bool useMaterials) co
 void Mesh::renderSingleInstance(unsigned int bufferOffset) const
 {
 	if (nonRenderingMesh)
+		return;
+
+	//Every mesh of a model is kept parallel with the others (see ModelInstance::renderSelfOutline, which is the
+	//only caller and computes this index fresh each call), so this should never actually trigger - just a guard
+	//against reading past the buffer if that invariant is ever broken
+	if (bufferOffset >= instances.size())
 		return;
 
 	glBindVertexArray(vao);

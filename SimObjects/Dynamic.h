@@ -96,10 +96,20 @@ class Dynamic : public SimObject
 	//position the interpolator still had buffered from before the server noticed anything
 	void handOffFromPrediction(float idealBufferSize);
 
-	void updateSnapshot(bool forceUsePhysicsTransform = false);
+	void updateSnapshot(float deltaT, bool forceUsePhysicsTransform = false);
 
 	//Client only
 	Interpolator interpolator;
+
+	//Client only: the transform actually drawn, kept separate from whatever updateSnapshot's raw target (interpolated
+	//or live physics) says. Rather than assigning the target straight to the model each frame, we smoothly correct
+	//toward it - negligible lag for the normal case (the target is already moving smoothly frame to frame, so the
+	//correction closes almost the entire gap every frame), but a sudden large jump in the target (e.g. handing off
+	//from local prediction to a server position that resolved a collision differently) becomes a brief, smooth
+	//glide instead of an instant teleport. See updateSnapshot
+	glm::vec3 renderedPosition = glm::vec3(0, 0, 0);
+	glm::quat renderedRotation = glm::quat(1, 0, 0, 0);
+	bool renderedTransformInitialized = false;
 
 	//Server only, used to set physics body position
 	void setPosition(const btVector3& pos);
