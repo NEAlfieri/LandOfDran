@@ -101,6 +101,7 @@ enum FromServerPacketType : unsigned char
 	MeshAppearance = 12,	//Change something about how a dynamic instance is rendered, i.e. mesh colors
 	ServerPerformanceDetails = 13,	//Server sends client the slowest frame time in MS every second
 	CenterPrint = 14,		//Show a temporary message in the center of the client's screen
+	HighlightAppearance = 15,	//Apply or clear the outline/highlight effect on a dynamic or static instance
 };
 
 //For use with AcceptConnection packets

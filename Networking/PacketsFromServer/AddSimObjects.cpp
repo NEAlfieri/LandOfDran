@@ -67,6 +67,25 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					meshColors.push_back(color);
 				}
 
+				bool hasHighlight = packet->data[byteIterator] != 0;
+				byteIterator++;
+
+				glm::vec4 highlightColor(0, 0, 0, 0);
+				float highlightThickness = 0;
+				if (hasHighlight)
+				{
+					memcpy(&highlightColor.r, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.g, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.b, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.a, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightThickness, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+				}
+
 				std::shared_ptr<DynamicType> foundType = nullptr;
 				for (unsigned int i = 0; i < simulation.dynamicTypes.size(); i++)
 				{
@@ -108,6 +127,9 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 				//Set the mesh colors we read earlier
 				for (int i = 0; i < meshIdxs.size(); i++)
 					newStatic->setMeshColor(meshIdxs[i], meshColors[i]);
+
+				if (hasHighlight)
+					newStatic->setHighlight(highlightColor, highlightThickness);
 
 				if (byteIterator >= packet->dataLength)
 					break;
@@ -169,6 +191,25 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					meshColors.push_back(color);
 				}
 
+				bool hasHighlight = packet->data[byteIterator] != 0;
+				byteIterator++;
+
+				glm::vec4 highlightColor(0, 0, 0, 0);
+				float highlightThickness = 0;
+				if (hasHighlight)
+				{
+					memcpy(&highlightColor.r, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.g, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.b, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightColor.a, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+					memcpy(&highlightThickness, packet->data + byteIterator, sizeof(float));
+					byteIterator += sizeof(float);
+				}
+
 				//TODO: Actually return false if we can't find a type with the type ID given
 				if (!foundType)
 				{
@@ -189,6 +230,9 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 				//Set the mesh colors we read earlier
 				for(int i = 0; i < meshIdxs.size(); i++)
 					newDynamic->setMeshColor(meshIdxs[i], meshColors[i]);
+
+				if (hasHighlight)
+					newDynamic->setHighlight(highlightColor, highlightThickness);
 
 				if (byteIterator >= packet->dataLength)
 					break;

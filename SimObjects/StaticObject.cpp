@@ -102,6 +102,27 @@ ENetPacket* StaticObject::setMeshColor(const std::string& meshName, const glm::v
 	return ret;
 }
 
+void StaticObject::setHighlight(const glm::vec4& color, float thickness)
+{
+	modelInstance->setHighlight(color, thickness);
+}
+
+ENetPacket* StaticObject::makeHighlightPacket(const glm::vec4& color, float thickness) const
+{
+	ENetPacket* ret = enet_packet_create(NULL, sizeof(netIDType) + 2 + sizeof(glm::vec4) + sizeof(float), getFlagsFromChannel(OtherReliable));
+
+	ret->data[0] = (unsigned char)HighlightAppearance;
+	ret->data[1] = (unsigned char)StaticTypeId;
+	memcpy(ret->data + 2, &netID, sizeof(netIDType));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 0, &color.r, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 1, &color.g, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 2, &color.b, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 3, &color.a, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 4, &thickness, sizeof(float));
+
+	return ret;
+}
+
 /*
 	Note, does not include packet header or anything, only the marginal bytes added by* this* object in a bigger packet
 	Same goes for all packet related functions here
@@ -117,8 +138,12 @@ unsigned int StaticObject::getCreationPacketBytes() const
 	meshColorsSize *= sizeof(glm::vec4) + 1; //1 byte for mesh index
 	meshColorsSize++; //1 extra byte for how many mesh colors we are sending
 
+	float highlightThickness;
+	//1 flag byte for whether a highlight is present, plus its data if so
+	int highlightSize = 1 + (modelInstance->getHighlight(color, highlightThickness) ? sizeof(glm::vec4) + sizeof(float) : 0);
+
 	//Type id, object id, position, rotation, not compressed, friction, restitution
-	return sizeof(netIDType) * 2  + sizeof(float) * 9 + meshColorsSize + 1;
+	return sizeof(netIDType) * 2  + sizeof(float) * 9 + meshColorsSize + highlightSize + 1;
 }
 
 void StaticObject::addToCreationPacket(enet_uint8* dest) const
@@ -168,6 +193,27 @@ void StaticObject::addToCreationPacket(enet_uint8* dest) const
 
 	//Now we know how many meshes need updating
 	dest[meshColorsStart] = meshColors;
+
+	glm::vec4 highlightColor;
+	float highlightThickness;
+	bool hasHighlight = modelInstance->getHighlight(highlightColor, highlightThickness);
+
+	dest[byteIterator] = hasHighlight ? 1 : 0;
+	byteIterator++;
+
+	if (hasHighlight)
+	{
+		memcpy(dest + byteIterator, &highlightColor.r, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.g, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.b, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.a, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightThickness, sizeof(float));
+		byteIterator += sizeof(float);
+	}
 }
 
 void StaticObject::requestDestruction()

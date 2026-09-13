@@ -932,6 +932,87 @@ static int LUA_dynamicSetMeshColor(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicSetHighlight(lua_State* L)
+{
+	scope("(LUA) dynamic:setHighlight");
+
+	int args = lua_gettop(L);
+
+	if (args != 6)
+	{
+		error("Expected 6 arguments dynamic:setHighlight(r,g,b,a,thickness)");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	float thickness = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float a = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float b = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float g = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float r = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	glm::vec4 color(r, g, b, a);
+	dynamic->setHighlight(color, thickness);
+
+	ENetPacket* packet = dynamic->makeHighlightPacket(color, thickness);
+	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
+static int LUA_dynamicClearHighlight(lua_State* L)
+{
+	scope("(LUA) dynamic:clearHighlight");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument dynamic:clearHighlight()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	glm::vec4 color(0, 0, 0, 0);
+	dynamic->setHighlight(color, 0.0f);
+
+	ENetPacket* packet = dynamic->makeHighlightPacket(color, 0.0f);
+	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
 static int LUA_newDynamicType(lua_State* L)
 {
 	scope("(LUA) newDynamicType");
@@ -1434,7 +1515,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "raycast", LUA_raycast);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[28];
+	luaL_Reg* regs = new luaL_Reg[30];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1458,6 +1539,8 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "getMass",    LUA_dynamicGetMass };
 	regs[iter++] = { "setMassProps",    LUA_dynamicSetMassProps };
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
+	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
+	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };
 	regs[iter++] = { "getNumControllers", LUA_dynamicGetNumControllers };
 	regs[iter++] = { "getControllerIdx", LUA_dynamicGetControllerIdx };
 	regs[iter++] = { "snapToCursor", LUA_dynamicSnapToCursor };

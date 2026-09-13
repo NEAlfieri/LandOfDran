@@ -37,6 +37,17 @@ ExecutableArguments::ExecutableArguments(int argc, char** argv)
 			silentMode = true;
 			continue;
 		}
+
+		if (strcmp(argv[a], "singleplayer") == 0)
+		{
+			autoSinglePlayer = true;
+			continue;
+		}
+		if (strcmp(argv[a], "-singleplayer") == 0)
+		{
+			autoSinglePlayer = true;
+			continue;
+		}
 	}
 }
 

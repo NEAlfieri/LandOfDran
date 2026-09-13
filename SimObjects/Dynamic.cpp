@@ -288,6 +288,27 @@ ENetPacket* Dynamic::setMeshColor(const std::string &meshName,const glm::vec4& c
 	return ret;
 }
 
+void Dynamic::setHighlight(const glm::vec4& color, float thickness)
+{
+	modelInstance->setHighlight(color, thickness);
+}
+
+ENetPacket* Dynamic::makeHighlightPacket(const glm::vec4& color, float thickness) const
+{
+	ENetPacket* ret = enet_packet_create(NULL, sizeof(netIDType) + 2 + sizeof(glm::vec4) + sizeof(float), getFlagsFromChannel(OtherReliable));
+
+	ret->data[0] = (unsigned char)HighlightAppearance;
+	ret->data[1] = (unsigned char)DynamicTypeId;
+	memcpy(ret->data + 2, &netID, sizeof(netIDType));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 0, &color.r, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 1, &color.g, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 2, &color.b, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 3, &color.a, sizeof(float));
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 4, &thickness, sizeof(float));
+
+	return ret;
+}
+
 void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 {
 	requiresUpdate = false;
@@ -411,7 +432,11 @@ unsigned int Dynamic::getCreationPacketBytes() const
 	meshColorsSize *= sizeof(glm::vec4) + 1; //1 byte for mesh index
 	meshColorsSize++; //1 extra byte for how many mesh colors we are sending
 
-	return meshColorsSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2;
+	float highlightThickness;
+	//1 flag byte for whether a highlight is present, plus its data if so
+	int highlightSize = 1 + (modelInstance->getHighlight(color, highlightThickness) ? sizeof(glm::vec4) + sizeof(float) : 0);
+
+	return meshColorsSize + highlightSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2;
 }
 
 void Dynamic::addToCreationPacket(enet_uint8* dest) const
@@ -457,6 +482,27 @@ void Dynamic::addToCreationPacket(enet_uint8* dest) const
 
 	//Now we know how many meshes need updating
 	dest[meshColorsStart] = meshColors;
+
+	glm::vec4 highlightColor;
+	float highlightThickness;
+	bool hasHighlight = modelInstance->getHighlight(highlightColor, highlightThickness);
+
+	dest[byteIterator] = hasHighlight ? 1 : 0;
+	byteIterator++;
+
+	if (hasHighlight)
+	{
+		memcpy(dest + byteIterator, &highlightColor.r, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.g, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.b, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightColor.a, sizeof(float));
+		byteIterator += sizeof(float);
+		memcpy(dest + byteIterator, &highlightThickness, sizeof(float));
+		byteIterator += sizeof(float);
+	}
 }
 
 void Dynamic::requestDestruction()

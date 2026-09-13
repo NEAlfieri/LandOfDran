@@ -1,5 +1,7 @@
 #include "Mesh.h"
 
+#include <tuple>
+
 //Used in Model::Model to read what flags we want to load our model with from a text file
 std::map<std::string, int> aiProcessMap = {
 	{"CalcTangentSpace",aiProcess_CalcTangentSpace},
@@ -218,6 +220,45 @@ void ModelInstance::setDecal(int meshId, int decalId)
 void ModelInstance::removeDecal(unsigned int meshId)
 {
 	setDecal(meshId, -1);
+}
+
+bool ModelInstance::getHighlight(glm::vec4& color, float& thickness) const
+{
+	color = highlightColor;
+	thickness = highlightThickness;
+	return highlightColor.a > 0;
+}
+
+std::vector<ModelInstance*> ModelInstance::highlightedInstances;
+
+void ModelInstance::setHighlight(const glm::vec4& color, float thickness)
+{
+	bool wasActive = highlightColor.a > 0;
+	bool nowActive = color.a > 0;
+
+	highlightColor = color;
+	highlightThickness = thickness;
+	highlightUpdated = true;
+	anythingUpdated = true;
+
+	if (nowActive && !wasActive)
+		highlightedInstances.push_back(this);
+	else if (!nowActive && wasActive)
+	{
+		auto pos = std::find(highlightedInstances.begin(), highlightedInstances.end(), this);
+		if (pos != highlightedInstances.end())
+			highlightedInstances.erase(pos);
+	}
+}
+
+void ModelInstance::clearHighlight()
+{
+	setHighlight(glm::vec4(0, 0, 0, 0), 0);
+}
+
+void ModelInstance::renderSelfOutline() const
+{
+	type->renderSingleInstance(bufferOffset);
 }
 
 void Node::getFrame(const AnimationPlayback& anim, glm::vec3& pos, glm::mat4& rot) const
@@ -449,7 +490,7 @@ void ModelInstance::calculateMeshTransforms(float deltaT,glm::mat4 currentTransf
 
 void ModelInstance::performMeshBufferUpdates()
 {
-	if (!anythingUpdated && playingAnimations.size() < 0 && !wholeModelTransformUpdated)
+	if (!anythingUpdated && playingAnimations.size() < 0 && !wholeModelTransformUpdated && !highlightUpdated)
 		return;
 	wholeModelTransformUpdated = false;
 
@@ -458,6 +499,15 @@ void ModelInstance::performMeshBufferUpdates()
 	{
 		if (type->allMeshes[a]->nonRenderingMesh)
 			continue;
+
+		if (highlightUpdated)
+		{
+			glBindBuffer(GL_ARRAY_BUFFER, type->allMeshes[a]->buffers[HighlightColor]);
+			glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * bufferOffset, sizeof(glm::vec4), &highlightColor[0]);
+
+			glBindBuffer(GL_ARRAY_BUFFER, type->allMeshes[a]->buffers[HighlightThickness]);
+			glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * bufferOffset, sizeof(float), &highlightThickness);
+		}
 
 		if (hidden)
 		{
@@ -493,6 +543,7 @@ void ModelInstance::performMeshBufferUpdates()
 		}
 	}
 
+	highlightUpdated = false;
 	transformUpdated = false;
 	anythingUpdated = false;
 }
@@ -601,8 +652,11 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 
 	glGenVertexArrays(1, &vao);
 
-	glGenBuffers(8, buffers);
+	glGenBuffers(MeshBufferCount, buffers);
 	glGenBuffers(1, &indexBuffer);
+
+	//From here on, vao/buffers/indexBuffer are real GL objects that the destructor needs to clean up
+	hasGLResources = true;
 
 	glBindVertexArray(vao);
 
@@ -638,6 +692,20 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 		glVertexAttribDivisor(    ModelTransform + i, 1);
 	}
 
+	//Outline/highlight color for the whole model instance, alpha <= 0 means no highlight (per-instance, only read by the outline shader)
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightColor]);
+	glEnableVertexAttribArray(HighlightColor);
+	glVertexAttribPointer(HighlightColor, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glVertexAttribDivisor(HighlightColor, 1);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * InstanceBufferPageSize, (void*)0, GL_DYNAMIC_DRAW);
+
+	//How far to extrude the outline pass along vertex normals, in world units (per-instance, only read by the outline shader)
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightThickness]);
+	glEnableVertexAttribArray(HighlightThickness);
+	glVertexAttribPointer(HighlightThickness, 1, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glVertexAttribDivisor(HighlightThickness, 1);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * InstanceBufferPageSize, (void*)0, GL_DYNAMIC_DRAW);
+
 	instancesAllocated = InstanceBufferPageSize;
 
 	//For the other 5 layout mapped buffers as well as the index buffer, we need to get data from Assimp:
@@ -655,6 +723,35 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 	{
 		fillBuffer(NormalVector, src->mNormals, src->mNumVertices * sizeof(aiVector3D), 3);
 		hasNormals = true;
+
+		/*
+			See the SmoothNormal comment in Mesh.h: NormalVector above can be a hard per-face normal, which
+			would make the outline pass's extruded shell visibly tear apart at every edge. Build a second
+			normal channel by averaging together the normals of every vertex that shares a position, so
+			adjacent faces agree on which way to push out and the shell stays welded.
+		*/
+		std::vector<aiVector3D> smoothNormals(src->mNumVertices, aiVector3D(0, 0, 0));
+		std::map<std::tuple<float, float, float>, std::vector<unsigned int>> positionGroups;
+		for (unsigned int v = 0; v < src->mNumVertices; v++)
+		{
+			const aiVector3D& p = src->mVertices[v];
+			positionGroups[std::make_tuple(p.x, p.y, p.z)].push_back(v);
+		}
+
+		for (auto& group : positionGroups)
+		{
+			aiVector3D sum(0, 0, 0);
+			for (unsigned int idx : group.second)
+				sum += src->mNormals[idx];
+
+			if (sum.SquareLength() > 0.0001f)
+				sum.Normalize();
+
+			for (unsigned int idx : group.second)
+				smoothNormals[idx] = sum;
+		}
+
+		fillBuffer(SmoothNormal, smoothNormals.data(), (unsigned int)smoothNormals.size() * sizeof(aiVector3D), 3);
 	}
 
 	if (src->HasTangentsAndBitangents())
@@ -708,8 +805,15 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 
 Mesh::~Mesh()
 {
+	//Server-side meshes (no GL context ever exists on a dedicated server) and non-rendering meshes
+	//(e.g. "collision") never allocated these - calling glDelete* on them would either crash (null
+	//GL function pointers with no context) or delete whatever garbage handle happened to be left in
+	//these uninitialized fields
+	if (!hasGLResources)
+		return;
+
 	glDeleteBuffers(1, &indexBuffer);
-	glDeleteBuffers(8, buffers); 
+	glDeleteBuffers(MeshBufferCount, buffers);
 
 	glDeleteVertexArrays(1, &vao);
 }
@@ -727,6 +831,16 @@ void Mesh::render(std::shared_ptr<ShaderManager> graphics, bool useMaterials) co
 
 	glBindVertexArray(vao);
 	glDrawElementsInstanced(GL_TRIANGLES, vertexCount, GL_UNSIGNED_SHORT, (void*)0, (GLsizei)instances.size());
+	glBindVertexArray(0);
+}
+
+void Mesh::renderSingleInstance(unsigned int bufferOffset) const
+{
+	if (nonRenderingMesh)
+		return;
+
+	glBindVertexArray(vao);
+	glDrawElementsInstancedBaseInstance(GL_TRIANGLES, vertexCount, GL_UNSIGNED_SHORT, (void*)0, 1, bufferOffset);
 	glBindVertexArray(0);
 }
 
@@ -771,6 +885,12 @@ ModelInstance::ModelInstance(Model* _type)
 
 ModelInstance::~ModelInstance()
 {
+	//Safety net: an object shouldn't normally be destroyed while still highlighted (callers clear it first),
+	//but avoid ever leaving a dangling pointer in this list if one is
+	auto highlightPos = std::find(highlightedInstances.begin(), highlightedInstances.end(), this);
+	if (highlightPos != highlightedInstances.end())
+		highlightedInstances.erase(highlightPos);
+
 	if (!type)
 		return;
 
@@ -1343,6 +1463,8 @@ void Mesh::recompileInstances()
 	std::vector<glm::mat4> transforms;
 	std::vector<unsigned int> flags;
 	std::vector<glm::vec4> colors;
+	std::vector<glm::vec4> highlightColors;
+	std::vector<float> highlightThicknesses;
 
 	for (unsigned int a = 0; a < instances.size(); a++)
 	{
@@ -1352,6 +1474,8 @@ void Mesh::recompileInstances()
 			transforms.push_back(instances[a]->wholeModelTransform * instances[a]->MeshTransforms[meshIndex]);
 		flags.push_back(instances[a]->MeshFlags[meshIndex]);
 		colors.push_back(instances[a]->MeshColors[meshIndex]);
+		highlightColors.push_back(instances[a]->highlightColor);
+		highlightThicknesses.push_back(instances[a]->highlightThickness);
 	}
 
 	if (transforms.size() == 0)
@@ -1371,6 +1495,8 @@ void Mesh::recompileInstances()
 			transforms.push_back(glm::mat4(1.0));
 			flags.push_back(0);
 			colors.push_back(glm::vec4(0, 0, 0, 0));
+			highlightColors.push_back(glm::vec4(0, 0, 0, 0));
+			highlightThicknesses.push_back(0);
 		}
 
 		glBindBuffer(GL_ARRAY_BUFFER, buffers[ModelTransform]);
@@ -1381,6 +1507,12 @@ void Mesh::recompileInstances()
 
 		glBindBuffer(GL_ARRAY_BUFFER, buffers[PreColor]);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * instancesAllocated, &colors[0][0], GL_DYNAMIC_DRAW);
+
+		glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightColor]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * instancesAllocated, &highlightColors[0][0], GL_DYNAMIC_DRAW);
+
+		glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightThickness]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * instancesAllocated, &highlightThicknesses[0], GL_DYNAMIC_DRAW);
 
 		return;
 	}
@@ -1393,6 +1525,12 @@ void Mesh::recompileInstances()
 
 	glBindBuffer(GL_ARRAY_BUFFER, buffers[PreColor]);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec4) * colors.size(), &colors[0][0]);
+
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightColor]);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec4) * highlightColors.size(), &highlightColors[0][0]);
+
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[HighlightThickness]);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * highlightThicknesses.size(), &highlightThicknesses[0]);
 }
 
 void Model::updateAll(float deltaT)
@@ -1407,6 +1545,12 @@ void Model::render(std::shared_ptr<ShaderManager> graphics,bool useMaterials) co
 {
 	for (unsigned int a = 0; a < allMeshes.size(); a++)
 		allMeshes[a]->render(graphics, useMaterials);
+}
+
+void Model::renderSingleInstance(unsigned int bufferOffset) const
+{
+	for (unsigned int a = 0; a < allMeshes.size(); a++)
+		allMeshes[a]->renderSingleInstance(bufferOffset);
 }
 
 Model::~Model()

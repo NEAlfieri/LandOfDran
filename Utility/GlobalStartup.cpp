@@ -36,13 +36,17 @@ bool globalStartup(std::shared_ptr<SettingManager> settings,const ExecutableArgu
     if (SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24) != 0)
         error("Setting attribute SDL_GL_DEPTH_SIZE failed: " + std::string(SDL_GetError()));
 
+    //Needed for the per-object stencil masking used by the highlight/outline X-ray effect, see LoopClient::renderEverything
+    if (SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8) != 0)
+        error("Setting attribute SDL_GL_STENCIL_SIZE failed: " + std::string(SDL_GetError()));
+
     if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, settings->getInt("graphics/openglmajor")) != 0)
         error("Setting attribute SDL_GL_CONTEXT_MAJOR_VERSION failed: " + std::string(SDL_GetError()));
 
     if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, settings->getInt("graphics/openglminor")) != 0)
         error("Setting attribute SDL_GL_CONTEXT_MINOR_VERSION failed: " + std::string(SDL_GetError()));
 
-    if (SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, settings->getInt("graphics/mutlisamplebuffers")) != 0)
+    if (SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, settings->getInt("graphics/multisamplebuffers")) != 0)
         error("Setting attribute SDL_GL_MULTISAMPLEBUFFERS failed: " + std::string(SDL_GetError()));
 
     if (SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, settings->getInt("graphics/multisamplesamples")) != 0)

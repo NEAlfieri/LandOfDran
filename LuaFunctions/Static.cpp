@@ -53,6 +53,87 @@ static int LUA_staticSetMeshColor(lua_State* L)
 	return 0;
 }
 
+static int LUA_staticSetHighlight(lua_State* L)
+{
+	scope("(LUA) static:setHighlight");
+
+	int args = lua_gettop(L);
+
+	if (args != 6)
+	{
+		error("Expected 6 arguments static:setHighlight(r,g,b,a,thickness)");
+		return 0;
+	}
+
+	if (!LUA_pd->statics)
+	{
+		error("statics ObjHolder is null");
+		return 0;
+	}
+
+	float thickness = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float a = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float b = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float g = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float r = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<StaticObject> staticObject = LUA_pd->statics->popLua(L);
+
+	if (!staticObject)
+	{
+		error("Invalid static object passed, was it deleted already?");
+		return 0;
+	}
+
+	glm::vec4 color(r, g, b, a);
+	staticObject->setHighlight(color, thickness);
+
+	ENetPacket* packet = staticObject->makeHighlightPacket(color, thickness);
+	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
+static int LUA_staticClearHighlight(lua_State* L)
+{
+	scope("(LUA) static:clearHighlight");
+
+	int args = lua_gettop(L);
+
+	if (args != 1)
+	{
+		error("Expected 1 argument static:clearHighlight()");
+		return 0;
+	}
+
+	if (!LUA_pd->statics)
+	{
+		error("statics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<StaticObject> staticObject = LUA_pd->statics->popLua(L);
+
+	if (!staticObject)
+	{
+		error("Invalid static object passed, was it deleted already?");
+		return 0;
+	}
+
+	glm::vec4 color(0, 0, 0, 0);
+	staticObject->setHighlight(color, 0.0f);
+
+	ENetPacket* packet = staticObject->makeHighlightPacket(color, 0.0f);
+	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
 static int LUA_staticGetFriction(lua_State* L)
 {
 	scope("(LUA) static:getFriction");
@@ -495,7 +576,7 @@ luaL_Reg* getStaticFunctions(lua_State* L)
 	lua_register(L, "getNumStatics", getNumStatics);
 
 	//Create table of static metatable functions:
-	luaL_Reg* regs = new luaL_Reg[11];
+	luaL_Reg* regs = new luaL_Reg[13];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_staticDestroy };
@@ -506,6 +587,8 @@ luaL_Reg* getStaticFunctions(lua_State* L)
 	regs[iter++] = { "setFriction",     LUA_staticSetFriction };
 	regs[iter++] = { "setRestitution",     LUA_staticSetRestitution };
 	regs[iter++] = { "setMeshColor",     LUA_staticSetMeshColor };
+	regs[iter++] = { "setHighlight",     LUA_staticSetHighlight };
+	regs[iter++] = { "clearHighlight",     LUA_staticClearHighlight };
 	regs[iter++] = { "setColliding",     LUA_staticSetColliding };
 	regs[iter++] = { "setHidden",     LUA_staticSetHidden };
 	regs[iter++] = { NULL, NULL };

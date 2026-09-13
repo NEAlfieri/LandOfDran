@@ -8,3 +8,5 @@ modelShadow	vert	modelShadow.vert.glsl
 modelShadow	geom	modelShadow.geom.glsl
 brick	frag	model.frag.glsl
 brick	vert	brick.vert.glsl
+outline	vert	highlight.vert.glsl
+outline	frag	highlight.frag.glsl

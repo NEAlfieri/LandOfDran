@@ -100,6 +100,8 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getMass()` | none | value | Current mass. |
 | `dynamic:setMassProps(mass, centerX, centerY, centerZ)` | mass and local center of mass | none | Sets mass and center of mass together. |
 | `dynamic:setMeshColor(meshName, r, g, b, a)` | mesh name within the model, color | none | Recolors one mesh of the model and broadcasts the change to clients. |
+| `dynamic:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
+| `dynamic:clearHighlight()` | none | none | Removes the outline/highlight effect. |
 | `dynamic:getNumControllers()` | none | count | How many clients currently control this dynamic (usually 0 or 1; 0 means it's a normal server-simulated object, not a player). |
 | `dynamic:getControllerIdx(index)` | 0-based index | Client | The client controlling this dynamic at that index. |
 | `dynamic:snapToCursor(client, xOffset, yOffset, zOffset)` | client to attach to; view-space offset: `x` = right, `y` = up, `z` = distance in front of the camera | none | Attaches the dynamic to a client's cursor: every physics tick its position is recomputed from that client's live camera position/direction plus this offset, and its gravity is disabled. Calling this again while already snapped just updates the client/offset. |
@@ -134,6 +136,8 @@ Statics are non-moving objects that still have a mesh and physics presence (wall
 | `static:getRestitution()` | none | value | Current restitution. |
 | `static:setRestitution(restitution)` | 0-10, clamped | none | Sets restitution. |
 | `static:setMeshColor(meshName, r, g, b, a)` | mesh name, color | none | Recolors one mesh and broadcasts the change. |
+| `static:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
+| `static:clearHighlight()` | none | none | Removes the outline/highlight effect. |
 | `static:setColliding(bool)` | true/false | none | Enables or disables collision for the object without removing it. |
 | `static:setHidden(bool)` | true/false | none | Shows or hides the object client-side. |
 

@@ -146,6 +146,10 @@ KickReason Client::run(const ClientProgramData& pd,Simulation &simulation, const
 						packets.push_back(new CenterPrintPacket(packetHoldTime, event.packet));
 						return NotKicked;
 
+					case HighlightAppearance:
+						packets.push_back(new HighlightAppearancePacket(packetHoldTime, event.packet));
+						return NotKicked;
+
 					//Can't process packet
 					case InvalidServer:
 					default:

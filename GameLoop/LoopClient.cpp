@@ -452,6 +452,52 @@ void LoopClient::renderEverything(float deltaT)
 	pd.shaders->updateBasicUBO();
 	testBricks.render(pd.shaders->brickShader->getUniformLocation("brickChunkPos"));
 
+	//Outlines/highlights: a selection-style indicator that should show through everything in the scene except
+	//its own source object (so it doesn't just paint a solid blob over the object it's highlighting) and other
+	//highlights (so overlapping highlights never fight over which one is "in front"). Scene depth is ignored
+	//entirely (X-ray), and a per-object stencil mask excludes exactly that object's own silhouette from its
+	//own outline. Processed one highlighted instance at a time since each needs its own stencil mask; expected
+	//to be a small handful of instances at most (this is a selection indicator, not a bulk rendering effect)
+	if (!ModelInstance::highlightedInstances.empty())
+	{
+		pd.shaders->outlineShader->use();
+		GLint maskPassUniform = pd.shaders->outlineShader->getUniformLocation("maskPass");
+
+		glDisable(GL_DEPTH_TEST);
+		glDepthMask(GL_FALSE);
+		glEnable(GL_STENCIL_TEST);
+		glStencilMask(0xFF);
+
+		for (ModelInstance* instance : ModelInstance::highlightedInstances)
+		{
+			glClear(GL_STENCIL_BUFFER_BIT);
+
+			//Mask pass: mark this instance's own true (non-inflated) silhouette in the stencil buffer, contributing nothing to color
+			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+			glCullFace(GL_BACK);
+			glStencilFunc(GL_ALWAYS, 1, 0xFF);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+			glUniform1i(maskPassUniform, 1);
+			instance->renderSelfOutline();
+
+			//Outline pass: draw the extruded shell everywhere except where the mask above just marked
+			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+			glCullFace(GL_FRONT);
+			glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glUniform1i(maskPassUniform, 0);
+			instance->renderSelfOutline();
+		}
+
+		glDisable(GL_BLEND);
+		glDisable(GL_STENCIL_TEST);
+		glDepthMask(GL_TRUE);
+		glEnable(GL_DEPTH_TEST);
+		glCullFace(GL_BACK);
+	}
+
 	//GUI
 	bool crossHair = false;
 	if (simulation.camera)
@@ -639,6 +685,15 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 	//Create our program window
 	pd.context = std::make_shared<RenderContext>(settings);
+	if (!pd.context->isValid())
+	{
+		//RenderContext already logged exactly what went wrong (window/GL context creation failure). Bail out
+		//here instead of continuing on to create ImGui/ShaderManager/etc against a nonexistent GL context,
+		//which previously crashed on a null GL function pointer far away from the actual root cause.
+		error("Could not create a valid render context, aborting client startup.");
+		return;
+	}
+
 	pd.gui = std::make_shared<UserInterface>();
 	pd.gui->updateSettings(settings);
 	pd.settingsMenu = pd.gui->createWindow<SettingsMenu>(settings, pd.input);
@@ -690,6 +745,10 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	printAllGraphicsErrors("End of initalization");
 
 	valid = true;
+
+	//Automated testing convenience: skip the server browser and get straight into a game, same as clicking "Start Server"
+	if (cmdArgs.autoSinglePlayer)
+		hostSinglePlayer(cmdArgs, settings);
 
 	/* {
 		BrickRenderData* tmp = new BrickRenderData;

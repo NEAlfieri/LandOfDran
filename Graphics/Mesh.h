@@ -24,8 +24,21 @@ enum LayoutSlot
 	TextureCoords = 4,		//vec2 - uvs
 	PreColor = 5,			//vec4 - Optional per-brick or per-mesh color before material application (per-instance)
 	InstanceFlags = 6,		//int  - Contains additional per-instance info such as decal used, or mouse-picking info
-	ModelTransform = 7		//mat4 - Contains the model matrix if rendering instanced models (per-instance)
+	ModelTransform = 7,	//mat4 - Contains the model matrix if rendering instanced models (per-instance), occupies locations 7-10
+	//ModelTransform occupies locations 7,8,9,10 (a mat4 needs 4 attribute locations), so the next free slot is 11
+	HighlightColor = 11,		//vec4 - Outline/highlight color for the whole model instance, alpha <= 0 means no highlight (per-instance)
+	HighlightThickness = 12,	//float - How far (in world units) to extrude the outline pass along vertex normals (per-instance)
+	/*
+		vec3 - Per-vertex, used only by the outline pass to decide which way to push a vertex out.
+		NormalVector above is frequently a hard per-face normal (adjacent faces don't share vertices with
+		matching normals), which would tear the extruded outline shell apart at every edge. This is instead
+		an average of the per-face normals of every vertex that shares a position, so the shell stays welded.
+	*/
+	SmoothNormal = 13
 };
+
+//Number of GL buffer objects a Mesh allocates, must be at least SmoothNormal + 1
+#define MeshBufferCount 14
 
 #define MeshFlag_UsePickingColor  256     //Render the mesh with colors for mouse picking
 //Bits 0-7 would then be the mouse picking ID if that flag is enabled
@@ -136,6 +149,15 @@ class ModelInstance
 	std::vector<glm::vec4>		MeshColors;
 	std::vector<bool>			MeshColorUsed; //Mostly for use with server to not send default mesh colors over
 
+	/*
+		Outline/highlight effect for the whole model instance (not per-mesh, unlike MeshColors above)
+		but still uploaded per-mesh since that's how the instanced buffers are laid out.
+		Alpha <= 0 means no highlight is currently applied.
+	*/
+	glm::vec4 highlightColor = glm::vec4(0, 0, 0, 0);
+	float highlightThickness = 0;
+	bool highlightUpdated = true;
+
 	//Were any of the above properties changed since last frame:
 
 	/*
@@ -189,6 +211,25 @@ class ModelInstance
 	//Calls setDecal with decalId = -1
 	void removeDecal(unsigned int meshId);
 
+	//Returns true if a highlight/outline is currently applied (color.a > 0), false otherwise. color/thickness are always written either way
+	bool getHighlight(glm::vec4& color, float& thickness) const;
+	//Applies an outline/highlight effect to the whole model instance, pass color.a <= 0 (or call clearHighlight) to remove it
+	void setHighlight(const glm::vec4& color, float thickness);
+	//Calls setHighlight with a fully transparent color, removing any current highlight
+	void clearHighlight();
+
+	/*
+		Every ModelInstance that currently has an active highlight (color.a > 0), maintained by setHighlight/clearHighlight
+		and this instance's destructor. LoopClient::renderEverything walks this directly to draw the highlight/outline
+		X-ray pass, rather than looping over every SimObject to find the handful that are actually highlighted.
+	*/
+	static std::vector<ModelInstance*> highlightedInstances;
+
+	//Renders just this one instance (all of its meshes) with the outline shader, using its buffer offset via
+	//glDrawElementsInstancedBaseInstance. Assumes the outline shader/GL state (stencil, cull face, maskPass uniform,
+	//etc) has already been set up by the caller - see LoopClient::renderEverything for the full per-instance sequence
+	void renderSelfOutline() const;
+
 	/*
 		Calculates the transform of each indivdual node based on things, see above
 		Also handles playing of animations
@@ -228,6 +269,15 @@ class Mesh
 	//For collision meshes, binding points, other stuff that might be included with models we don't want to see
 	bool nonRenderingMesh = false;
 
+	/*
+		True only once vao/buffers/indexBuffer below have actually been allocated via the glGen family of calls.
+		Server-side meshes return out of the constructor before ever reaching that point (dedicated
+		servers never create a GL context, so those functions are null function pointers there), and
+		nonRenderingMesh meshes (e.g. "collision") also skip it - both must leave this false so the
+		destructor knows not to call the glDelete family of functions on handles that were never created.
+	*/
+	bool hasGLResources = false;
+
 	//How many instances worth of space we've allocated in each of the instanced buffers
 	unsigned int instancesAllocated = 0;
 
@@ -265,7 +315,7 @@ class Mesh
 	GLuint vao;
 
 	//Buffers correspond to LayoutSlot
-	GLuint buffers[8];
+	GLuint buffers[MeshBufferCount];
 
 	/*
 		Additional buffer that holds the index of the next vertex in the above buffers so
@@ -288,6 +338,10 @@ class Mesh
 
 	//Render all instances of this particular mesh
 	void render(std::shared_ptr<ShaderManager> graphics, bool useMaterials = true) const;
+
+	//Renders exactly one instance of this mesh (by its buffer offset) using the outline shader, assumed already
+	//in use. Used for the highlight/outline X-ray effect, one ModelInstance at a time - see ModelInstance::renderSelfOutline
+	void renderSingleInstance(unsigned int bufferOffset) const;
 };
 
 class Node
@@ -436,6 +490,10 @@ class Model
 
 	//Calls render on each mesh
 	void render(std::shared_ptr<ShaderManager> graphics,bool useMaterials = true) const;
+
+	//Calls renderSingleInstance(bufferOffset) on each mesh, assumes the outline shader is already bound.
+	//Used for the highlight/outline X-ray effect - see ModelInstance::renderSelfOutline
+	void renderSingleInstance(unsigned int bufferOffset) const;
 
 	//Calculates collisionHalfExtents and collisionOffset, called in constructor
 	void calculateCollisionBox(const aiScene* scene);

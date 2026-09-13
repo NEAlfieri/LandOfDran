@@ -69,6 +69,9 @@ class ShaderManager
 	//Program for drawing bricks to screen
 	Program* brickShader = new Program();
 
+	//Program for drawing the outline/highlight effect on top of normal models
+	Program* outlineShader = new Program();
+
 	/*
 		Reads a text file to see where we should find the shader files for the above programs
 		Returns true if there was an error with at least one shader compilation

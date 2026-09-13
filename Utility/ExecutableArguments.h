@@ -35,6 +35,10 @@ struct ExecutableArguments
 	//Are we forgoing attempting to place our server on the server list
 	bool silentMode = false;
 
+	//Skip the server browser menu and immediately host+join a local single-player game, same as clicking
+	//"Start Server". Meant for automated testing (screenshots, etc) where nothing can click through the menu
+	bool autoSinglePlayer = false;
+
 	//Parse flags and data from command line arguments on start-up
 	ExecutableArguments(int argc, char** argv);
 };

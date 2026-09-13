@@ -82,6 +82,13 @@ public:
 	//Server side: returns a fully created packet ready to broadcast to relay the mesh color update
 	ENetPacket* setMeshColor(const std::string& meshName, const glm::vec4& color);
 
+	//Applies (or, if color.a <= 0, clears) an outline/highlight effect on this object. Used both client-side when
+	//applying a packet and server-side for bookkeeping so late-joining clients get it baked into their creation packet
+	void setHighlight(const glm::vec4& color, float thickness);
+
+	//Server side: returns a fully created packet ready to broadcast to relay the highlight update, does not apply it locally
+	ENetPacket* makeHighlightPacket(const glm::vec4& color, float thickness) const;
+
 	~StaticObject();
 };
 

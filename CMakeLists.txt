@@ -196,6 +196,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/ServerPerformanceDetails.h"
 "Networking/PacketsFromServer/CenterPrint.h"
 "Networking/PacketsFromServer/CenterPrint.cpp"
+"Networking/PacketsFromServer/HighlightAppearance.h"
+"Networking/PacketsFromServer/HighlightAppearance.cpp"
 
 "Networking/PacketsFromClient/ConnectionRequest.cpp" 
 "Networking/PacketsFromClient/FinishedLoading.cpp" 
