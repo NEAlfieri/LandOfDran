@@ -34,11 +34,19 @@ local BOB_TICK_MS = 100
 --Speed (world units/sec) a thrown item is launched at, along the direction you're looking
 local THROW_SPEED = 40
 
+--Highlight applied to an item while it's being carried (r, g, b, a, thickness), see dynamic:setHighlight
+local CARRY_HIGHLIGHT_R = 1
+local CARRY_HIGHLIGHT_G = 0
+local CARRY_HIGHLIGHT_B = 0
+local CARRY_HIGHLIGHT_A = 0.5
+local CARRY_HIGHLIGHT_THICKNESS = 0.25
+
 --clientId -> {itemId, bobPhase}, just enough bookkeeping to know what a client is holding
 heldItemByClient = {}
 
 function pickupItem(client, item)
 	item:snapToCursor(client, CARRY_RIGHT, CARRY_HEIGHT, CARRY_FORWARD)
+	item:setHighlight(CARRY_HIGHLIGHT_R, CARRY_HIGHLIGHT_G, CARRY_HIGHLIGHT_B, CARRY_HIGHLIGHT_A, CARRY_HIGHLIGHT_THICKNESS)
 	heldItemByClient[client:getID()] = { itemId = item.id, bobPhase = 0 }
 end
 
@@ -51,6 +59,7 @@ function dropItem(clientId)
 	local item = getDynamicId(held.itemId)
 	if item ~= nil then
 		item:unsnap()
+		item:clearHighlight()
 	end
 
 	heldItemByClient[clientId] = nil
@@ -65,6 +74,7 @@ function throwItem(clientId, dirX, dirY, dirZ)
 	local item = getDynamicId(held.itemId)
 	if item ~= nil then
 		item:unsnap()
+		item:clearHighlight()
 		item:setVelocity(dirX * THROW_SPEED, dirY * THROW_SPEED, dirZ * THROW_SPEED)
 	end
 
@@ -137,6 +147,11 @@ function updateHeldItemBob()
 		local snapClient = item ~= nil and item:getSnapClient() or nil
 
 		if item == nil or snapClient == nil then
+			--It stopped being snapped through some path other than dropItem/throwItem (e.g. unsnapped
+			--directly elsewhere) - still on the object, so make sure the highlight doesn't get stuck
+			if item ~= nil then
+				item:clearHighlight()
+			end
 			heldItemByClient[clientId] = nil
 		else
 			held.bobPhase = held.bobPhase + BOB_TICK_MS
