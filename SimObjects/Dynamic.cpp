@@ -205,14 +205,20 @@ bool Dynamic::requiresNetUpdate() //const
 		return true;
 	}
 
-	if (lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates)
+	//While snapped, updateCursorSnapPosition zeroes velocity every tick server-side, so it never actually
+	//changes from the client's perspective and the threshold checks below would stop resyncing it after the
+	//first tick - leaving the client's own local physics body free to pick up stray velocity (e.g. brushing
+	//against geometry while swinging the held item around) that never gets corrected again. Keep forcing it
+	//while snapped so the client stays pinned at zero instead of visibly drifting (only shows up in the debug
+	//physics view, which renders the raw local body instead of the smoothed interpolator)
+	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 	{
 		flaggedForUpdate = true;
 		return true;
 	}
 
 	//More than like 6 degrees difference in rotation?
-	if (lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates)
+	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 	{
 		flaggedForUpdate = true;
 		return true;
@@ -264,11 +270,12 @@ unsigned int Dynamic::getUpdatePacketBytes() const
 		ret += QuaternionBytes;
 	}
 
-	if (lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates)
+	//See the matching comment in requiresNetUpdate for why isSnappedToCursor is included here
+	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 		ret += VelocityBytes;
 
 	//More than like 6 degrees difference in rotation?
-	if (lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates)
+	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 		ret += AngularVelocityBytes;
 
 	if (gravityUpdated)
@@ -350,12 +357,13 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 		needPosRot = true;
 	forceUpdateAll = false;
 
+	//See the matching comment in requiresNetUpdate for why isSnappedToCursor is included here
 	bool needVel = false;
-	if (lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates)
+	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 		needVel = true;
 
 	bool needAngVel = false;
-	if (lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates)
+	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
 		needAngVel = true;
 
 	unsigned int msSinceLastSend = getTicksMS() - lastSentTime;
