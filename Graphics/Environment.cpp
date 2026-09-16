@@ -6,6 +6,7 @@ void Environment::calc(double worldTimeSeconds)
 {
 	fogDistanceMin = cycle.fogStart;
 	fogDistanceMax = cycle.fogEnd;
+	fogHeight = cycle.fogHeight;
 
 	dayFraction = (float)(fmod(worldTimeSeconds, DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS);
 	if (dayFraction < 0)
@@ -62,6 +63,7 @@ void Environment::passUniforms(std::shared_ptr<ShaderManager> shaders) const
 	uniforms.FogColor = fogColor;
 	uniforms.FogDistanceMin = fogDistanceMin;
 	uniforms.FogDistanceMax = fogDistanceMax;
+	uniforms.FogHeight = fogHeight;
 	uniforms.AmbientColor = ambientColor;
 	uniforms.ShadowStrength = shadowStrength;
 }

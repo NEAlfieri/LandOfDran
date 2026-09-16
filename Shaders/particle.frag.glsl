@@ -28,6 +28,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 uniform sampler2D ParticleTexture;

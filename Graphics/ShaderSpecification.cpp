@@ -173,7 +173,7 @@ ShaderManager::ShaderManager()
 		error("Could not allocate uniform buffer object!");
 
 	glBindBuffer(GL_UNIFORM_BUFFER, environmentUBO);
-	glBufferData(GL_UNIFORM_BUFFER, 144, &environmentUniforms, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, 160, &environmentUniforms, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	//Point lights:
@@ -238,7 +238,7 @@ void ShaderManager::updateBasicUBO() const
 void ShaderManager::updateEnvironmentUBO() const
 {
 	glBindBuffer(GL_UNIFORM_BUFFER, environmentUBO);
-	glBufferData(GL_UNIFORM_BUFFER, 144, &environmentUniforms, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, 160, &environmentUniforms, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 

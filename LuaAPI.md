@@ -70,7 +70,9 @@ side of the sky.
 | `getAmbientColor(phase)` | phase name | r, g, b | That phase's ambient color. |
 | `setFogDistance(start, end)` | distances from the camera in world units | none | Fog begins at `start` and completely hides everything past `end`. Needs `0 <= start < end <= 900`. Defaults to `150, 290`. Grass and water always reach past `end`, and shadows cover the view out to `end`, so a longer fog distance spreads the same shadow detail over more ground. |
 | `getFogDistance()` | none | start, end | Current fog distances. |
-| `resetDayCycle()` | none | none | Puts every phase's sky, fog, sun, and ambient color and the fog distances back to their defaults. Doesn't change the time of day or time scale. |
+| `setFogHeight(height)` | `height`: world height the fog fills up to. Needs `0 <= height <= 2000`. | none | How far up a skybox the fog reaches, so the fogged edge of the world blends into it. A view ray leaves the fog once it climbs past `height`, and how far it traveled to get there fogs it the same way distance fogs the world, so raising it drags the fog further up the sky and lowering it pulls the fog down to the horizon. `0` leaves a skybox unfogged. Defaults to `40`. Only the sky uses it, fog on the world itself is still distance only. |
+| `getFogHeight()` | none | number | Current fog height. |
+| `resetDayCycle()` | none | none | Puts every phase's sky, fog, sun, and ambient color, the fog distances, and the fog height back to their defaults. Doesn't change the time of day or time scale. |
 
 The setters log an error and do nothing if the phase name is unknown or the arguments are the wrong
 count or type. Negative colors and brightness are treated as 0.
@@ -98,6 +100,8 @@ A skybox path is one of:
   again. Images are drawn as they are and never light anything. The sun and moon are drawn over them.
 
 Every skybox fades into the fog color toward the horizon, so the fogged edge of the world blends into it.
+How far up the sky that fade reaches is `setFogHeight` above: a skybox with trees or buildings along its
+horizon usually wants a height that covers all of them, or `setFogHeight(0)` for no fog on the sky at all.
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|

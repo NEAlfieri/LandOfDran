@@ -55,6 +55,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 //Top and bottom faces repeat their texture once per stud, side faces stretch it once across the whole face

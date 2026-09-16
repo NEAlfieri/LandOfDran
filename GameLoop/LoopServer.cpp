@@ -614,6 +614,9 @@ void LoopServer::broadcastWorldState()
 	memcpy(data, &pd.dayCycle.fogEnd, sizeof(float));
 	data += sizeof(float);
 
+	memcpy(data, &pd.dayCycle.fogHeight, sizeof(float));
+	data += sizeof(float);
+
 	memcpy(data, &pd.rainIntensity, sizeof(float));
 
 	server->broadcast(packet, OtherReliable);

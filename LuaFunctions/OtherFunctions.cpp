@@ -568,6 +568,39 @@ static int LUA_getFogDistance(lua_State* L)
 	return 2;
 }
 
+static int LUA_setFogHeight(lua_State* L)
+{
+	scope("LUA_setFogHeight");
+
+	int args = lua_gettop(L);
+	if (args != 1 || !lua_isnumber(L, 1))
+	{
+		error("Expected 1 number argument");
+		lua_pop(L, args);
+		return 0;
+	}
+
+	float height = (float)lua_tonumber(L, 1);
+	lua_pop(L, args);
+
+	if (height < 0 || height > DayCycle::maxFogHeight)
+	{
+		error("Fog height needs 0 <= height <= " + std::to_string((int)DayCycle::maxFogHeight));
+		return 0;
+	}
+
+	LUA_pd->dayCycle.fogHeight = height;
+	LUA_pd->worldStateChanged = true;
+
+	return 0;
+}
+
+static int LUA_getFogHeight(lua_State* L)
+{
+	lua_pushnumber(L, LUA_pd->dayCycle.fogHeight);
+	return 1;
+}
+
 static int LUA_resetDayCycle(lua_State* L)
 {
 	lua_pop(L, lua_gettop(L));
@@ -602,5 +635,7 @@ void registerOtherFunctions(lua_State* L)
 	lua_register(L, "getAmbientColor", LUA_getAmbientColor);
 	lua_register(L, "setFogDistance", LUA_setFogDistance);
 	lua_register(L, "getFogDistance", LUA_getFogDistance);
+	lua_register(L, "setFogHeight", LUA_setFogHeight);
+	lua_register(L, "getFogHeight", LUA_getFogHeight);
 	lua_register(L, "resetDayCycle", LUA_resetDayCycle);
 }

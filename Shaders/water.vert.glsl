@@ -33,6 +33,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 //How far the grid reaches from the camera and how big one grid cell is, see LoopClient::waterRadius
