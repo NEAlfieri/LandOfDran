@@ -80,6 +80,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("graphics/imagebasedlighting", "Servers with a .hdr sky light everything with it and show it in reflections, otherwise it's only drawn as the sky");
 	settings->addInt("graphics/pointshadows",		4, false,		"Point Light Shadows", 0, 8);
 	settings->setTooltip("graphics/pointshadows",	"How many of the lights nearest the camera cast shadows, each costs up to six extra shadow passes a frame");
+	settings->addEnum("graphics/pointshadowquality",	2,				"Point Shadow Quality",	{"Low","Medium","High"});
+	settings->setTooltip("graphics/pointshadowquality", "How sharp those lights' shadows are. Each step doubles the size of every cube face, so at 8 shadowed lights High takes about 200 MB of video memory where Low takes 13");
 	settings->addEnum("graphics/godrayquality",		1, 	 			"God ray samples", 	{"None","32 samples","64 samples","96 samples","128 samples"});
 	settings->addEnum("graphics/spritedensity",		1, 				"Sprite density",	{"Low","Medium","High","Very High"});
 	settings->addFloat("graphics/brickdebrisseconds",	3.6f, false,	"Brick Debris Seconds",0,15);

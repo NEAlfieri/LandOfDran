@@ -1459,10 +1459,15 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 
 	pd.coloredShadows = settings->getBool("graphics/shadowcolor");
 
-	//Each cube face is a quarter of a cascade, capped so 8 shadowed lights stay under 200 MB, plus under 100 MB of tint maps with colored shadows
-	//Point lights have their own setting, so with the sun's shadows off they keep the size 2k cascades would have given them
-	int pointCascade = pd.sunShadows ? resolution : 2048;
-	pd.pointLights->setShadowSettings(settings->getInt("graphics/pointshadows"), std::min(pointCascade / 4, 1024), pd.coloredShadows, pd.textures);
+	/*
+		graphics/pointshadowquality: 256, 512 or 1024 for every face of every shadowed light's cube. This used to
+		be a quarter of the sun's cascade, which tied it to a setting that has nothing to do with it and left no
+		way to ask for cheap sun shadows and sharp point ones, or the other way around
+		High is the ceiling because the faces are 32 bit depth: 8 lights of 6 faces at 1024 is about 200 MB,
+		plus up to another 100 MB of tint maps with colored shadows on
+	*/
+	int pointQuality = std::min(std::max(settings->getInt("graphics/pointshadowquality"), 0), 2);
+	pd.pointLights->setShadowSettings(settings->getInt("graphics/pointshadows"), 256 << pointQuality, pd.coloredShadows, pd.textures);
 
 	//Half resolution to save memory, colored shadows just come out a little softer
 	int tintResolution = pd.coloredShadows ? std::max(1, resolution / 2) : 1;
