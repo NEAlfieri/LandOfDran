@@ -27,6 +27,9 @@ class InstancedBrickRenderer
 		std::vector<Brick*> bricks;
 		bool dirty = false;
 
+		//Where this chunk's bounds sit in chunkList, or -1 for a brick group's chunk, which isn't in it
+		int listIndex = -1;
+
 		//World space bounds of every brick in the chunk, as of the last rebuild, or the bounds in its own space for a brick group
 		glm::vec3 min = glm::vec3(0);
 		glm::vec3 max = glm::vec3(0);
@@ -64,7 +67,24 @@ class InstancedBrickRenderer
 		const std::vector<SpecialRun>* runs;
 	};
 
+	//One entry per chunk, laid out flat so culling reads memory in order
+	struct ChunkBounds
+	{
+		glm::vec3 min = glm::vec3(0);
+		glm::vec3 max = glm::vec3(0);
+		Chunk* chunk = nullptr;
+	};
+
 	std::unordered_map<int64_t, Chunk*> chunks;
+
+	/*
+		The same chunks as the map above, for the passes that walk every one of them. A big build is thousands
+		of chunks and each is looked at by three shadow cascades, the camera, the rain map and every point light
+		cube face, every frame. Walking the map for that chases a pointer per chunk and misses the cache almost
+		every time; this is one contiguous array of just the bounds the frustum test needs
+	*/
+	std::vector<ChunkBounds> chunkList;
+
 	std::vector<Chunk*> dirtyChunks;
 
 	std::unordered_map<int, BrickGroup*> groups;
@@ -72,6 +92,10 @@ class InstancedBrickRenderer
 
 	//See getGeneration
 	unsigned int generation = 0;
+
+	//Counted by the shadow passes, read and cleared once a frame, see getShadowStats
+	mutable int shadowChunksDrawn = 0;
+	mutable int shadowChunksTested = 0;
 
 	GLuint cubeBuffer = 0;
 
@@ -126,6 +150,10 @@ class InstancedBrickRenderer
 	//Uploads a chunk's bricks and works out its bounds
 	void upload(Chunk* chunk);
 	void destroyChunk(Chunk* chunk);
+
+	//Keeps chunkList in step with chunks
+	void addToList(Chunk* chunk);
+	void removeFromList(Chunk* chunk);
 
 	//nullptr for basic bricks, and for special types this client never loaded
 	const SpecialBrickType* specialType(const Brick& brick) const;
@@ -209,6 +237,10 @@ class InstancedBrickRenderer
 		const std::vector<GroupDraw>* draws = nullptr, const glm::vec3* skipPoint = nullptr) const;
 
 	bool hasTransparentBricks() const;
+
+	//How many chunks this frame's shadow passes drew, and how many they had to look at to decide, for the debug menu
+	std::string getShadowStats() const;
+	void resetShadowStats() const { shadowChunksDrawn = 0; shadowChunksTested = 0; }
 
 	//Goes up every time a chunk is rebuilt, so anything drawn from the bricks earlier (like point light shadows) knows they've changed
 	unsigned int getGeneration() const { return generation; }

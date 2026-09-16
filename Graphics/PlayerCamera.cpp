@@ -7,7 +7,7 @@ glm::vec3 Camera::mouseCoordsToWorldSpace(glm::vec2 mouseCoords) const
     return glm::vec3(worldCoords.x,worldCoords.y,worldCoords.z);
 }
 
-void Camera::calculateLightSpaceMatricies(glm::vec3 lightDirection, float shadowDistance, int mapResolution, glm::mat4* result)
+void Camera::calculateLightSpaceMatricies(glm::vec3 lightDirection, float shadowDistance, int mapResolution, glm::mat4* result, float* radii)
 {
     //Where each cascade ends: the practical split scheme, mostly logarithmic (even detail on screen) with some uniform mixed in
     const float logarithmicShare = 0.75f;
@@ -52,6 +52,9 @@ void Camera::calculateLightSpaceMatricies(glm::vec3 lightDirection, float shadow
         radius *= mapResolution / (mapResolution - 2.0f * paddingTexels);
 
         //Moving the cascade only in whole texels keeps casters landing on the same texels, so shadow edges don't crawl as the camera moves
+        if (radii)
+            radii[a] = radius;
+
         float texelSize = 2.0f * radius / mapResolution;
         glm::vec3 center = glm::vec3(lightRotation * glm::vec4(eye + forward * centerDistance, 1.0f));
         center.x = std::floor(center.x / texelSize) * texelSize;

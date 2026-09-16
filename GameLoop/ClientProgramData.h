@@ -47,8 +47,21 @@ struct ClientProgramData
 	Material* grassMaterial = nullptr;
 	GLuint grassVao = 0;
 
-	//TODO: Move this to environment class and don't hardcode it to 3
+	/*
+		TODO: Move this to environment class and don't hardcode it to 3
+		These are the matrices the shadow maps were actually drawn with, which is not always this frame's:
+		the farther cascades are only redrawn every so often, see the shadow pass in LoopClient::renderEverything.
+		Everything that samples the maps has to use these, or it would look them up in the wrong place
+	*/
 	glm::mat4 lightSpaceMatricies[3];
+
+	//Where the camera was, and how wide the cascade was, when each one was last drawn
+	glm::vec3 cascadeDrawnFrom[3] = { glm::vec3(0), glm::vec3(0), glm::vec3(0) };
+	float cascadeRadius[3] = { 0, 0, 0 };
+	//Cleared when the shadow maps are (re)created, so the first frame after that draws all three
+	bool cascadeDrawn[3] = { false, false, false };
+	//Counts frames, so the cascades that don't redraw every frame can take it in turns
+	unsigned int cascadeFrame = 0;
 	GLuint lightSpaceMatriciesUniformModel = 0;
 	GLuint lightSpaceMatriciesUniformBrick = 0;
 	//The one cascade being drawn into, see the shadow pass in LoopClient::renderEverything

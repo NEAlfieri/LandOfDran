@@ -235,6 +235,9 @@ InstancedBrickRenderer::Chunk* InstancedBrickRenderer::getChunk(const Brick* bri
 		createSpecialVao(chunk->specialVao[transparency], chunk->specialInstanceBuffer[transparency]);
 	}
 
+	//Its bounds are only worked out once upload has its bricks, until then it's an empty box at the origin
+	addToList(chunk);
+
 	return chunk;
 }
 
@@ -283,6 +286,7 @@ void InstancedBrickRenderer::rebuild(Chunk* chunk)
 	if (chunk->bricks.empty())
 	{
 		chunks.erase(chunk->key);
+		removeFromList(chunk);
 		destroyChunk(chunk);
 		return;
 	}
@@ -322,6 +326,13 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 	glm::vec3 wiggle = glm::vec3(anyUndulo ? unduloAmplitude : 0.0f);
 	chunk->min = min * gridScale - wiggle;
 	chunk->max = max * gridScale + wiggle;
+
+	//A brick group's chunk isn't in chunkList, its bounds are in its own space and it's drawn by transform
+	if (chunk->listIndex >= 0)
+	{
+		chunkList[chunk->listIndex].min = chunk->min;
+		chunkList[chunk->listIndex].max = chunk->max;
+	}
 
 	for (int transparency = 0; transparency < 2; transparency++)
 	{
@@ -521,17 +532,17 @@ void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>&
 	//nearest first, which lets the depth test throw away everything behind a wall before model.frag ever runs
 	//on it, and transparent ones farthest first, since they blend and have to arrive in back to front order
 	std::vector<std::pair<float, const Chunk*>> sorted;
-	sorted.reserve(chunks.size());
-	for (const auto& entry : chunks)
+	sorted.reserve(chunkList.size());
+	for (const ChunkBounds& bounds : chunkList)
 	{
-		const Chunk* chunk = entry.second;
+		const Chunk* chunk = bounds.chunk;
 		if (chunk->count[transparency] == 0 && chunk->specialRuns[transparency].empty())
 			continue;
-		if (!boxVisible(planes, chunk->min, chunk->max))
+		if (!boxVisible(planes, bounds.min, bounds.max))
 			continue;
 
 		//Squared distance to the nearest point of the chunk, 0 for the one the camera is inside
-		glm::vec3 toBox = glm::clamp(eye, chunk->min, chunk->max) - eye;
+		glm::vec3 toBox = glm::clamp(eye, bounds.min, bounds.max) - eye;
 		sorted.push_back({ glm::dot(toBox, toBox), chunk });
 	}
 
@@ -759,11 +770,16 @@ void InstancedBrickRenderer::renderLoose(std::shared_ptr<ShaderManager> shaders,
 	glDisable(GL_BLEND);
 }
 
+std::string InstancedBrickRenderer::getShadowStats() const
+{
+	return std::to_string(shadowChunksDrawn) + " chunks drawn of " + std::to_string(shadowChunksTested) + " looked at";
+}
+
 bool InstancedBrickRenderer::hasTransparentBricks() const
 {
-	for (const auto& entry : chunks)
+	for (const ChunkBounds& bounds : chunkList)
 	{
-		if (entry.second->count[1] > 0 || !entry.second->specialRuns[1].empty())
+		if (bounds.chunk->count[1] > 0 || !bounds.chunk->specialRuns[1].empty())
 			return true;
 	}
 	for (const auto& entry : groups)
@@ -839,11 +855,15 @@ void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatr
 	const glm::mat4 identity(1.0f);
 	glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &identity[0][0]);
 
-	for (const auto& entry : chunks)
+	for (const ChunkBounds& bounds : chunkList)
 	{
-		if (boxVisible(planes, entry.second->min, entry.second->max))
-			drawChunkShadow(entry.second, opaque, transparent, specialUniform);
+		if (boxVisible(planes, bounds.min, bounds.max))
+		{
+			shadowChunksDrawn++;
+			drawChunkShadow(bounds.chunk, opaque, transparent, specialUniform);
+		}
 	}
+	shadowChunksTested += (int)chunkList.size();
 
 	if (!draws || draws->empty())
 		return;
@@ -881,6 +901,24 @@ void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatr
 		glUniform3fv(skipPointUniform, 1, &(*skipPoint)[0]);
 }
 
+void InstancedBrickRenderer::addToList(Chunk* chunk)
+{
+	chunk->listIndex = (int)chunkList.size();
+	chunkList.push_back({ chunk->min, chunk->max, chunk });
+}
+
+void InstancedBrickRenderer::removeFromList(Chunk* chunk)
+{
+	if (chunk->listIndex < 0)
+		return;
+
+	//The last entry takes the leaving one's place, so this doesn't shuffle thousands of chunks along
+	chunkList[chunk->listIndex] = chunkList.back();
+	chunkList[chunk->listIndex].chunk->listIndex = chunk->listIndex;
+	chunkList.pop_back();
+	chunk->listIndex = -1;
+}
+
 void InstancedBrickRenderer::destroyChunk(Chunk* chunk)
 {
 	glDeleteVertexArrays(2, chunk->vao);
@@ -896,6 +934,7 @@ void InstancedBrickRenderer::clear()
 		destroyChunk(entry.second);
 
 	chunks.clear();
+	chunkList.clear();
 	dirtyChunks.clear();
 }
 

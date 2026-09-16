@@ -1313,6 +1313,8 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 	if (!pd.shadows || resolution != pd.shadowResolution)
 	{
 		pd.shadowResolution = resolution;
+		//A new set of maps starts empty, so none of the cached cascades are worth keeping
+		pd.cascadeDrawn[0] = pd.cascadeDrawn[1] = pd.cascadeDrawn[2] = false;
 
 		RenderTarget::RenderTargetSettings shadowSettings;
 		shadowSettings.width = resolution;
@@ -1824,7 +1826,47 @@ void LoopClient::renderEverything(float deltaT)
 	updateParticles();
 
 	//Fog fully hides anything past fogDistanceMax, so shadows don't need to reach further
-	simulation.camera->calculateLightSpaceMatricies(pd.environment.lightDirection, pd.environment.fogDistanceMax, pd.shadowResolution, pd.lightSpaceMatricies);
+	glm::mat4 freshMatricies[3];
+	float freshRadius[3];
+	simulation.camera->calculateLightSpaceMatricies(pd.environment.lightDirection, pd.environment.fogDistanceMax, pd.shadowResolution, freshMatricies, freshRadius);
+
+	/*
+		Which cascades to redraw this frame. The near one is small, cheap and right in front of the player, so it
+		always goes. The two farther ones cover far more of the build and cost most of the pass, while a frame or
+		two of lag in them is invisible at that distance, so they take turns on an offset count and rarely land on
+		the same frame. A cascade that isn't redrawn keeps the matrix it was drawn with, so its map is still looked
+		up in exactly the right place - it just sits a little behind where the camera has got to
+	*/
+	pd.cascadeFrame++;
+	bool drawCascade[3];
+	drawCascade[0] = true;
+	drawCascade[1] = (pd.cascadeFrame % 2) == 0;
+	drawCascade[2] = (pd.cascadeFrame % 4) == 1;
+
+	/*
+		A build edit deliberately doesn't force the far ones. They come round on their own within a few frames
+		anyway, and forcing them lands all three redraws on the same frame: anything that changes a static sets
+		that off, so a server recolouring something twice a second would hitch twice a second. The near cascade
+		redraws every frame regardless, so a brick just placed still casts right away where the player is standing
+	*/
+
+	glm::vec3 cameraPosition = simulation.camera->getPosition();
+	for (int cascade = 0; cascade < 3; cascade++)
+	{
+		//Never drawn yet, or the camera has moved far enough across the cascade that a stale one would start
+		//running off the edges of its map. Neither of those can wait for a turn
+		if (!pd.cascadeDrawn[cascade] ||
+			glm::length(cameraPosition - pd.cascadeDrawnFrom[cascade]) > pd.cascadeRadius[cascade] * 0.1f)
+			drawCascade[cascade] = true;
+
+		if (!drawCascade[cascade])
+			continue;
+
+		pd.lightSpaceMatricies[cascade] = freshMatricies[cascade];
+		pd.cascadeRadius[cascade] = freshRadius[cascade];
+		pd.cascadeDrawnFrom[cascade] = cameraPosition;
+		pd.cascadeDrawn[cascade] = true;
+	}
 
 	pd.profiler.end();
 
@@ -1891,8 +1933,17 @@ void LoopClient::renderEverything(float deltaT)
 		glCullFace(GL_BACK);
 	};
 
+	//Only timed on the frames they're actually drawn, so these read as what a cascade costs when it goes,
+	//not what it averages per frame. The Sun shadows row around them is the per frame number
+	static const char* cascadeZones[3] = { "Cascade 0 (near)", "Cascade 1 (mid)", "Cascade 2 (far)" };
+
 	for (int cascade = 0; cascade < 3; cascade++)
 	{
+		//Its map and its matrix are both still the ones from the frame it was last drawn on
+		if (!drawCascade[cascade])
+			continue;
+
+		GpuZone zone(pd.profiler, cascadeZones[cascade]);
 		pd.shadows->useLayer(cascade);
 
 		//Models aren't guaranteed to be closed meshes, so both sides cast
@@ -2426,6 +2477,7 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	pd.debugMenu->addExtraLine("Environmental audio: " + pd.acousticProbe.getStats());
 	pd.debugMenu->addExtraLine("Rain: " + pd.rain.getStats());
 	pd.debugMenu->addExtraLine("Point lights: " + pd.pointLights->getStats());
+	pd.debugMenu->addExtraLine("Shadows: " + pd.brickRenderer->getShadowStats());
 	pd.debugMenu->addExtraLine("Particles: " + pd.particles->getStats());
 	if (simulation.dynamics && simulation.dynamics->size() > 0)
 		pd.debugMenu->addExtraLine("First other snaps: " + std::to_string(simulation.dynamics->get(0)->interpolator.getNumSnapshots()));
@@ -2589,12 +2641,14 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	pd.profiler.end();
 	pd.profiler.endFrame();
 	pd.debugMenu->passProfilerResults(pd.profiler.getResults());
+	pd.brickRenderer->resetShadowStats();
 
 	if (cmdArgs.profileRendering && pd.profiler.getWindow() != loggedProfilerWindow)
 	{
 		loggedProfilerWindow = pd.profiler.getWindow();
 		for (const std::string& line : pd.profiler.getReport())
 			info(line);
+		info("shadows: " + pd.brickRenderer->getShadowStats());
 	}
 }
 

@@ -54,7 +54,8 @@ class Camera
 
 	//TODO: Move this to environment class
 	//Three shadow cascades covering the view out to shadowDistance, nearest first, for a mapResolution square shadow map
-	void calculateLightSpaceMatricies(glm::vec3 lightDirection, float shadowDistance, int mapResolution, glm::mat4 *result);
+	//radii, if given, comes back with how wide each cascade is in world units, for deciding when a cached one has gone stale
+	void calculateLightSpaceMatricies(glm::vec3 lightDirection, float shadowDistance, int mapResolution, glm::mat4 *result, float* radii = nullptr);
 
 	float maxThirdPersonDistance = 30.0;
 
