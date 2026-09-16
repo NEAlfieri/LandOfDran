@@ -43,6 +43,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	
 	//GUI Settings
 	settings->addFloat("gui/opacity",				0.75f, false,		"HUD Opacity",0,1);
+	settings->addBool("gui/showfps",				true, false,		"Show Frame Rate");
+	settings->setTooltip("gui/showfps",			"The average frame rate in the top left corner, and the slowest frame of the last half second beside it");
 	settings->addEnum("gui/scaling",					1, 				"GUI Scaling Factor", 	{"Small","Normal","Large","Largest"});
 	settings->addFloat("gui/rounding", 				0.0, false,		"UI element rounding",0.0,15.0);
 	settings->addColor("gui/windowcolor", glm::vec4(0.06, 0.06, 0.06, 0.940), false, "Window Background Color");

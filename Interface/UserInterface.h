@@ -97,6 +97,22 @@ class UserInterface
 	//Currently showing center-of-screen messages, see addCenterPrint. Pruned (expired ones removed) in render()
 	std::vector<CenterPrintMessage> centerPrints;
 
+	//The frame rate counter in the top left corner, see gui/showfps
+	bool showFps = true;
+	//How long frames are counted for before the numbers change, so they can actually be read
+	static constexpr float fpsAverageOverMS = 500.0f;
+	//Frames since then, how long they took altogether, and the slowest single one, all in seconds
+	int fpsFrames = 0;
+	float fpsTotalSeconds = 0;
+	float fpsWorstSeconds = 0;
+	float fpsSinceShownMS = 0;
+	//What the counter shows: the average over the last window and its slowest frame, which is what a stutter looks like
+	float shownAverageFps = 0;
+	float shownWorstFps = 0;
+
+	//Counts this frame and draws the counter, returning the y the next thing in that corner starts at
+	float renderFpsCounter(float deltaSeconds, float top);
+
 	public:
 
 	//Queue a temporary message shown centered on screen for durationMS, in the given color (0-1 range each)

@@ -90,6 +90,8 @@ void UserInterface::updateSettings(std::shared_ptr<SettingManager> settings)
 
 	globalInterfaceTransparency = settings->getFloat("gui/opacity");
 
+	showFps = settings->getBool("gui/showfps");
+
 	//Refer to DefaultPreferences.cpp - Small, Normal, Large, Largest
 	int sizeEnum = settings->getInt("gui/scaling");
 	switch (sizeEnum)
@@ -241,6 +243,47 @@ void UserInterface::initAll()
 		windows[a]->init();
 }
 
+/*
+	Frames are counted for fpsAverageOverMS at a time. The average is what the frame rate feels like, and the
+	slowest single frame in the same stretch is what a stutter shows up as, which an average hides completely
+*/
+float UserInterface::renderFpsCounter(float deltaSeconds, float top)
+{
+	if (deltaSeconds > 0.0f)
+	{
+		fpsFrames++;
+		fpsTotalSeconds += deltaSeconds;
+		fpsWorstSeconds = std::max(fpsWorstSeconds, deltaSeconds);
+	}
+
+	fpsSinceShownMS += deltaSeconds * 1000.0f;
+	if (fpsSinceShownMS >= fpsAverageOverMS && fpsFrames > 0)
+	{
+		shownAverageFps = fpsFrames / fpsTotalSeconds;
+		shownWorstFps = 1.0f / fpsWorstSeconds;
+		fpsFrames = 0;
+		fpsTotalSeconds = 0;
+		fpsWorstSeconds = 0;
+		fpsSinceShownMS = 0;
+	}
+
+	//Nothing to show until the first window is up
+	if (shownAverageFps <= 0.0f)
+		return top;
+
+	std::string text = "FPS " + std::to_string((int)std::lround(shownAverageFps)) + "  worst " + std::to_string((int)std::lround(shownWorstFps));
+
+	ImDrawList* draw = ImGui::GetBackgroundDrawList();
+	ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+	ImVec2 at(10.0f, top);
+	ImVec2 padding(5.0f, 2.0f);
+	draw->AddRectFilled(ImVec2(at.x - padding.x, at.y - padding.y), ImVec2(at.x + textSize.x + padding.x, at.y + textSize.y + padding.y),
+		IM_COL32(20, 20, 25, 150), 3.0f);
+	draw->AddText(at, IM_COL32_WHITE, text.c_str());
+
+	return at.y + textSize.y + padding.y + 6.0f;
+}
+
 void UserInterface::render(int screenX,int screenY,bool drawCrossHair,const std::vector<std::string>& hudLines)
 {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -266,10 +309,14 @@ void UserInterface::render(int screenX,int screenY,bool drawCrossHair,const std:
 	}
 	//ImGui::End();
 
+	//The frame rate sits in the same corner as the hud lines, above them
+	float y = 10.0f;
+	if (showFps)
+		y = renderFpsCounter(io->DeltaTime, y);
+
 	if (!hudLines.empty())
 	{
 		auto draw = ImGui::GetBackgroundDrawList();
-		float y = 10.0f;
 		for (const std::string& line : hudLines)
 		{
 			draw->AddText(ImVec2(10.0f, y), IM_COL32(255, 190, 0, 255), line.c_str());
