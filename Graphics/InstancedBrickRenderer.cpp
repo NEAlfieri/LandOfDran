@@ -577,9 +577,15 @@ void InstancedBrickRenderer::renderDepth(std::shared_ptr<ShaderManager> shaders)
 		if (chunk->specialRuns[0].empty())
 			continue;
 
-		//Special shapes aren't always closed, so both of their sides have to be drawn to get their depth right
+		/*
+			Culling stays exactly as the shading pass has it. The shadow pass turns it off for these, since a shape
+			that isn't closed has to cast from both sides, but here the pre-pass must lay down the depth of the very
+			triangles the shading pass will draw and no others. With back faces let through, a thin shape like a
+			fence rail has its two sides within a depth quantum of each other, they interpolate depth a little
+			differently, and the back face wins some pixels - where the front face then fails the equal test and
+			leaves a speckled hole with the ground showing through it
+		*/
 		glUniform1i(brickDepthSpecialMeshUniform, 1);
-		glDisable(GL_CULL_FACE);
 		glBindVertexArray(chunk->specialVao[0]);
 		glBindBuffer(GL_ARRAY_BUFFER, chunk->specialInstanceBuffer[0]);
 		for (const SpecialRun& run : chunk->specialRuns[0])
@@ -592,7 +598,6 @@ void InstancedBrickRenderer::renderDepth(std::shared_ptr<ShaderManager> shaders)
 			glDrawArraysInstanced(GL_TRIANGLES, specialTypeOffsets[run.type], type->vertexCount(), run.count);
 		}
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glEnable(GL_CULL_FACE);
 		glUniform1i(brickDepthSpecialMeshUniform, 0);
 	}
 
