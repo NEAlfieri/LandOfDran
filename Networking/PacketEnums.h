@@ -111,6 +111,10 @@ enum DynamicKind : unsigned char
 //Second flags byte of a dynamic in UpdateSimObjects and ControlledPhysics packets
 #define DynamicExtra_Look 1			//2 bytes follow: where a player looks, see Dynamic::lookDirection
 #define DynamicExtra_OneShot 2		//2 bytes follow: an animation ID played once and a count that changes each time it plays
+#define DynamicExtra_PositionDelta 4	//The position is PositionDeltaBytes measured from the last keyframe rather than PositionBytes from the origin
+//Two bits saying which keyframe the position either is, or is measured from, so a receiver that missed one drops the deltas that follow it
+#define DynamicExtra_GenerationShift 3
+#define DynamicExtra_GenerationMask 24
 
 //Movement flags byte of MovementInputs packets
 #define MovementFlag_Jump 1			//Jump was just pressed

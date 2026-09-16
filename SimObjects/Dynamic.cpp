@@ -386,6 +386,70 @@ static bool sendsLook(const Dynamic& dynamic)
 	return dynamic.hasLook && !dynamic.clientControlled;
 }
 
+/*
+	How far the linear velocity has to change before it's worth resending, squared. addVelocity keeps velocity to
+	1/255th of a stud a second, so a coarser threshold than this just throws away precision we're already paying
+	6 bytes a component for. Angular velocity keeps its own, wider threshold: addAngularVelocity only resolves
+	1/8th of a radian a second, and rotation itself goes out separately as a full quaternion anyway
+*/
+static const float velocityResendThreshold = 0.01f;
+static const float angularVelocityResendThreshold = 0.37f;
+
+//How far an object has to move, squared, and turn before its transform is worth resending
+static const float positionResendThreshold = 0.005f;
+static const float rotationResendThreshold = 0.01f;
+
+//A full position goes out at least this often, so a receiver that missed the last one isn't stuck dropping deltas for long
+static const unsigned int keyframeIntervalMS = 500;
+
+void Dynamic::measurePendingUpdate()
+{
+	pendingUpdate = PendingUpdate();
+
+	pendingUpdate.look = sendsLook(*this);
+	pendingUpdate.oneShot = oneShotResends > 0;
+
+	if (!inWorld)
+		return;
+
+	const btTransform& t = body->getWorldTransform();
+
+	//If the object has moved more than 0.14 studs
+	if (t.getOrigin().distance2(lastSentTransform.getOrigin()) > positionResendThreshold)
+		pendingUpdate.posRot = true;
+
+	if (t.getRotation().angleShortestPath(lastSentTransform.getRotation()) > rotationResendThreshold)
+		pendingUpdate.posRot = true;
+
+	if (forceUpdateAll)
+		pendingUpdate.posRot = true;
+
+	//While snapped, updateCursorSnapPosition zeroes velocity every tick server-side, so it never actually
+	//changes from the client's perspective and the threshold checks below would stop resyncing it after the
+	//first tick - leaving the client's own local physics body free to pick up stray velocity (e.g. brushing
+	//against geometry while swinging the held item around) that never gets corrected again. Keep forcing it
+	//while snapped so the client stays pinned at zero instead of visibly drifting (only shows up in the debug
+	//physics view, which renders the raw local body instead of the smoothed interpolator)
+	if ((lastSentVel.distance2(body->getLinearVelocity()) > velocityResendThreshold && !noVelUpdates) || isSnappedToCursor())
+		pendingUpdate.vel = true;
+
+	//More than like 6 degrees difference in rotation?
+	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > angularVelocityResendThreshold && !noVelUpdates) || isSnappedToCursor())
+		pendingUpdate.angVel = true;
+
+	if (!pendingUpdate.posRot)
+		return;
+
+	//Decide now whether that position fits as a delta off the last keyframe, since getUpdatePacketBytes has to
+	//know how many bytes it will take before addToUpdatePacket writes it
+	const glm::vec3 pos = b2g3(t.getOrigin());
+	pendingUpdate.positionDelta = pos - keyframePosition;
+	pendingUpdate.positionIsDelta = hasKeyframe
+		&& !needsKeyframe
+		&& getTicksMS() - lastKeyframeTime < keyframeIntervalMS
+		&& positionDeltaFits(pendingUpdate.positionDelta);
+}
+
 bool Dynamic::requiresNetUpdate() //const
 {
 	//Carried items have no position of their own to send, see Item
@@ -394,6 +458,8 @@ bool Dynamic::requiresNetUpdate() //const
 	{
 		bool lookChanged = sendsLook(*this) && glm::dot(lookDirection, lastSentLook) < lookResendCosine;
 		flaggedForUpdate = getKind() == DynamicKind_Plain && getTicksMS() - lastSentTime >= 25 && (lookChanged || oneShotResends > 0);
+		if (flaggedForUpdate)
+			measurePendingUpdate();
 		return flaggedForUpdate;
 	}
 
@@ -403,60 +469,27 @@ bool Dynamic::requiresNetUpdate() //const
 		return false;
 	}
 
+	//Even if the object isn't moving much at all we should still send out an update every once in a while
+	//Checked before measuring so the measurement below sees forceUpdateAll and includes the transform
+	if (getTicksMS() - lastSentTime > 1500)
+		forceUpdateAll = true;
+
+	measurePendingUpdate();
+
 	bool lookChanged = sendsLook(*this) && glm::dot(lookDirection, lastSentLook) < lookResendCosine;
 
 	//For dynamics requiresUpdate means a change to something like a decal, or a node color
-	if (requiresUpdate || gravityUpdated || frictionUpdated || restitutionUpdated || lookChanged || oneShotResends > 0)
-	{
-		flaggedForUpdate = true;
-		return true;
-	}
+	flaggedForUpdate = requiresUpdate
+		|| gravityUpdated
+		|| frictionUpdated
+		|| restitutionUpdated
+		|| lookChanged
+		|| pendingUpdate.oneShot
+		|| pendingUpdate.posRot
+		|| pendingUpdate.vel
+		|| pendingUpdate.angVel;
 
-	const btTransform& t = body->getWorldTransform();
-
-	//If the object has moved more than 0.14 studs
-	if (t.getOrigin().distance2(lastSentTransform.getOrigin()) > 0.005)
-	{
-		flaggedForUpdate = true;
-		return true;
-	}
-
-	if (body->getWorldTransform().getRotation().angleShortestPath(lastSentTransform.getRotation()) > 0.01)
-	{
-		flaggedForUpdate = true;
-		return true;
-	}
-
-	//While snapped, updateCursorSnapPosition zeroes velocity every tick server-side, so it never actually
-	//changes from the client's perspective and the threshold checks below would stop resyncing it after the
-	//first tick - leaving the client's own local physics body free to pick up stray velocity (e.g. brushing
-	//against geometry while swinging the held item around) that never gets corrected again. Keep forcing it
-	//while snapped so the client stays pinned at zero instead of visibly drifting (only shows up in the debug
-	//physics view, which renders the raw local body instead of the smoothed interpolator)
-	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
-	{
-		flaggedForUpdate = true;
-		return true;
-	}
-
-	//More than like 6 degrees difference in rotation?
-	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
-	{
-		flaggedForUpdate = true;
-		return true;
-	}
-
-	//Even if the object isn't moving much at all we should still send out an update every once in a while
-	if (getTicksMS() - lastSentTime > 1500)
-	{
-		forceUpdateAll = true;
-		flaggedForUpdate = true;
-		return true;
-	}
-	//This caused crashes cause the time can increment between the time we check and the time we send the packet
-	
-
-	return false;
+	return flaggedForUpdate;
 }
 
 unsigned int Dynamic::getUpdatePacketBytes() const
@@ -473,38 +506,23 @@ unsigned int Dynamic::getUpdatePacketBytes() const
 	//Plus a second flags byte, see DynamicExtra flags
 	unsigned int ret = 3;
 
-	if (sendsLook(*this))
+	//Everything below was worked out by measurePendingUpdate when requiresNetUpdate asked for this update
+	if (pendingUpdate.look)
 		ret += LookDirectionBytes;
 
-	if (oneShotResends > 0)
+	if (pendingUpdate.oneShot)
 		ret += 2;
 
-	const btTransform& t = body->getWorldTransform();
-
-	bool needPosRot = false;
-
-	//If the object has moved more than 0.14 studs
-	if (t.getOrigin().distance2(lastSentTransform.getOrigin()) > 0.005)
-		needPosRot = true;
-
-	if (body->getWorldTransform().getRotation().angleShortestPath(lastSentTransform.getRotation()) > 0.01)
-		needPosRot = true;
-
-	if (forceUpdateAll)
-		needPosRot = true;
-
-	if (needPosRot)
+	if (pendingUpdate.posRot)
 	{
-		ret += PositionBytes;
+		ret += pendingUpdate.positionIsDelta ? PositionDeltaBytes : PositionBytes;
 		ret += QuaternionBytes;
 	}
 
-	//See the matching comment in requiresNetUpdate for why isSnappedToCursor is included here
-	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
+	if (pendingUpdate.vel)
 		ret += VelocityBytes;
 
-	//More than like 6 degrees difference in rotation?
-	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
+	if (pendingUpdate.angVel)
 		ret += AngularVelocityBytes;
 
 	if (gravityUpdated)
@@ -517,6 +535,57 @@ unsigned int Dynamic::getUpdatePacketBytes() const
 		ret += sizeof(float);
 
 	return ret;
+}
+
+void Dynamic::writeUpdatePosition(enet_uint8* dest, const glm::vec3& pos, unsigned char& extraFlags)
+{
+	if (pendingUpdate.positionIsDelta)
+	{
+		addPositionDelta(dest, pendingUpdate.positionDelta);
+		extraFlags |= DynamicExtra_PositionDelta;
+		extraFlags |= (keyframeGeneration << DynamicExtra_GenerationShift) & DynamicExtra_GenerationMask;
+		return;
+	}
+
+	addPosition(dest, pos);
+
+	/*
+		Read the keyframe back out rather than keeping pos, so we measure later deltas from exactly the position the
+		far end decoded. Keeping the unquantized one instead would let up to half a step of error into every delta
+	*/
+	::getPosition(dest, keyframePosition);
+	keyframeGeneration = (keyframeGeneration + 1) % PositionKeyframeGenerations;
+	hasKeyframe = true;
+	needsKeyframe = false;
+	lastKeyframeTime = getTicksMS();
+
+	extraFlags |= (keyframeGeneration << DynamicExtra_GenerationShift) & DynamicExtra_GenerationMask;
+}
+
+bool Dynamic::readUpdatePosition(enet_uint8 const* src, unsigned char extraFlags, glm::vec3& pos)
+{
+	const unsigned char generation = updatePositionGeneration(extraFlags);
+
+	if (extraFlags & DynamicExtra_PositionDelta)
+	{
+		//A delta off a keyframe we never got tells us nothing about where the object is, so say so and let it sit
+		//still until the sender's next keyframe, which is never more than keyframeIntervalMS away
+		if (receivedKeyframeGeneration != generation)
+			return false;
+
+		glm::vec3 delta;
+		getPositionDelta(src, delta);
+		pos = receivedKeyframePosition + delta;
+
+		//Deliberately not moving the keyframe: every delta is measured from it, so a lost one costs that one
+		//snapshot and nothing after it
+		return true;
+	}
+
+	::getPosition(src, pos);
+	receivedKeyframePosition = pos;
+	receivedKeyframeGeneration = generation;
+	return true;
 }
 
 void Dynamic::setMeshColor(int meshIdx, const glm::vec4& color)
@@ -649,26 +718,12 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 {
 	requiresUpdate = false;
 
-	const btTransform& t = body->getWorldTransform();
+	//All worked out once by measurePendingUpdate, back when requiresNetUpdate said this update was needed
+	const bool needPosRot = pendingUpdate.posRot;
+	const bool needVel = pendingUpdate.vel;
+	const bool needAngVel = pendingUpdate.angVel;
 
-	bool needPosRot = false;
-	if (t.getOrigin().distance2(lastSentTransform.getOrigin()) > 0.005)
-		needPosRot = true;
-	if (body->getWorldTransform().getRotation().angleShortestPath(lastSentTransform.getRotation()) > 0.01)
-		needPosRot = true;
-
-	if (forceUpdateAll)
-		needPosRot = true;
 	forceUpdateAll = false;
-
-	//See the matching comment in requiresNetUpdate for why isSnappedToCursor is included here
-	bool needVel = false;
-	if ((lastSentVel.distance2(body->getLinearVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
-		needVel = true;
-
-	bool needAngVel = false;
-	if ((lastSentAngVel.distance2(body->getAngularVelocity()) > 0.37 && !noVelUpdates) || isSnappedToCursor())
-		needAngVel = true;
 
 	unsigned int msSinceLastSend = getTicksMS() - lastSentTime;
 
@@ -688,8 +743,8 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 
 	forcePlayerUpdate = false;
 
-	bool needLook = sendsLook(*this);
-	bool needOneShot = oneShotResends > 0;
+	bool needLook = pendingUpdate.look;
+	bool needOneShot = pendingUpdate.oneShot;
 
 	unsigned char extraFlags = 0;
 	extraFlags |= needLook ? DynamicExtra_Look : 0;
@@ -705,10 +760,12 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 		lastSentTransform = body->getWorldTransform();
 		const glm::vec3& pos = glm::vec3(lastSentTransform.getOrigin().x(), lastSentTransform.getOrigin().y(), lastSentTransform.getOrigin().z());
 		const glm::quat& quat = glm::quat(lastSentTransform.getRotation().w(), lastSentTransform.getRotation().x(), lastSentTransform.getRotation().y(), lastSentTransform.getRotation().z());
-		addPosition(dest + byteIterator, pos);
-		byteIterator += PositionBytes;
+		writeUpdatePosition(dest + byteIterator, pos, extraFlags);
+		byteIterator += pendingUpdate.positionIsDelta ? PositionDeltaBytes : PositionBytes;
 		addQuaternion(dest + byteIterator, quat);
 		byteIterator += QuaternionBytes;
+		//writeUpdatePosition only just worked out which of the two it wrote, so the flags byte goes down after it
+		dest[2] = extraFlags;
 	}
 	if (needVel)
 	{

@@ -14,11 +14,23 @@
 //How many bytes addQuaternion will add to the packet
 #define QuaternionBytes 4
 //How many bytes addPosition will add to the packet
-#define PositionBytes 6
+#define PositionBytes 8
+//The largest coordinate addPosition can carry in any axis, anything past this is clamped
+#define PositionMaxCoordinate 16384.0f
+//How finely addPosition quantizes a coordinate, in steps per stud
+#define PositionStepsPerStud 64.0f
+//How many bytes addPositionDelta will add to the packet instead of PositionBytes
+#define PositionDeltaBytes 4
+//How far addPositionDelta can move an object from the keyframe it is measured against, in studs
+#define PositionDeltaMaxOffset 7.984375f
+//How many keyframe generations there are before the counter wraps, see Dynamic::keyframeGeneration
+#define PositionKeyframeGenerations 4
 //How many bytes addVelocity will add to the packet
 #define VelocityBytes 6
 //How many bytes addAngularVelocity will add to the packet
 #define AngularVelocityBytes 4
+//How finely addAngularVelocity quantizes a component, in steps per radian a second
+#define AngularVelocityStepsPerRadian 8.0f
 
 //TODO: Change these back to inline?
 
@@ -33,6 +45,28 @@ void getQuaternion(enet_uint8 const * src, glm::quat& quat);
 
 //Read out the result of addPosition
 void getPosition(enet_uint8 const* src, glm::vec3& pos);
+
+//Whether a position minus the keyframe it would be measured against is close enough to send with addPositionDelta
+bool positionDeltaFits(const glm::vec3& delta);
+
+//Copies in a position measured from a keyframe, rather than from the origin, to the next PositionDeltaBytes bytes of dest
+//The caller is responsible for telling the far end which keyframe it belongs to, see DynamicExtra_PositionDelta
+void addPositionDelta(enet_uint8* dest, const glm::vec3& delta);
+
+//Read out the result of addPositionDelta
+void getPositionDelta(enet_uint8 const* src, glm::vec3& delta);
+
+//How many bytes the position in an update takes, which depends on whether it went out as a keyframe or a delta
+inline unsigned int updatePositionBytes(unsigned char extraFlags)
+{
+	return (extraFlags & DynamicExtra_PositionDelta) ? PositionDeltaBytes : PositionBytes;
+}
+
+//Which keyframe an update's position either is, or is measured from, see DynamicExtra_GenerationMask
+inline unsigned char updatePositionGeneration(unsigned char extraFlags)
+{
+	return (extraFlags & DynamicExtra_GenerationMask) >> DynamicExtra_GenerationShift;
+}
 
 //Read out the result of addPosition
 void getVelocity(enet_uint8 const* src, glm::vec3& vel);

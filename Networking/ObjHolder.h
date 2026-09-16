@@ -2,6 +2,7 @@
 
 #include "../NetTypes/NetType.h"
 #include "Server.h"
+#include <glm/gtx/norm.hpp> //glm::distance2
 
 extern "C" 
 {
@@ -13,6 +14,34 @@ extern "C"
 //Basically we wanna make sure packets are under the MTU if possible,
 //but I'm not positive how much overhead ENet adds to packets
 #define MTU ENET_HOST_DEFAULT_MTU - 20
+
+/*
+	How often each client hears about an object depends on how far away from them it is, and how much they've already
+	been sent this tick. Set once at startup from the hosting/ settings, read in the LoopServer constructor
+
+	The camera's far plane is 1000 studs, so the bands are sized around that: everything you can actually see is in the
+	near or mid band, the far band keeps things roughly right just past the horizon so they're not stale when they come
+	into view, and past that a client is sent nothing at all about it
+*/
+struct NetRelevanceSettings
+{
+	//Objects closer than this to a client get every update the server generates, which is one per 25ms
+	static float nearDistance;
+	//Out to here they get every other one, and out to farDistance every fourth. Past farDistance, nothing
+	static float midDistance;
+	static float farDistance;
+
+	//Most bytes of object updates one client can be sent per tick, across every type of object
+	static int bytesPerTick;
+
+	//How much of that budget a client with a bad connection gets, rather than dropping them entirely as we used to
+	static float highPingFactor;
+	static float veryHighPingFactor;
+
+	static float nearDistance2() { return nearDistance * nearDistance; }
+	static float midDistance2() { return midDistance * midDistance; }
+	static float farDistance2() { return farDistance * farDistance; }
+};
 
 //I wanted this to be a .tpp file since it's just templated code, but I guess MSVC doesn't like those
 
@@ -58,6 +87,38 @@ class ObjHolder
 	//Non-owning: LoopServer owns the one Server instance and deletes it itself.
 	//Will be nullptr if this is the client
 	Server* server = nullptr;
+
+	/*
+		Server: one tick's worth of object updates, serialized once each and then copied to whichever clients are
+		close enough to want them. addToUpdatePacket consumes the state it writes - it clears gravityUpdated, moves
+		lastSentTransform up, rolls the position keyframe - so it can only be called once an object per tick, which
+		is why the bytes are staged here instead of written straight into a per-client packet
+	*/
+	struct PendingObjectUpdate
+	{
+		netIDType id = NO_ID;
+		//Where in updateScratch this object's bytes start, and how many there are
+		unsigned int offset = 0;
+		unsigned int bytes = 0;
+		//Where the object is, and whether it has a position worth throttling by at all
+		glm::vec3 position = glm::vec3(0, 0, 0);
+		bool cullable = false;
+		//Whether a throttled client has to be sent this one anyway, see SimObject::lastUpdateAnchorsLaterOnes
+		bool anchor = false;
+		//Only valid for the one sendRecent call that staged it, to rewrite the playback interval per band
+		T* object = nullptr;
+	};
+
+	std::vector<enet_uint8> updateScratch;
+	std::vector<PendingObjectUpdate> pendingUpdates;
+
+	//Indices into pendingUpdates, rebuilt per client, see sendObjectUpdates
+	std::vector<unsigned int> nearBand;
+	std::vector<unsigned int> midBand;
+	std::vector<unsigned int> farBand;
+
+	//Counts sendRecent calls, to stagger which ticks the throttled bands go out on and which objects win a tight budget
+	unsigned int updateTick = 0;
 
 	std::string metatableName = "";
 
@@ -355,8 +416,16 @@ class ObjHolder
 	}
 
 	//Call on client when they confirm phase 1 loading is complete
-	void sendAll(JoinedClient const *client) const
+	void sendAll(JoinedClient const *client)
 	{
+		/*
+			Whatever this client is about to be told about these objects is all it will have, and it has no keyframes
+			to measure position deltas against, so the next update for each of them goes out whole. It costs everyone
+			one full update, which is cheaper than working out per client what each of them is missing
+		*/
+		for (unsigned int a = 0; a < allObjects.size(); a++)
+			allObjects[a]->requireFullNetUpdate();
+
 		int toSend = allObjects.size();
 		int sent = 0;
 
@@ -484,10 +553,6 @@ class ObjHolder
 			return;
 		lastFunctionCallMS = getTicksMS();
 
-		//If clients have over 400ms ping, only send every other iteration, if they have over 1500ms ping don't send at all
-		static bool highPingIteration = false;
-		highPingIteration = !highPingIteration;
-			
 
 		//Send recently created objects to all connected clients:
 
@@ -594,105 +659,182 @@ class ObjHolder
 
 		recentlyDeletedIDs.clear();
 
-		//Send any pending object updates to all connected clients:
+		//Send any pending object updates out, see sendObjectUpdates
+		serializePendingUpdates();
 
-		toSend = allObjects.size();
-		sent = 0;
+		for (unsigned int a = 0; a < server->getNumClients(); a++)
+			sendObjectUpdates(server->getClientByIndex(a).get());
 
-		//Send as many packets as needed to send all objects to the client
-		//without any one packet exceeding the MTU
-		while (toSend > 0)
+		updateTick++;
+	}
+
+	/*
+		Asks every object whether it needs an update and, for the ones that do, writes its update once into
+		updateScratch. Nothing is sent here: who gets which of these is sendObjectUpdates' job
+	*/
+	void serializePendingUpdates()
+	{
+		updateScratch.clear();
+		pendingUpdates.clear();
+
+		for (unsigned int a = 0; a < allObjects.size(); a++)
 		{
-			//Didn't need updates, didn't move or get changed since last time
-			int skippedThisPacket = 0;
-			//Did need updates
-			int sentThisPacket = 0;
-			int bytesThisPacket = 0; 
-			netIDType lastId = NO_ID; //Highest possible value, indicates no previous ID
+			if (!allObjects[a]->requiresNetUpdate())
+				continue;
 
-			//I guess if one object was somehow larger than like 1300 bytes this would stall lol
-			for (unsigned int a = sent; a < allObjects.size(); a++)
+			allObjects[a]->flaggedForUpdate = false;
+
+			PendingObjectUpdate pending;
+			pending.id = allObjects[a]->getID();
+			pending.bytes = allObjects[a]->getUpdatePacketBytes();
+			pending.offset = (unsigned int)updateScratch.size();
+			pending.cullable = allObjects[a]->getNetRelevancePosition(pending.position);
+
+			//One object bigger than a whole packet would never fit and would stall the send loop below
+			if (pending.bytes + 3 + sizeof(netIDType) > MTU)
 			{
-				//Only using one byte to encode amount of objects in the packet
-				if (sentThisPacket >= 255)
-					break;
-
-				if (!allObjects[a]->requiresNetUpdate())
-				{
-					skippedThisPacket++;
-					continue;
-				}
-
-				sentThisPacket++;
-				bytesThisPacket += allObjects[a]->getUpdatePacketBytes() + bytesForIdDelta(lastId,allObjects[a]->getID());
-
-				if (bytesThisPacket > MTU)
-				{
-					sentThisPacket--;
-					bytesThisPacket -= allObjects[a]->getUpdatePacketBytes() + bytesForIdDelta(lastId, allObjects[a]->getID());
-					break;
-				}
-
-				lastId = allObjects[a]->getID();
-			}
-
-			//Not a break: we may have just skipped every object in this packet
-			if (sentThisPacket == 0)
-			{	
-				toSend -= skippedThisPacket;
-				sent += skippedThisPacket;
+				error("Object update too large to send, skipping");
 				continue;
 			}
+
+			updateScratch.resize(pending.offset + pending.bytes);
+			allObjects[a]->addToUpdatePacket(updateScratch.data() + pending.offset);
+			pending.anchor = allObjects[a]->lastUpdateAnchorsLaterOnes();
+			pending.object = allObjects[a].get();
+
+			pendingUpdates.push_back(pending);
+		}
+	}
+
+	/*
+		Sorts this tick's updates into distance bands for one client and sends them the ones they're due, nearest
+		band first, stopping when they run out of update budget for the tick
+	*/
+	void sendObjectUpdates(JoinedClient* client)
+	{
+		if (!client || pendingUpdates.empty())
+			return;
+
+		int budget = client->updateByteBudget;
+		if (budget <= 0)
+			return;
+
+		nearBand.clear();
+		midBand.clear();
+		farBand.clear();
+
+		for (unsigned int a = 0; a < pendingUpdates.size(); a++)
+		{
+			const PendingObjectUpdate& pending = pendingUpdates[a];
+
+			//Anything without a position of its own, and everything at all for a client we can't place, goes out in full
+			if (!pending.cullable || !client->hasRelevancePosition)
+			{
+				nearBand.push_back(a);
+				continue;
+			}
+
+			const float distance2 = glm::distance2(pending.position, client->relevancePosition);
+
+			if (distance2 <= NetRelevanceSettings::nearDistance2())
+			{
+				nearBand.push_back(a);
+			}
+			else if (distance2 <= NetRelevanceSettings::midDistance2())
+			{
+				//Half rate and quarter rate, spread across ticks by object ID so they don't all land on the same one
+				if (pending.anchor || ((pending.id + updateTick) & 1) == 0)
+					midBand.push_back(a);
+			}
+			else if (distance2 <= NetRelevanceSettings::farDistance2())
+			{
+				if (pending.anchor || ((pending.id + updateTick) & 3) == 0)
+					farBand.push_back(a);
+			}
+			//Past farDistance this client hears nothing about it at all
+		}
+
+		//The multiplier is how much slower than the server writes them this client actually receives them
+		sendUpdateBand(client, nearBand, budget, 1);
+		sendUpdateBand(client, midBand, budget, 2);
+		sendUpdateBand(client, farBand, budget, 4);
+
+		client->updateByteBudget = budget;
+	}
+
+	/*
+		Packs one band's updates into MTU sized packets for one client, spending from budget as it goes
+		Starts at a rotating offset into the band so that a budget too small for all of it doesn't starve the same
+		objects every tick
+	*/
+	void sendUpdateBand(JoinedClient* client, const std::vector<unsigned int>& band, int& budget, unsigned int multiplier)
+	{
+		if (band.empty() || budget <= 0)
+			return;
+
+		const unsigned int startAt = updateTick % band.size();
+		unsigned int sent = 0;
+
+		while (sent < band.size() && budget > 0)
+		{
+			//Work out what fits in this packet before creating it, since ENet wants the size up front
+			unsigned int inThisPacket = 0;
+			unsigned int bytesThisPacket = 0;
+			netIDType lastId = NO_ID;
+
+			for (unsigned int a = sent; a < band.size(); a++)
+			{
+				const PendingObjectUpdate& pending = pendingUpdates[band[(startAt + a) % band.size()]];
+				const unsigned int cost = pending.bytes + bytesForIdDelta(lastId, pending.id);
+
+				if (bytesThisPacket + cost > MTU || (int)(bytesThisPacket + cost) > budget)
+					break;
+
+				//Only using one byte to encode amount of objects in the packet
+				if (inThisPacket >= 255)
+					break;
+
+				bytesThisPacket += cost;
+				inThisPacket++;
+				lastId = pending.id;
+			}
+
+			if (inThisPacket == 0)
+				break;
 
 			//Three extra bytes, packet type, simobject type, amount of objects
 			ENetPacket* packet = enet_packet_create(NULL, bytesThisPacket + 3, getFlagsFromChannel(ObjectUpdates));
 			packet->data[0] = FromServerPacketType::UpdateSimObjects;
 			packet->data[1] = type;
-			packet->data[2] = sentThisPacket;
-			int byteIterator = 3;
+			packet->data[2] = inThisPacket;
 
+			unsigned int byteIterator = 3;
 			lastId = NO_ID; //Reset for the actual packet
 
-			//std::cout << "Sending " << sentThisPacket << " updates for type " << (unsigned int)type << " of " << allObjects.size() << " total\n";
-
-			for (int a = sent; a < sent + sentThisPacket + skippedThisPacket; a++)
+			for (unsigned int a = sent; a < sent + inThisPacket; a++)
 			{
-				if (!allObjects[a]->flaggedForUpdate)
-					continue;
+				const PendingObjectUpdate& pending = pendingUpdates[band[(startAt + a) % band.size()]];
 
-				allObjects[a]->flaggedForUpdate = false;
+				byteIterator += addIdDelta(lastId, pending.id, packet->data + byteIterator);
+				lastId = pending.id;
 
-				byteIterator += addIdDelta(lastId, allObjects[a]->getID(), packet->data + byteIterator);
-				lastId = allObjects[a]->getID();
+				memcpy(packet->data + byteIterator, updateScratch.data() + pending.offset, pending.bytes);
 
-				//getUpdatePacketBytes might be const, but addToUpdatePacket will affect its value
-				int amount = allObjects[a]->getUpdatePacketBytes();
-				allObjects[a]->addToUpdatePacket(packet->data + byteIterator);
-				byteIterator += amount;
+				//Staged before we knew this client would be sent only every second or fourth of them
+				if (multiplier > 1 && pending.object)
+					pending.object->scaleUpdateInterval(packet->data + byteIterator, multiplier);
+
+				byteIterator += pending.bytes;
 			}
 
-			//std::cout << packet->dataLength << " bytes for "<<sentThisPacket<<" objects\n";
+			client->send(packet, ObjectUpdates);
 
-			//server->broadcast(packet, Unreliable);
-			for (unsigned int a = 0; a < server->getNumClients(); a++)
-			{
-				if (server->getClientByIndex(a)->getPing() > 1500)
-					continue;
-
-				if (server->getClientByIndex(a)->getPing() > 400 && !highPingIteration)
-					continue;
-
-				//TODO: This can crash because ENet handles cleanup of packets when you pass it to send
-				//Sending it to no, or multiple clients, may cause issues
-				server->getClientByIndex(a)->send(packet, ObjectUpdates);
-			}
-
-			//No clients with pings worth sending to
+			//send hands the packet to ENet, which cleans it up, unless it never got that far
 			if (packet->referenceCount == 0)
 				enet_packet_destroy(packet);
 
-			toSend -= (sentThisPacket + skippedThisPacket);
-			sent += (sentThisPacket + skippedThisPacket); 
+			budget -= (int)bytesThisPacket;
+			sent += inThisPacket;
 		}
 	}
 

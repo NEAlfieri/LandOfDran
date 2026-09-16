@@ -28,6 +28,16 @@ public:
 	//Set this to ClientData I guess
 	void* userData = nullptr;
 
+	/*
+		Roughly where this client is watching the world from, and how many bytes of object updates they can still be
+		sent this tick. Both are refreshed once a tick by LoopServer::startUpdateBudgets, before the sendRecent calls
+		that spend them, see ObjHolder::sendRecent
+		Without a position - they haven't spawned, or they're spectating - nothing is throttled by distance for them
+	*/
+	glm::vec3 relevancePosition = glm::vec3(0, 0, 0);
+	bool hasRelevancePosition = false;
+	int updateByteBudget = 0;
+
 	//Points to itself, used to pass to lua functions pretty much
 	//Derivitive of a shared_ptr the server holds for all clients
 	std::shared_ptr<JoinedClient> me;

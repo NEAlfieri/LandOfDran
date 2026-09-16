@@ -92,4 +92,14 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->addBool("hosting/useevalpassword",	false, false,	"Enable Lua Password");
 	settings->setTooltip("hosting/useevalpassword",	"Enables the password for remote Lua execution");
 	settings->addString("hosting/evalpassword",	"changeme", false, "Lua console password");	
+
+	//How often each client hears about an object depends on how far from them it is, see NetRelevanceSettings
+	settings->addFloat("hosting/updatenear",		300.0f, false,	"Full Update Distance",		0, 16384);
+	settings->setTooltip("hosting/updatenear",	"Objects this close to a player are updated every tick");
+	settings->addFloat("hosting/updatemid",		700.0f, false,	"Half Update Distance",		0, 16384);
+	settings->setTooltip("hosting/updatemid",	"Out to here objects are updated every other tick");
+	settings->addFloat("hosting/updatefar",		1500.0f, false,	"Quarter Update Distance",	0, 16384);
+	settings->setTooltip("hosting/updatefar",	"Out to here objects are updated every fourth tick, past it not at all");
+	settings->addInt("hosting/updatebytespertick",	8192, false,	"Update Bytes Per Tick",	256, 65536);
+	settings->setTooltip("hosting/updatebytespertick",	"Most object update bytes one player can be sent per tick, a cap rather than a target");
 }

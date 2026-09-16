@@ -663,6 +663,7 @@ void Vehicle::readUpdate(const enet_uint8* src, float idealBufferSize)
 	glm::quat rotation;
 	getPosition(src + 1, position);
 	getQuaternion(src + 1 + PositionBytes, rotation);
+	//src[0] already accounts for how often this client is sent one, see SimObject::scaleUpdateInterval
 	interpolator.addSnapshot(position, rotation, idealBufferSize, src[0]);
 
 	memcpy(&serverVelocity[0], src + 1 + PositionBytes + QuaternionBytes, sizeof(float) * 3);

@@ -279,6 +279,22 @@ class Vehicle : public SimObject
 
 	virtual unsigned int getUpdatePacketBytes() const override;
 
+	//The first byte of an update is how long to play it back over, see SimObject::scaleUpdateInterval
+	//A byte can't say more than 255, and anything that long is treated as "no idea" by the interpolator anyway
+	virtual void scaleUpdateInterval(enet_uint8* update, unsigned int multiplier) const override
+	{
+		update[0] = (enet_uint8)std::min<unsigned int>(update[0] * multiplier, 255u);
+	}
+
+	//See SimObject::getNetRelevancePosition
+	virtual bool getNetRelevancePosition(glm::vec3& position) const override
+	{
+		if (!body)
+			return false;
+		position = b2g3(body->getWorldTransform().getOrigin());
+		return true;
+	}
+
 	virtual void addToCreationPacket(enet_uint8* dest) const override;
 
 	virtual void addToUpdatePacket(enet_uint8* dest) override;
