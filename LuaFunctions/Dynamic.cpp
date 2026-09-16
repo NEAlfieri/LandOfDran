@@ -965,6 +965,49 @@ static int LUA_dynamicSetMeshColor(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicGetMeshAt(lua_State* L)
+{
+	scope("(LUA) dynamic:getMeshAt");
+
+	if (lua_gettop(L) != 4)
+	{
+		error("Expected 4 arguments dynamic:getMeshAt(x,y,z)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	float z = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float y = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float x = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//The point in the model's own space: undo where the dynamic is and which way it's turned, then its type's scale
+	const btTransform& transform = dynamic->body->getWorldTransform();
+	const btQuaternion& rotation = transform.getRotation();
+	glm::vec3 offset = b2g3(transform.getOrigin());
+	glm::quat turn(rotation.w(), rotation.x(), rotation.y(), rotation.z());
+
+	std::shared_ptr<Model> model = dynamic->getType()->getModel();
+	glm::vec3 point = (glm::inverse(turn) * (glm::vec3(x, y, z) - offset)) / model->baseScale;
+
+	int meshIdx = model->getMeshAtPoint(point);
+	if (meshIdx == -1)
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, model->getMeshName(meshIdx).c_str());
+	return 1;
+}
+
 static int LUA_dynamicSetMeshDecal(lua_State* L)
 {
 	scope("(LUA) dynamic:setMeshDecal");
@@ -1857,7 +1900,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[38];
+	luaL_Reg* regs = new luaL_Reg[39];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1881,6 +1924,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "getMass",    LUA_dynamicGetMass };
 	regs[iter++] = { "setMassProps",    LUA_dynamicSetMassProps };
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
+	regs[iter++] = { "getMeshAt",    LUA_dynamicGetMeshAt };
 	regs[iter++] = { "setMeshDecal",    LUA_dynamicSetMeshDecal };
 	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
 	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };

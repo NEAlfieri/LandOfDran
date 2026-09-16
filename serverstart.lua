@@ -50,6 +50,9 @@ newSoundType("HammerHit","Assets/sound/hammerHit.WAV")
 newSoundType("WrenchHit","Assets/sound/wrenchHit.wav")
 newSoundType("WrenchMiss","Assets/sound/wrenchMiss.wav")
 newSoundType("SprayLoop","Assets/sound/sprayLoop.wav")
+--Games play SprayActivate themselves as their paint palette comes out, see LoopClient::handleInput
+newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
+newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
 --And Launch from a firing launcher
 newSoundType("Launch","Assets/sound/launch.wav")
 --Drivers left click to honk

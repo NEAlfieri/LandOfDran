@@ -1,16 +1,20 @@
 --[[
 	Inventory
 
-	Everyone starts with a hammer, a wrench, a paint can, and a launcher, and can carry up to 5 items. Q slides their items out on the
+	Everyone starts with a hammer, a wrench, and a launcher, and can carry up to 5 items. Q slides their items out on the
 	right of the screen and puts the picked one in their hand, the mouse wheel picks another while they're out, and Ctrl+W
 	throws the one in their hand. Left clicking an item on the ground picks it up.
+
+	The paint can isn't one of their items: opening the paint palette puts one in their hand, outside their slots, and it
+	stays there until they take their items out or start building again, which also puts the palette away.
 
 	Holding left mouse with the hammer or wrench in hand swings it, hitting right away and then about once a second until it's
 	let go. The hammer knocks loose the brick it hits, and the wrench opens the brick's wrench dialog and stops. Hitting anything
 	else plays HammerHit or WrenchMiss.
 
 	Holding left mouse with the paint can in hand sprays their paint palette's color where they're looking, painting every
-	brick the crosshair passes over with that color and material.
+	brick the crosshair passes over with that color and material. Spraying someone instead paints the body part the crosshair
+	is on, which puffs smoke, plays BodyRemove, and wears back off to however they painted themselves after a little while.
 
 	Left clicking with the launcher in hand fires a shell toward the crosshair, at most once per LAUNCHER_RELOAD_MS. The shell
 	falls in an arc and bursts on the first thing it touches, the ground included, pushing everything around it away with
@@ -30,11 +34,16 @@ local CLICK_RANGE = 60
 local REACH = 10
 
 --How often a hammer or wrench hits again while left mouse stays down, in milliseconds
-local TOOL_REPEAT_MS = 1000
+local TOOL_REPEAT_MS = 350
 
 --How far from the player the paint can reaches, a little further than the hammer and wrench, and how often it paints the brick under the crosshair while spraying, in milliseconds
 local PAINT_REACH = 13
 local PAINT_TICK_MS = 30
+
+--How long a body part sprayed onto someone stays that color before it goes back to how they painted themselves, and how
+--often that's counted down, both in milliseconds. Spraying it again starts its time over, to the nearest step
+local PAINT_WEAR_OFF_MS = 15000
+local PAINT_WEAR_STEP_MS = 2500
 
 --How fast a thrown item leaves the player in studs per second, how far in front of them it starts, and how far above their position
 local THROW_SPEED = 30
@@ -62,7 +71,8 @@ local SHELL_FOG_MS = 1000
 local SHELL_TAG = "launcherShell"
 
 --Item types from serverstart.lua everyone gets as they join, filling their slots in this order
-local STARTING_ITEMS = {"hammer", "wrench", "paintCan", "dranLauncher"}
+--The paint can isn't one of them, the paint palette hands it out, see paintCanChanged
+local STARTING_ITEMS = {"hammer", "wrench", "dranLauncher"}
 
 --Net IDs of items giveStartingItems handed out and nobody has thrown yet
 --These are removed instead of dropped when their player leaves, so people coming and going don't leave piles of tools behind
@@ -70,6 +80,13 @@ startingItems = {}
 
 --By client net ID while their paint can sprays: the paint can, its spray emitter, its sound loop, and the schedule of the next paintTick
 spraying = {}
+
+--The paint can in each client's hand while their paint palette has one out, by client net ID, see paintCanChanged
+paintCans = {}
+
+--Body parts sprayed onto someone's player, by the net ID of the client it belongs to:
+--which player was painted, and for each mesh its color, how long it has left, and the schedule counting that down
+sprayedParts = {}
 
 --The client's player, the first dynamic they control, or nil
 local function playerOf(client)
@@ -133,6 +150,106 @@ local function stopSpraying(client)
 	end
 end
 
+--Counts one sprayed body part down, and once its time is up puts it back to however its client painted themselves
+function wearOffSprayedPart(client, mesh)
+	local painted = sprayedParts[client:getID()]
+	local part = painted ~= nil and painted.parts[mesh] or nil
+	if part == nil then
+		return
+	end
+
+	--Spraying it again put its time back up to PAINT_WEAR_OFF_MS, see sprayPlayer
+	part.left = part.left - PAINT_WEAR_STEP_MS
+	if part.left > 0 then
+		part.tick = schedule(PAINT_WEAR_STEP_MS, "wearOffSprayedPart", client, mesh)
+		return
+	end
+
+	part.tick = nil
+	painted.parts[mesh] = nil
+
+	--A new player of theirs already looks how they painted themselves, so there's nothing left to put back
+	local player = playerOf(client)
+	if player == nil or player.id ~= painted.playerID then
+		sprayedParts[client:getID()] = nil
+		return
+	end
+
+	--A puff of smoke off the part as the paint goes
+	local smoke = addEmitter("hammerExplosionEmitter")
+	if smoke ~= nil then
+		smoke:attachToDynamic(player, mesh)
+	end
+	player:playSound("BodyRemove")
+
+	--Their appearance is the only way back to the part's own color, and it puts every part back, so the sprayed ones go on again
+	client:applyAppearance(player)
+
+	local anyLeft = false
+	for name, other in pairs(painted.parts) do
+		player:setMeshColor(name, other.r, other.g, other.b, 1)
+		anyLeft = true
+	end
+
+	if not anyLeft then
+		sprayedParts[client:getID()] = nil
+	end
+end
+
+--Paints the body part of someone's player the crosshair is on, which wearOffSprayedPart puts back later
+local function sprayPlayer(player, x, y, z, r, g, b)
+	--Only a player, whose client's appearance says what its parts should go back to
+	if player:getNumControllers() == 0 then
+		return
+	end
+
+	local owner = player:getControllerIdx(0)
+	local mesh = owner ~= nil and player:getMeshAt(x, y, z) or nil
+	if mesh == nil then
+		return
+	end
+
+	local painted = sprayedParts[owner:getID()]
+	--Their old player is gone, so nothing painted on it is still around
+	if painted == nil or painted.playerID ~= player.id then
+		painted = { playerID = player.id, parts = {} }
+		sprayedParts[owner:getID()] = painted
+	end
+
+	local part = painted.parts[mesh]
+	if part == nil then
+		part = {}
+		painted.parts[mesh] = part
+	end
+
+	part.left = PAINT_WEAR_OFF_MS
+
+	--Spraying runs every PAINT_TICK_MS, so only a color that actually changed is worth telling everyone about
+	if part.r == nil or not sameColor(r, g, b, 1, part.r, part.g, part.b, 1) then
+		part.r, part.g, part.b = r, g, b
+		player:setMeshColor(mesh, r, g, b, 1)
+	end
+
+	if part.tick == nil then
+		part.tick = schedule(PAINT_WEAR_STEP_MS, "wearOffSprayedPart", owner, mesh)
+	end
+end
+
+--Everything sprayed onto a client's player goes away without being put back, for a client who's leaving
+local function forgetSprayedParts(client)
+	local painted = sprayedParts[client:getID()]
+	if painted == nil then
+		return
+	end
+
+	sprayedParts[client:getID()] = nil
+	for _, part in pairs(painted.parts) do
+		if part.tick ~= nil then
+			cancel(part.tick)
+		end
+	end
+end
+
 --Paints the brick under the crosshair and keeps the spray the palette's color, for as long as they hold the paint can out
 function paintTick(client)
 	local spray = spraying[client:getID()]
@@ -154,12 +271,16 @@ function paintTick(client)
 	end
 
 	local hit, x, y, z = client:getCursorItem(CLICK_RANGE)
-	if hit ~= nil and hit.type == BRICK_TYPE_ID and withinReach(client, x, y, z, PAINT_REACH) then
-		if not sameColor(r, g, b, a, hit:getColor()) then
-			hit:setColor(r, g, b, a)
-		end
-		if hit:getMaterial() ~= material then
-			hit:setMaterial(material)
+	if hit ~= nil and withinReach(client, x, y, z, PAINT_REACH) then
+		if hit.type == BRICK_TYPE_ID then
+			if not sameColor(r, g, b, a, hit:getColor()) then
+				hit:setColor(r, g, b, a)
+			end
+			if hit:getMaterial() ~= material then
+				hit:setMaterial(material)
+			end
+		elseif hit.type == DYNAMIC_TYPE_ID then
+			sprayPlayer(hit, x, y, z, r, g, b)
 		end
 	end
 
@@ -180,6 +301,45 @@ local function startSpraying(client, can)
 	spraying[client:getID()] = { item = can, emitter = emitter, loop = can:startSoundLoop("SprayLoop") }
 	paintTick(client)
 end
+
+--Their paint palette came out or something took the can back, so the can goes into or out of their hand, outside their item slots
+function paintCanChanged(client, out)
+	local can = paintCans[client:getID()]
+
+	if not out then
+		paintCans[client:getID()] = nil
+		stopSpraying(client)
+		if can ~= nil then
+			--Destroying it takes it back out of their hand, it was never in a slot
+			can:destroy()
+		end
+		return client, out
+	end
+
+	--Their palette can come back out while they still have the can from last time
+	if can ~= nil then
+		return client, out
+	end
+
+	local typeID = getDynamicType("paintCan")
+	local player = playerOf(client)
+	if typeID == nil or player == nil then
+		return client, out
+	end
+
+	--Made where they're standing, so nobody sees it anywhere else before it's in their hand
+	local x, y, z = player:getPosition()
+	can = createItem(typeID, x, y, z)
+	if can == nil then
+		return client, out
+	end
+
+	client:setHandItem(can)
+	paintCans[client:getID()] = can
+
+	return client, out
+end
+registerEventListener("ClientPaintCan", "paintCanChanged")
 
 --By client net ID while their hammer or wrench keeps hitting: the tool, and the schedule of its next toolTick
 toolSwings = {}
@@ -455,6 +615,14 @@ registerEventListener("ClientDropItem", "throwItem")
 function dropItemsOnLeave(client)
 	stopSpraying(client)
 	stopToolSwings(client)
+	forgetSprayedParts(client)
+
+	--The palette's paint can goes with them rather than being left on the ground
+	local can = paintCans[client:getID()]
+	paintCans[client:getID()] = nil
+	if can ~= nil then
+		can:destroy()
+	end
 
 	for slot = 0, 4 do
 		local item = client:getItem(slot)

@@ -743,6 +743,8 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 	if (serverSide)
 	{
 		name = src->mName.C_Str();
+		//Servers don't draw, but getMeshAtPoint still needs to know which meshes aren't part of how the model looks
+		nonRenderingMesh = lowercase(name) == "collision";
 		return;
 	}
 
@@ -1140,6 +1142,86 @@ static void growToMeshes(const aiScene* scene, const aiNode* node, aiMatrix4x4 t
 		growToMeshes(scene, node->mChildren[a], transform, minPos, maxPos);
 }
 
+//The same walk as growToMeshes, except each mesh gets its own box rather than one around the lot of them
+void Model::calculateMeshBounds(const aiScene* scene)
+{
+	//Each node left to visit, with the transform that puts its meshes in the whole model's space
+	std::vector<std::pair<const aiNode*, aiMatrix4x4>> toVisit;
+	toVisit.emplace_back(scene->mRootNode, aiMatrix4x4());
+
+	while (!toVisit.empty())
+	{
+		const aiNode* node = toVisit.back().first;
+		aiMatrix4x4 transform = toVisit.back().second * node->mTransformation;
+		toVisit.pop_back();
+
+		for (unsigned int a = 0; a < node->mNumMeshes; a++)
+		{
+			unsigned int meshIdx = node->mMeshes[a];
+			if (meshIdx >= allMeshes.size())
+				continue;
+
+			Mesh* mesh = allMeshes[meshIdx];
+			const aiMesh* src = scene->mMeshes[meshIdx];
+			for (unsigned int v = 0; v < src->mNumVertices; v++)
+			{
+				aiVector3D position = transform * src->mVertices[v];
+				glm::vec3 vertex(position.x, position.y, position.z);
+
+				if (mesh->hasBounds())
+				{
+					mesh->boundsLow = glm::min(mesh->boundsLow, vertex);
+					mesh->boundsHigh = glm::max(mesh->boundsHigh, vertex);
+				}
+				else
+				{
+					mesh->boundsLow = vertex;
+					mesh->boundsHigh = vertex;
+				}
+			}
+		}
+
+		for (unsigned int a = 0; a < node->mNumChildren; a++)
+			toVisit.emplace_back(node->mChildren[a], transform);
+	}
+}
+
+int Model::getMeshAtPoint(const glm::vec3& point) const
+{
+	//The face plate sits right in front of the head, and is see-through apart from the face, so the head is what's really there
+	int facePlate = getFaceMeshIdx();
+	if (facePlate != -1 && lowercase(allMeshes[facePlate]->name) == "head")
+		facePlate = -1;
+
+	int best = -1;
+	float bestDistance = 0;
+	float bestVolume = 0;
+
+	for (int a = 0; a < (int)allMeshes.size(); a++)
+	{
+		const Mesh* mesh = allMeshes[a];
+		if (a == facePlate || mesh->nonRenderingMesh || !mesh->hasBounds())
+			continue;
+
+		//How far outside the box the point is along each axis, all zero for one inside it
+		glm::vec3 away = glm::max(glm::max(mesh->boundsLow - point, point - mesh->boundsHigh), glm::vec3(0));
+		float distance = glm::dot(away, away);
+
+		glm::vec3 size = mesh->boundsHigh - mesh->boundsLow;
+		float volume = size.x * size.y * size.z;
+
+		//A smaller box inside a bigger one, like a head within a whole body, is the more useful answer
+		if (best == -1 || distance < bestDistance || (distance == bestDistance && volume < bestVolume))
+		{
+			best = a;
+			bestDistance = distance;
+			bestVolume = volume;
+		}
+	}
+
+	return best;
+}
+
 void Model::calculateCollisionBox(const aiScene* scene)
 {
 	//Find the collision mesh, kinda redundant since we do it in getCollisionTransformMatrix
@@ -1348,6 +1430,7 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	//rootNode = new Node(scene->mRootNode, this);*/
 
+	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
 }
 
@@ -1704,6 +1787,7 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 		}
 	}
 
+	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
 
 	valid = true;

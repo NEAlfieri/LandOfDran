@@ -340,6 +340,17 @@ class Mesh
 	glm::vec3 low = glm::vec3(0);
 
 	/*
+		Its bounding box in the whole model's space, its node's transform applied but not baseScale, from Model::calculateMeshBounds
+		Unlike center/low this is filled server side too, so servers can work out which mesh of a model a point is on, see Model::getMeshAtPoint
+		A mesh no node draws, or one with no vertices, is left with boundsHigh below boundsLow
+	*/
+	glm::vec3 boundsLow = glm::vec3(1);
+	glm::vec3 boundsHigh = glm::vec3(-1);
+
+	//Whether calculateMeshBounds found any vertices for it
+	bool hasBounds() const { return boundsHigh.x >= boundsLow.x; }
+
+	/*
 		Texture coordinates of a decal's top left and bottom right corners on this mesh, client only
 		Nothing outside of them gets the decal, like the sides and back of a torso wearing a shirt
 		From a decalarea line in the model's .txt, otherwise the whole 0 to 1 range
@@ -570,6 +581,16 @@ class Model
 
 	//Calculates collisionHalfExtents and collisionOffset, called in constructor
 	void calculateCollisionBox(const aiScene* scene);
+
+	//Fills every mesh's boundsLow/boundsHigh, called in both constructors
+	void calculateMeshBounds(const aiScene* scene);
+
+	/*
+		Which mesh a point in the model's own space (before baseScale) is on or nearest to, -1 for a model with nothing paintable
+		Meshes that are never drawn, and the see-through face plate over a head, are skipped, and the smallest box wins a tie
+		Uses the bounding boxes the model was loaded in, so an animation having moved a limb since isn't taken into account
+	*/
+	int getMeshAtPoint(const glm::vec3& point) const;
 
 	/*
 		File path refers to a text file that describes where the actual model is

@@ -135,6 +135,11 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 			dropItemRequest(source, this, packet, pd);
 			return;
 		}
+		case PaintCanRequest:
+		{
+			paintCanRequest(source, this, packet, pd);
+			return;
+		}
 		case PaintChoice:
 		{
 			paintChoice(source, this, packet, pd);

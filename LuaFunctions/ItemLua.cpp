@@ -486,6 +486,68 @@ static int LUA_clientGetItem(lua_State* L)
 	return 1;
 }
 
+static int LUA_clientSetHandItem(lua_State* L)
+{
+	scope("(LUA) client:setHandItem");
+
+	int args = lua_gettop(L);
+	if (args != 1 && args != 2)
+	{
+		error("Expected client:setHandItem(item or nil)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = nullptr;
+	if (args == 2 && !lua_isnil(L, 2))
+	{
+		item = popItem(L, "client:setHandItem(item or nil)");
+		if (!item)
+			return 0;
+	}
+	lua_settop(L, 1);
+
+	std::shared_ptr<ClientData> client = popClient(L, "client:setHandItem(item or nil)");
+	if (!client)
+		return 0;
+
+	if (item && item->isHeld())
+	{
+		error("client:setHandItem was given an item that's already in someone's inventory, take it out with client:removeItem first");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	std::shared_ptr<Item> previous = client->setHandItem(LUA_pd, item);
+	if (previous && previous != item)
+		LUA_pd->dynamics->pushLua(L, previous);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+static int LUA_clientGetHandItem(lua_State* L)
+{
+	scope("(LUA) client:getHandItem");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument client:getHandItem()");
+		return 0;
+	}
+
+	std::shared_ptr<ClientData> client = popClient(L, "client:getHandItem()");
+	if (!client)
+		return 0;
+
+	std::shared_ptr<Item> item = client->handItem.lock();
+	if (item)
+		LUA_pd->dynamics->pushLua(L, item);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
 static int LUA_clientGetSelectedSlot(lua_State* L)
 {
 	scope("(LUA) client:getSelectedSlot");
@@ -519,7 +581,11 @@ static int LUA_clientGetHeldItem(lua_State* L)
 	if (!client)
 		return 0;
 
-	std::shared_ptr<Item> item = client->inventoryOpen ? client->inventory[client->selectedSlot].lock() : nullptr;
+	//An item Lua put in their hand is held instead of whatever their item bar has picked, see Item::isEquipped
+	std::shared_ptr<Item> item = client->handItem.lock();
+	if (!item && client->inventoryOpen)
+		item = client->inventory[client->selectedSlot].lock();
+
 	if (item)
 		LUA_pd->dynamics->pushLua(L, item);
 	else
@@ -622,6 +688,8 @@ void registerItemFunctions(lua_State* L)
 		{ "getItem", LUA_clientGetItem },
 		{ "getSelectedSlot", LUA_clientGetSelectedSlot },
 		{ "getHeldItem", LUA_clientGetHeldItem },
+		{ "setHandItem", LUA_clientSetHandItem },
+		{ "getHandItem", LUA_clientGetHandItem },
 		{ "getCameraPosition", LUA_clientGetCameraPosition },
 		{ "getCameraDirection", LUA_clientGetCameraDirection },
 		{ NULL, NULL }

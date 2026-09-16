@@ -146,6 +146,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientWrenchVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client holds Insert and left clicks a vehicle, before its wrench dialog opens. Return `client, nil` to keep the dialog closed. Not fired by `client:openWrenchDialog`. |
 | `ClientLoadVehicle` | `function(client, brickCount, asVehicle) ... return client, brickCount, asVehicle end` | Fires when a vehicle save a client uploaded from their Saved Vehicles window is about to be placed, with how many bricks it has (wheels included) and whether it's loading as a vehicle or as bricks. Return `client, nil` to stop it, which tells the client nothing. Not fired by `loadVehicleFile`. See [Vehicles](#vehicles). |
 | `ClientRemoveVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client confirms Remove vehicle in a vehicle's wrench dialog, before it's removed. Return `client, nil` to keep it. Not fired by `vehicle:destroy` or `clearAllVehicles`. |
+| `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `Inventory.lua` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
 | `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `Inventory.lua` throws the item in their hand. |
 | `ProjectileHit` | `function(projectile, hit, x, y, z, tag) ... return projectile, hit, x, y, z, tag end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, and `tag` is the tag it was fired with. It's removed right after its listeners run, unless one already removed it. Return values are ignored. `Inventory.lua` bursts launcher shells here. |
 
@@ -195,6 +196,7 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getMass()` | none | value | Current mass. |
 | `dynamic:setMassProps(mass, centerX, centerY, centerZ)` | mass and local center of mass | none | Sets mass and center of mass together. |
 | `dynamic:setMeshColor(meshName, r, g, b, a)` | mesh name within the model, color | none | Recolors one mesh of the model and broadcasts the change to clients. |
+| `dynamic:getMeshAt(x, y, z)` | a world position, like one `raycast()` or `client:getCursorItem()` gave | mesh name, or `nil` | Which mesh of the model a spot is on, for painting the body part someone was sprayed or shot on. The spot is moved into the model's own space and matched against the bounding box each mesh was loaded with, so the nearest mesh wins, the smaller of two boxes wins a tie, and a spot outside the model still gives the mesh it's nearest. Meshes that are never drawn (`Collision`) and the see-through face plate over a head (`Face1`) are skipped. Animations aren't taken into account, so a limb the model is playing an animation on is matched where it sits in the pose the model was loaded in. `nil` for a model with nothing paintable. |
 | `dynamic:setMeshDecal(meshName, decalName)` | mesh name within the model; file name of an image in `Assets/faces` or `Assets/shirts` (e.g. `"smiley.png"` or `"Mod-Police.png"`, up to 64 characters), or `""` to remove it | none | Shows a face or shirt on one mesh, drawn over its color, and broadcasts the change. The image covers the mesh's texture coordinates from 0 to 1, or only the rectangle a `decalarea` line in the model's `.txt` gives that mesh (`decalarea`, the mesh name, then the texture coordinates of the image's top left and bottom right corners, all tab separated), with nothing outside it; the default player's `Torso` has one covering its front. A model's face plate (a mesh named `Face1`, or `Face` without one) is see-through except for the face, so without a face it isn't drawn at all, and it casts no shadow or outline. Clients look the name up in their own `Assets/faces` folder, then `Assets/shirts`, so one they don't have isn't shown. |
 | `dynamic:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
 | `dynamic:clearHighlight()` | none | none | Removes the outline/highlight effect. |
@@ -221,7 +223,9 @@ ordinary dynamic. It falls, collides, and floats, every `dynamic:` method works 
 `client:getCursorItem()` can hit it. Item tables are Dynamic tables (`type` is `1`) that have the `item:` methods
 below as well, so check with `dynamic:isItem()`.
 
-Each client can carry 5 items, in slots 0 to 4. While an item is carried its body is out of the physics world. It
+Each client can carry 5 items, in slots 0 to 4, plus one `client:setHandItem` put in their hand outside those slots,
+which is held instead of whatever their item bar has picked and which their item bar can't reach. While an item is
+carried its body is out of the physics world. It
 doesn't collide, fall, or float, and `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`, `activate`,
 and `snapToCursor` do nothing. `getPosition` gives the position of the player carrying it. Settings like gravity,
 friction, and buoyancy are kept for when it's back on the ground. Items a leaving client still carries go back into the
@@ -229,12 +233,16 @@ world where they were, after `ClientLeave` listeners run.
 
 Players press Q (the "Show/Hide Items" key) to slide their items out on the right of the screen, which puts the item in
 the picked slot in their player's right hand for everyone to see, or in front of their camera in first person. The mouse
-wheel picks another slot while their items are out. Pressing Q again, or a brick hot bar slot's key, puts them away. A
+wheel picks another slot while their items are out. Pressing Q again, a brick hot bar slot's key, or the paint palette's
+key (which puts a paint can in their hand instead, see `ClientPaintCan`) puts them away, and Q and a brick slot's key put
+the paint palette away in turn. A
 carried item is held by the first dynamic `client:setDefaultController` gave its client, and isn't drawn anywhere
 without one. Pressing Ctrl+W fires `ClientDropItem`, and letting go of a mouse button fires `ClientClickRelease`.
 
-`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, `paintCan`, and
-`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped). Left clicking an
+`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, and
+`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped).
+The `paintCan` isn't one of them: opening the paint palette puts one in their hand with `client:setHandItem` (see
+`ClientPaintCan`), and it's destroyed again once their item bar or brick bar takes it back. Left clicking an
 item on the ground within 10 studs picks it up into the first empty slot. Holding left mouse with the hammer or wrench
 in hand swings it, hitting right away and then about once a second for as long as it's held, except the wrench stops once
 it opens a dialog. The hammer knocks loose a brick it's clicked on (`brick:remove(true)`), and the wrench opens the
@@ -243,6 +251,10 @@ brick's wrench dialog, playing `WrenchHit`. Hitting anything else within reach, 
 `hammerExplosionEmitter`, or the wrench's) where it hit. Holding left mouse with the paint can sprays a `paintEmitter` stream in the player's paint color from
 the can to what they look at, with the `SprayLoop` sound, and paints every brick within 13 studs the crosshair passes
 over with their paint color and material (`client:getPaintColor`, `client:getPaintMaterial`), checking about every 30 ms.
+Spraying someone's player instead paints the body part the crosshair is on (`dynamic:getMeshAt`) their paint color, which
+puffs a `hammerExplosionEmitter` off that part, plays `BodyRemove` from them, and goes back to however that player
+painted themselves (`client:applyAppearance`) 20 seconds after they were last sprayed. Games play `SprayActivate`
+themselves as their palette comes out, so `serverstart.lua` registers both names.
 Left clicking with the launcher in hand plays its `fire` animation and the `Launch` sound, puts a `gunSmokeEmitter` at the
 end of its barrel, and fires a `launcherShell` (`addProjectile`, tagged `"launcherShell"`) at 90 studs a second toward
 whatever the crosshair is on, trailing a `shellTrailEmitter`, at most once every 650 ms. Where a shell lands it makes a
@@ -834,7 +846,9 @@ A "client" represents one connected player/connection.
 | `client:removeItem(slot)` | 0-4 | Item or `nil` | Takes the item out of the slot and puts it back into the world just in front of the client's player, not moving, or where it was without a player. `nil` for an empty slot. |
 | `client:getItem(slot)` | 0-4 | Item or `nil` | The item in that slot. |
 | `client:getSelectedSlot()` | none | slot, open | The slot the client's item bar has picked (0-4, kept while it's put away), and whether their items are out. |
-| `client:getHeldItem()` | none | Item or `nil` | The item in the client's hand: the one in the picked slot while their items are out. |
+| `client:getHeldItem()` | none | Item or `nil` | The item in the client's hand: their `setHandItem` one if they have one, otherwise the one in the picked slot while their items are out. |
+| `client:setHandItem(item or nil)` | an item on the ground, or `nil`/nothing to empty their hand | Item or `nil` | Puts an item in the client's hand without using a slot, so their item bar can't reach it and it's held whatever their bar has picked. Whatever was in their hand before goes back into the world in front of their player and is returned, as does the one there when this is called with `nil`. Logs an error for an item someone already carries. `Inventory.lua` puts a paint can here while the paint palette has one out. |
+| `client:getHandItem()` | none | Item or `nil` | The item `setHandItem` put in their hand, `nil` if there isn't one. |
 | `client:getCameraPosition()` | none | x, y, z | Where the client's camera was as of their last movement update, which comes about every 100 ms. Needs `setDefaultController`. |
 | `client:getCameraDirection()` | none | x, y, z | Which way their camera looked then, normalized. Needs `setDefaultController`. While they hold left mouse, their camera is sent about every 30 ms instead. |
 | `client:getPaintColor()` | none | r, g, b, a | The color their paint palette (E, or Right Shift's custom color) has picked, 0-1. Their game sends it as they connect and whenever it changes. White until then. |

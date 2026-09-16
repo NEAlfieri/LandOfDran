@@ -284,6 +284,7 @@ EventManager::EventManager(lua_State* L)
     events.push_back(LuaEvent("ClientWrenchBrick"));
     events.push_back(LuaEvent("ClientClickRelease"));
     events.push_back(LuaEvent("ClientDropItem"));
+    events.push_back(LuaEvent("ClientPaintCan"));
     events.push_back(LuaEvent("ClientSliceBricks"));
     events.push_back(LuaEvent("ClientEnterVehicle"));
     events.push_back(LuaEvent("ClientExitVehicle"));

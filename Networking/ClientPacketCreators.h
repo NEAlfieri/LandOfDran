@@ -76,6 +76,20 @@ inline ENetPacket* makePaintChoicePacket(glm::u8vec4 color, unsigned char materi
 
 /*
 	1 byte		-	packet type
+	1 byte		-	1 while the paint palette wants a paint can in our hand
+
+	Sent as the palette comes out and again once the item bar or the brick bar takes the can away
+*/
+inline ENetPacket* makePaintCanPacket(bool out)
+{
+	ENetPacket* ret = enet_packet_create(NULL, 2, getFlagsFromChannel(OtherReliable));
+	ret->data[0] = (unsigned char)PaintCanRequest;
+	ret->data[1] = out ? 1 : 0;
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
 	1 byte		-	client game version
 	1 byte		-	name length, max 255
 	1-255 bytes	-	name

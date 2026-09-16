@@ -51,7 +51,14 @@ std::shared_ptr<Dynamic> Item::getHolder() const
 bool Item::isEquipped() const
 {
 	std::shared_ptr<ClientData> carrier = owner.lock();
-	return carrier && carrier->inventoryOpen && carrier->selectedSlot == slot;
+	if (!carrier)
+		return false;
+
+	//An item Lua put in their hand is held instead of whatever their item bar has picked, see ClientData::setHandItem
+	if (std::shared_ptr<Item> hand = carrier->handItem.lock())
+		return hand.get() == this;
+
+	return carrier->inventoryOpen && carrier->selectedSlot == slot;
 }
 
 void Item::playAnimation(int id, bool loop)

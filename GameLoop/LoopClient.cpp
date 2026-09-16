@@ -7,6 +7,11 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	//Nobody to talk to anymore
 	voiceToggled = false;
 
+	//The next server hasn't been told about our paint can, and starts out thinking we don't have one
+	paletteWasShown = false;
+	paintCanOut = false;
+	paintCanSent = false;
+
 	pd.serverBrowser->open();
 
 	if (!client)
@@ -1140,6 +1145,17 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	pd.paintMenu->updatePaintKey(pd.input->pollCommand(OpenPaintMenu));
 
+	//The palette coming out puts a paint can in our hand, which outlasts the palette hiding itself again
+	if (pd.paintMenu->isPaletteShown() && !paletteWasShown)
+	{
+		paintCanOut = true;
+		pd.itemHotbar->putAway();
+
+		//Just for us, nobody else needs to hear our palette
+		pd.audio->playSound("SprayActivate");
+	}
+	paletteWasShown = pd.paintMenu->isPaletteShown();
+
 	if (pd.input->pollCommand(CustomColor))
 	{
 		pd.paintMenu->toggleCustomColor();
@@ -1172,6 +1188,8 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	if (pd.input->pollCommand(OpenInventory))
 	{
 		pd.itemHotbar->toggle();
+		paintCanOut = false;
+		pd.paintMenu->putAway();
 		if (pd.itemHotbar->isUp())
 			pd.brickHotbar->putAway();
 	}
@@ -1182,6 +1200,8 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		{
 			pd.brickHotbar->pressSlot(a);
 			pd.itemHotbar->putAway();
+			paintCanOut = false;
+			pd.paintMenu->putAway();
 			pd.selectionBox.cancel();
 			pd.vehicleGhost.cancel();
 		}
@@ -1191,6 +1211,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	if (pd.itemHotbar->takeChange() && client)
 		client->send(makeInventorySelectPacket(pd.itemHotbar->isUp(), pd.itemHotbar->getSelected()), OtherReliable);
+
+	if (paintCanOut != paintCanSent && client)
+	{
+		client->send(makePaintCanPacket(paintCanOut), OtherReliable);
+		paintCanSent = paintCanOut;
+	}
 
 	if (pd.brickHotbar->takeChange())
 	{

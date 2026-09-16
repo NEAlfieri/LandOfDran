@@ -87,6 +87,7 @@ enum FromClientPacketType : unsigned char
 	VehicleSaveRequest = 22,	//Send the client a save of a vehicle to write to their own computer, see Networking/PacketsFromClient/VehicleFiles.cpp
 	VehicleUpload = 23,		//Part of a vehicle save from the client's computer, with where they placed its ghost
 	VehicleRemoveRequest = 24,	//Remove the vehicle in the wrench dialog the server last sent them
+	PaintCanRequest = 25,	//Whether the client's paint palette wants a paint can in their hand, see Networking/PacketsFromClient/Inventory.cpp
 };
 
 //Flags byte after the mask of a ClickDetails packet

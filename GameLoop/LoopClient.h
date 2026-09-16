@@ -54,6 +54,14 @@ class LoopClient
 	//Same for the custom paint color picker
 	bool colorPickerWasOpen = false;
 
+	/*
+		Opening the palette puts a paint can in our hand, which stays there until the item bar or the brick bar takes it away
+		paletteWasShown catches the moment it comes out, and paintCanSent is the last thing PaintCanRequest told the server
+	*/
+	bool paletteWasShown = false;
+	bool paintCanOut = false;
+	bool paintCanSent = false;
+
 	//And the saved vehicles window
 	bool vehicleLoaderWasOpen = false;
 
