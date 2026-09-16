@@ -10,7 +10,7 @@
 static constexpr float vehicleReach = 30.0f;
 
 //Honking while driving waits this long between honks, like the old game
-static constexpr unsigned int honkCooldownMS = 1000;
+static constexpr unsigned int honkCooldownMS = 350;
 
 //Nobody drives it and nobody stands on any of its seats, so left clicking it flips it upright
 static bool isVehicleEmpty(const Vehicle& vehicle)
