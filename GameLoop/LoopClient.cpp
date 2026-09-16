@@ -544,6 +544,9 @@ void LoopClient::placeVehicleDrivers(float deltaT)
 			if (rider->isInWorld())
 				rider->removeFromWorld();
 
+			//Its body sits still out of the world, so anything that goes by how fast it's moving, like the Doppler effect, goes by the vehicle instead
+			rider->ridingVehicle = vehicle;
+
 			btQuaternion turn = transform.getRotation();
 			rider->body->setWorldTransform(transform);
 			rider->setDrawnTransform(b2g3(transform.getOrigin()), glm::quat(turn.w(), turn.x(), turn.y(), turn.z()));
@@ -2434,8 +2437,17 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	std::optional<glm::vec3> listenerVelocity;
 	if (std::shared_ptr<Dynamic> followed = simulation.camera->target.lock())
 	{
-		btVector3 velocity = followed->getVelocity();
-		listenerVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
+		//Riding a vehicle parks its rider's body out of the physics world, so the vehicle is what they're really moving with,
+		//which is also what its own sounds move with, leaving them unbent for whoever rides along with them
+		if (std::shared_ptr<Vehicle> ridden = followed->ridingVehicle.lock())
+		{
+			listenerVelocity = ridden->serverVelocity;
+		}
+		else
+		{
+			btVector3 velocity = followed->getVelocity();
+			listenerVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
+		}
 	}
 
 	//Push to talk is suppressed like every other game key while typing in chat or another window

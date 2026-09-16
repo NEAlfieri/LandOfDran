@@ -8,6 +8,8 @@
 #include "../Networking/JoinedClient.h"
 #include "../Utility/GlobalStartup.h" //getTicksMS
 
+class Vehicle;
+
 /*
 	Dynamics are basically any object that can move around with physics
 	Projectiles are dynamics and items and players are child classes of dynamics
@@ -130,6 +132,10 @@ class Dynamic : public SimObject
 
 	//Client only, true if object is in Simulation::controlledDynamics
 	bool clientControlled = false;
+
+	//Client only, the vehicle it's riding in as of the last LoopClient::placeVehicleDrivers, empty when it isn't in one
+	//Riding takes it out of the physics world, which leaves its body's velocity at zero, so its vehicle's is how fast it really moves
+	std::weak_ptr<Vehicle> ridingVehicle;
 
 	//Client only, ms timestamp (getTicksMS) until which we should render off the live physics transform instead of the
 	//interpolated one - set briefly after locally touching the player's controlled body, so bumping into something feels

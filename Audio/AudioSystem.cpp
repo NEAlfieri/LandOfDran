@@ -234,6 +234,13 @@ static glm::vec3 soundVelocity(const SoundLocation& where)
 	if (std::shared_ptr<Vehicle> vehicle = where.vehicle.lock())
 		return vehicle->serverVelocity;
 
+	//Someone riding a vehicle has their body parked out of the physics world with no velocity, so they move with whatever carries them
+	if (std::shared_ptr<Dynamic> dynamic = where.dynamic.lock())
+	{
+		if (std::shared_ptr<Vehicle> vehicle = dynamic->ridingVehicle.lock())
+			return vehicle->serverVelocity;
+	}
+
 	const btRigidBody* body = where.body();
 	if (!body)
 		return glm::vec3(0);

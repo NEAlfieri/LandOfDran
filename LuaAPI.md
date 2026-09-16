@@ -697,7 +697,8 @@ them, shift in pitch (the Doppler effect, with sound traveling 343 studs a secon
 pulling apart slower than 12 studs a second doesn't shift pitch at all, and the shift eases in
 up to its full amount at 30 studs a second, so walking around doesn't bend music. The listener
 is the client's camera, but its movement for the Doppler effect is that of whatever the camera
-follows, so swinging the camera around doesn't change pitch.
+follows, so swinging the camera around doesn't change pitch. Someone in a vehicle moves along
+with it, so a car's own music doesn't bend for whoever is driving or riding on it.
 
 Unless Lua picks a preset with `setAudioEffect`, each client's reverb follows the space around
 their camera: out in the open there's almost none, and it gets louder and longer the more

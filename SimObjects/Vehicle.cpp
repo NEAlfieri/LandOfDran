@@ -517,7 +517,12 @@ void Vehicle::releaseSeated(int seatIndex, float idealBufferSize)
 	std::shared_ptr<Dynamic> rider = slot.lock();
 	slot.reset();
 
-	if (!rider || rider->isInWorld() || rider->getKind() != DynamicKind_Plain)
+	if (!rider)
+		return;
+
+	rider->ridingVehicle.reset();
+
+	if (rider->isInWorld() || rider->getKind() != DynamicKind_Plain)
 		return;
 
 	//A driver comes out on top of the vehicle, a passenger just off the seat they stood on
