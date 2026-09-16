@@ -22,7 +22,8 @@ class JoinedClient
 
 public:
 
-	float getPing() const { return peer->roundTripTime; }
+	//A kicked client keeps its place in the server's list until ENet reports the disconnect, with no peer left to ask, like send
+	float getPing() const { return peer ? peer->roundTripTime : 0.0f; }
 
 	//Set this to ClientData I guess
 	void* userData = nullptr;
@@ -42,7 +43,7 @@ public:
 
 	netIDType getNetId() const { return netID; }
 
-	float getPacketLoss() { return peer->packetLoss; }
+	float getPacketLoss() const { return peer ? peer->packetLoss : 0.0f; }
 
 	//Send a packet to this client
 	void send(const char* data, unsigned int len, PacketChannel channel) const;

@@ -704,6 +704,14 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 LoopServer::~LoopServer()
 {
+	/*
+		Single player shares the one SimObject::world with the client, which points it back at its own world after
+		every tick of ours, and takes it away entirely when it leaves a server. Our objects take their bodies out of
+		whatever it points at as they're destroyed below, so aim it at ours first, then hand back what was there
+	*/
+	std::shared_ptr<PhysicsWorld> clientWorld = SimObject::world == pd.physicsWorld ? nullptr : SimObject::world;
+	SimObject::world = pd.physicsWorld;
+
 	delete pd.eventManager;
 	delete scheduler;
 
@@ -723,7 +731,7 @@ LoopServer::~LoopServer()
 	}
 
 	pd.physicsWorld.reset();
-	SimObject::world = nullptr;
+	SimObject::world = clientWorld;
 
 	delete pd.dynamics;
 	delete pd.statics;
