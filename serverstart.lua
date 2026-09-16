@@ -171,6 +171,11 @@ local STATIC_TYPE_ID = 2
 
 function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 
+	--Every button matched below belongs to the falling tiles, which may never have been created
+	if not fallingTilesCreated then
+		return client,posX,posY,posZ,dirX,dirY,dirZ,mask
+	end
+
 	ignore = nil
 	if client:getNumControlled() > 0 then
 		ignore = client:getControlledIdx(0)
@@ -224,10 +229,16 @@ function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 end
 registerEventListener("ClientClick","click")
 
+--A demo of statics: rows of colored plates that dissapear when their button is clicked
+--Nothing creates these on its own, call createFallingTiles() to put them in the world
 --z > 0 left
 --z < 0 right
-function setUpLevel()
-	levelSetUp = true
+fallingTilesCreated = false
+function createFallingTiles()
+	if fallingTilesCreated then
+		return
+	end
+	fallingTilesCreated = true
 	
 	gravityButton = createStatic(button,40,42,5)
 	gravityButton:setMeshColor("Button",1,1,0,1)
@@ -366,10 +377,6 @@ function setUpLevel()
 	table.insert(smalls,last)
 	table.insert(blacks,last)
 	table.insert(rights,last)
-end
-
-if levelSetUp == nil then
-	setUpLevel()
 end
 
 --Client confirms finishes loading SimObject types
