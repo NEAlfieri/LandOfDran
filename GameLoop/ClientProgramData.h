@@ -26,6 +26,8 @@
 #include "../Bricks/SelectionBox.h"
 #include "../Bricks/VehicleGhost.h"
 #include "../Bricks/BrickTypes.h"
+#include "../Bricks/PrintTypes.h"
+#include "../Graphics/PrintVideos.h"
 #include "../Interface/BrickSelector.h"
 #include "../Interface/BrickHotbar.h"
 #include "../Interface/PaintMenu.h"
@@ -87,6 +89,12 @@ struct ClientProgramData
 
 	//Named brick sizes with icons, for the brick selector
 	BrickTypes brickTypes;
+
+	//Prints from Assets/brick/prints, each loaded into a layer of the decal array, see PrintType::decalLayer
+	PrintTypes prints;
+
+	//The .webm ones among them, playing into their layers, see Graphics/PrintVideos.h
+	PrintVideos printVideos;
 
 	//Lives for the whole program, every vehicle's wheels are instances of it, nullptr if it couldn't be loaded, see LoopClient::placeVehicleWheels
 	Model* tireModel = nullptr;

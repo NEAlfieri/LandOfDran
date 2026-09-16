@@ -631,7 +631,7 @@ std::string makeVehicleSaveFile(const Vehicle& vehicle)
 		pointers.push_back(&brick);
 
 	std::ostringstream stream(std::ios::binary);
-	writeLodBricks(stream, pointers, &LUA_pd->brickTypes, true);
+	writeLodBricks(stream, pointers, &LUA_pd->brickTypes, &LUA_pd->prints, true);
 	return stream.str();
 }
 
@@ -650,7 +650,7 @@ bool loadVehicleSave(ClientData* builder, const std::string& data, const glm::iv
 	std::vector<Brick> loaded;
 	size_t total = 0;
 	std::istringstream stream(data, std::ios::binary);
-	LodReadResult result = readLodBricks(stream, &LUA_pd->brickTypes, [&](Brick& brick)
+	LodReadResult result = readLodBricks(stream, &LUA_pd->brickTypes, &LUA_pd->prints, [&](Brick& brick)
 	{
 		total++;
 		if (loaded.size() < mostBricks)

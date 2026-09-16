@@ -73,6 +73,8 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	simulation.brickDebris = nullptr;
 	simulation.brickTypeFromServer.clear();
 	simulation.brickTypeToServer.clear();
+	simulation.printFromServer.clear();
+	simulation.serverPrintNames.clear();
 
 	delete client;
 	client = nullptr;
@@ -898,6 +900,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		if (simulation.brickDebris)
 			simulation.brickDebris->setLifetime(settings->getFloat("graphics/brickdebrisseconds"));
 		pd.particles->setMaxParticles(settings->getInt("graphics/maxparticles"));
+		pd.printVideos.setMaxPlaying(settings->getInt("graphics/maxvideoprints"));
 		pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
 		pd.depthPrePass = settings->getBool("graphics/depthprepass");
 		pd.rain.setQuality(settings->getInt("graphics/rainquality"), pd.textures);
@@ -925,7 +928,8 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		if (wrenchSubmission.vehicleID != NO_ID)
 			client->send(makeVehicleWrenchSubmitPacket(wrenchSubmission.vehicleID, wrenchSubmission.attachments), OtherReliable);
 		else
-			client->send(makeWrenchSubmitPacket(wrenchSubmission.brickID, wrenchSubmission.collides, wrenchSubmission.name, wrenchSubmission.attachments), OtherReliable);
+			client->send(makeWrenchSubmitPacket(wrenchSubmission.brickID, wrenchSubmission.collides, wrenchSubmission.name, wrenchSubmission.attachments,
+				wrenchSubmission.printName), OtherReliable);
 	}
 
 	//The server sends the vehicle's bricks back for VehicleSaveDataPacket to write
@@ -947,7 +951,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		std::string failure;
 		if (bytes.empty() || bytes.size() > 8 * 1024 * 1024)
 			pd.gui->addCenterPrint("Couldn't read " + loadPath, 3000, 1.0f, 0.4f, 0.4f);
-		else if (!pd.vehicleGhost.start(std::filesystem::path(loadPath).stem().string(), bytes, loadAsVehicle, pd.brickTypes, failure))
+		else if (!pd.vehicleGhost.start(std::filesystem::path(loadPath).stem().string(), bytes, loadAsVehicle, pd.brickTypes, pd.prints, failure))
 			pd.gui->addCenterPrint(failure, 3000, 1.0f, 0.4f, 0.4f);
 		else
 		{
@@ -1965,6 +1969,13 @@ void LoopClient::renderEverything(float deltaT)
 		pd.brickRenderer->rebuildDirty(4.0f);
 	}
 
+	//After the chunk uploads, which is what knows whether any brick is wearing a video print at all
+	{
+		GpuZone zone(pd.profiler, "Video prints");
+		pd.printVideos.update(deltaT / 1000.0f, pd.textures,
+			[&](uint16_t print) { return pd.brickRenderer->isPrintUsed(print); });
+	}
+
 	pd.profiler.begin("Sun shadows");
 
 	//Render shadows to texture, one cascade at a time so each only draws the chunks that can cast into it
@@ -2571,6 +2582,8 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	pd.debugMenu->addExtraLine("Point lights: " + pd.pointLights->getStats());
 	pd.debugMenu->addExtraLine("Shadows: " + pd.brickRenderer->getShadowStats());
 	pd.debugMenu->addExtraLine("Particles: " + pd.particles->getStats());
+	if (!pd.printVideos.getStatus().empty())
+		pd.debugMenu->addExtraLine("Prints: " + pd.printVideos.getStatus());
 	if (simulation.dynamics && simulation.dynamics->size() > 0)
 		pd.debugMenu->addExtraLine("First other snaps: " + std::to_string(simulation.dynamics->get(0)->interpolator.getNumSnapshots()));
 	if (simulation.controlledDynamics.size() > 0)
@@ -2804,6 +2817,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	});
 
 	pd.brickTypes.load("Assets/brick/types");
+	pd.prints.load("Assets/brick/prints");
 
 	pd.gui = std::make_shared<UserInterface>();
 	pd.gui->updateSettings(settings);
@@ -2883,7 +2897,12 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	if (facePaths.size() + shirtPaths.size() > 256)
 		shirtPaths.resize(256 - facePaths.size());
 
-	pd.textures->allocateForDecals(256, std::max<unsigned int>(1, (unsigned int)(facePaths.size() + shirtPaths.size())));
+	//Brick prints share the decal array with them, see PrintTypes
+	size_t printCount = std::min<size_t>(pd.prints.size(), 256 - facePaths.size() - shirtPaths.size());
+	if (printCount < pd.prints.size())
+		error("Only " + std::to_string(printCount) + " of " + std::to_string(pd.prints.size()) + " prints fit in the decal array, the rest will look plain");
+
+	pd.textures->allocateForDecals(256, std::max<unsigned int>(1, (unsigned int)(facePaths.size() + shirtPaths.size() + printCount)));
 	for (const std::filesystem::path& facePath : facePaths)
 	{
 		if (pd.textures->addDecal(facePath.generic_string(), (int)pd.faceNames.size()))
@@ -2894,6 +2913,24 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 		if (pd.textures->addDecal(shirtPath.generic_string(), (int)(pd.faceNames.size() + pd.shirtNames.size())))
 			pd.shirtNames.push_back(shirtPath.filename().string());
 	}
+	bool skippedVideos = false;
+	for (size_t print = 0; print < printCount; print++)
+	{
+		const PrintType* type = pd.prints.get((int)print);
+		int layer = (int)(facePaths.size() + shirtPaths.size() + print);
+
+		//A .webm plays into its layer instead of being loaded once, see Graphics/PrintVideos.h
+		bool loaded = type->video ? pd.printVideos.add((int)print, *type, layer, pd.textures) : pd.textures->addDecal(type->filePath, layer);
+		skippedVideos |= type->video && !loaded;
+
+		if (loaded)
+			pd.prints.setDecalLayer((int)print, layer);
+	}
+
+	if (skippedVideos && !VideoPlayer::isSupported())
+		error("This build has no libvpx, so .webm prints are skipped, see the video prints line from CMake when it was built");
+
+	pd.printVideos.setMaxPlaying(settings->getInt("graphics/maxvideoprints"));
 	pd.textures->finalizeDecals();
 
 	pd.grassMaterial = new Material("Assets/ground/grass.txt", pd.textures);
@@ -2922,7 +2959,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.shadowTintSkipContainingUniform = pd.shaders->brickShadowTintShader->getUniformLocation("skipContaining");
 	pd.shadowTintSkipPointUniform = pd.shaders->brickShadowTintShader->getUniformLocation("skipPoint");
 
-	pd.brickRenderer = new InstancedBrickRenderer(pd.shaders, pd.textures, &pd.brickTypes);
+	pd.brickRenderer = new InstancedBrickRenderer(pd.shaders, pd.textures, &pd.brickTypes, &pd.prints);
 
 	//Every vehicle's wheels are drawn with it
 	pd.tireModel = new Model("Assets/tire/tire.txt", pd.textures, glm::vec3(1.0f));

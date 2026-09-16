@@ -419,6 +419,10 @@ static bool loadSpecialBlb(SpecialBrickType& type, const std::filesystem::path& 
 			{
 				ok = reader.takeFloats(2, values);
 				corners[c].uv = glm::vec2(values[0], values[1]);
+
+				//Swapping y and z mirrors the whole shape, which only shows on a print, where it would draw every letter backwards
+				if (texture == BrickTexturePrint)
+					corners[c].uv.x = 1.0f - corners[c].uv.x;
 			}
 
 			std::string next = ok ? reader.take() : "";

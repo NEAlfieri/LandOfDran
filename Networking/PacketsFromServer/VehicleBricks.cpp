@@ -46,6 +46,10 @@ bool VehicleBricksPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 		if (desc.isSpecial())
 			desc.typeID = desc.typeID < simulation.brickTypeFromServer.size() ? simulation.brickTypeFromServer[desc.typeID] : 0;
 
+		//And the server's print ID, see BrickPrintTypesPacket
+		if (desc.printID != 0)
+			desc.printID = desc.printID < simulation.printFromServer.size() ? simulation.printFromServer[desc.printID] : 0;
+
 		vehicle->bricks.push_back(desc);
 	}
 

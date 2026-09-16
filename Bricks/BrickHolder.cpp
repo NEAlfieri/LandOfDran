@@ -38,6 +38,7 @@ void BrickHolder::writeRecord(const Brick* brick, enet_uint8* data)
 	//Collision in the low bit, material in the 4 above it
 	data[18] = (brick->collides ? 1 : 0) | ((brick->material & 15) << 1);
 	memcpy(data + 19, &brick->typeID, sizeof(uint16_t));
+	memcpy(data + 21, &brick->printID, sizeof(uint16_t));
 }
 
 Brick BrickHolder::readRecord(const enet_uint8* data)
@@ -65,6 +66,7 @@ Brick BrickHolder::readRecord(const enet_uint8* data)
 	if (brick.material >= BrickMaterialCount)
 		brick.material = BrickMaterial_None;
 	memcpy(&brick.typeID, data + 19, sizeof(uint16_t));
+	memcpy(&brick.printID, data + 21, sizeof(uint16_t));
 	return brick;
 }
 
@@ -158,6 +160,7 @@ Brick* BrickHolder::addFromServer(const Brick& desc)
 	{
 		existing->color = desc.color;
 		existing->material = desc.material;
+		existing->printID = desc.printID;
 		setColliding(existing, desc.collides);
 		if (renderer)
 			renderer->updateBrick(existing);
@@ -320,6 +323,17 @@ void BrickHolder::setColliding(Brick* brick, bool collides)
 void BrickHolder::setColor(Brick* brick, const glm::u8vec4& color)
 {
 	brick->color = color;
+
+	if (server)
+		pendingSends.insert(brick->netId);
+
+	if (renderer)
+		renderer->updateBrick(brick);
+}
+
+void BrickHolder::setPrint(Brick* brick, uint16_t printID)
+{
+	brick->printID = printID;
 
 	if (server)
 		pendingSends.insert(brick->netId);

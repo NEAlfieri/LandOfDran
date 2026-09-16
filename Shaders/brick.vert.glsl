@@ -21,6 +21,9 @@ layout(location = 9) in float BrickAngle;
 //A BrickMaterial from Bricks/Brick.h
 layout(location = 10) in float BrickMaterial;
 
+//Special bricks only: which layer of the decal array holds this brick's print, -1 for a brick with none
+layout(location = 11) in float BrickPrint;
+
 layout (std140) uniform CameraUniforms
 {
 	//Camera Uniforms:
@@ -62,6 +65,9 @@ uniform mat4 brickTransform;
 
 //Drawing special bricks, see the inputs above
 uniform bool specialMesh;
+
+//Drawing a special brick's TEX:PRINT faces, the only ones its print goes on, see InstancedBrickRenderer::drawSpecial
+uniform bool printFace;
 
 //STUD_SIZE and PLATE_SIZE in Bricks/Brick.h
 const vec3 gridScale = vec3(1.0, 0.4, 1.0);
@@ -163,7 +169,8 @@ void main()
 	tangent = rotation * CubeTangent;
 	//Brick normal maps point green toward the top of the image, which is v = 0 since textures load unflipped, so it runs against the face's v
 	bitangent = -(rotation * CubeBitangent);
-	useDecal = -1;
+	//model.frag draws the print over the face's paint, in the face's own texture coordinates since bricks leave DecalArea whole
+	useDecal = printFace ? int(BrickPrint) : -1;
 	decalCutout = 0;
 
 	gl_ClipDistance[0] = dot(vec4(worldPos, 1.0), ClipPlane);

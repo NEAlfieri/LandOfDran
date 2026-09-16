@@ -494,9 +494,9 @@ as they join, and draw bricks of types they don't have as plain boxes.
 | `getBrickId(id)` | net ID | Brick or `nil` | Looks up a brick by its net ID. |
 | `getBrickAt(x, y, z)` | one stud/plate grid cell | Brick or `nil` | The brick filling that cell, if any. |
 | `clearAllBricks()` | none | none | Removes every brick. |
-| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, and emitter, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
-| `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Other special types, and the old game's lights, music, and prints, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
-| `loadBlocklandSave(fileName)` | file name inside `Saves` | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
+| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, emitter, and print, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
+| `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, prints, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Prints come by name, from the old game's saves too, however many faces its print mask covered; ones the server doesn't have are dropped and listed in the log. Other special types, and the old game's lights and music, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
+| `loadBlocklandSave(fileName)` | file name inside `Saves` | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, prints, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Prints are matched by the name in the save, like `Letters/X`; ones the server doesn't have are dropped and listed in the log. Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
 | `addBlocklandLight(uiName, table)` / `addBlocklandLight(uiName, nil)` | a Blockland light type's name, like `"Red Light"`, 1-255 characters, case-insensitive; light fields as for `brick:setLight` | none | Sets the light `loadBlocklandSave` puts on bricks that had this Blockland light type, replacing any set before. Fields left out get a new light's defaults, so without an `offset` the light sits in the middle of its brick, like Blockland's. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` forgets the type, so its lights are skipped. Bricks already loaded keep their lights. |
 | `addBlocklandEmitter(uiName, typeName)` / `addBlocklandEmitter(uiName, nil)` | a Blockland emitter's name, like `"Fog A"`, 1-255 characters, case-insensitive; an emitter type's name | none | Makes `loadBlocklandSave` put an emitter of that type on bricks that had this Blockland emitter, instead of looking for a type with that `uiName`. Logs an error if there's no emitter type by that name. `nil` goes back to matching by `uiName`. |
 
@@ -521,6 +521,33 @@ selector. Shape effects are only drawn: a brick always collides as its plain sha
 | `Slippery` | Perfectly smooth to look at, and has a friction of 0.01 with whatever touches it. |
 | `Foil` | Metallic, with crinkled rainbow highlights that shift as you look at it from different directions. |
 | `Rainbow` | Its color is replaced by one that cycles through the rainbow every 5 seconds, in bands that flow diagonally across a build. |
+
+### Prints
+
+A print is a picture drawn over the paint of a print brick's printed faces, the ones a `.blb` marks `TEX:PRINT`,
+like `1x1 Print` or `2x2F Print`. Prints load from Blockland style folders under `Assets/brick/prints`
+(`Print_<group>[_Default]/prints/<image>.png`) and are named `<group>/<image>`, so
+`Assets/brick/prints/Print_Letters_Default/prints/X.png` is `Letters/X`, the same name Blockland saves use.
+Each brick wears one print, on every printed face it has. Players pick one in the wrench dialog, Lua with
+`brick:setPrint`, and a print's see-through parts show the brick's own color.
+
+Clients load their own copy of the folder and match the server's prints by name as they join, so a print a
+client doesn't have leaves that brick plain for them. Prints come along in `saveBuild` files and are read
+back from the old game's saves and from Blockland `.bls` saves by name.
+
+A print can also be a **`.webm` video** in the same folders, named the same way (`Print_Screens/prints/news.webm`
+is `Screens/news`), which plays on the brick and loops. Everything else treats it as an ordinary print: the
+server only ever knows its name, so a dedicated server needs no video support at all. Each client plays it
+from its own clock, so players don't see exactly the same frame, and any audio in the file is ignored (a brick
+plays sound with `brick:setMusic`). Only videos a brick in the world is actually wearing are decoded, at most
+`graphics/maxvideoprints` (4 by default) of them at once, and the rest hold a still frame. VP8 and VP9 both
+play; a client built without libvpx, or one missing the file, draws those bricks plain.
+
+Making one, at the size prints are drawn (256x256) and a sensible bitrate:
+
+```
+ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print_Screens/prints/news.webm
+```
 
 ### `brick:` methods
 
@@ -547,17 +574,22 @@ selector. Shape effects are only drawn: a brick always collides as its plain sha
 | `brick:setLight(table)` / `brick:setLight(nil)` | light fields, see below | none | Puts a light on the brick, or changes it. Fields left out keep the brick's current values, or a new light's defaults. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` takes the light off. |
 | `brick:getEmitter()` | none | emitter type name, or `nil` | The emitter on the brick. |
 | `brick:setEmitter(typeName)` / `brick:setEmitter(nil)` | an emitter type's name | none | Puts an emitter of that type in the middle of the brick, replacing any it had. `nil` takes it off. |
+| `brick:getPrint()` | none | print name, or `""` | The print on the brick, like `"Letters/X"`. |
+| `brick:setPrint(name)` / `brick:setPrint("")` | a print's name, case-insensitive | none | Puts a print on the brick, drawn on the printed faces of a print brick type. A `.webm` print plays there, see Prints above. Logs an error and changes nothing for a name no print has. `""` takes it off. Prints on a brick whose type has no printed face are kept but never drawn. |
 
 ### Wrench dialog and brick attachments
 
 Players wrench a brick to open its wrench dialog, where they can change whether it collides, its name,
-its music loop with volume and pitch, its light, and its emitter. Wheel and steering wheel bricks also get a section for
+its music loop with volume and pitch, its light, its emitter, and, on a print brick, its print. Wheel and steering wheel bricks also get a section for
 how they drive once sliced into a vehicle, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
 wrench item in hand (see [Items](#items)), or holding Insert (the `Wrench` key bind) and left clicking one. Lua can
 veto or redirect the Insert way with the `ClientWrenchBrick` event, or open a dialog itself with `client:openWrenchDialog`.
 Anyone can currently wrench any brick; there are no build permissions yet. The music list only shows
 sounds registered with `newSoundType(name, file, true)` and the emitter list every emitter type, but a
 brick keeps any sound or emitter Lua put on it when a player applies the dialog without changing it.
+The Print section only shows on a brick whose type has a printed face, and lists every print the server
+loaded from `Assets/brick/prints`, `.webm` videos included; players whose own copy is missing one see the
+brick plain.
 
 The music loop, light, and emitter are real sound loops, lights, and emitters: they show up in
 `getNumLights`/`getLightIdx` and `getNumEmitters`/`getEmitterIdx`, are sent to players who join later,

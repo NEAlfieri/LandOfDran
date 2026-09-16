@@ -3,6 +3,7 @@
 #include "../LandOfDran.h"
 #include "../Bricks/Brick.h"
 #include "../Bricks/BrickTypes.h"
+#include "../Bricks/PrintTypes.h"
 #include "Material.h"
 #include "ShaderSpecification.h"
 
@@ -43,6 +44,9 @@ class InstancedBrickRenderer
 		GLuint specialVao[2] = { 0, 0 };
 		GLuint specialInstanceBuffer[2] = { 0, 0 };
 		std::vector<SpecialRun> specialRuns[2];
+
+		//How many of its bricks wear each print that's actually drawn, almost always empty, see printCounts
+		std::vector<std::pair<uint16_t, int>> prints;
 	};
 
 	//Bricks drawn together with their own transform, see addBrickGroup, its chunk points into bricks
@@ -93,6 +97,12 @@ class InstancedBrickRenderer
 	//See getGeneration
 	unsigned int generation = 0;
 
+	/*
+		How many bricks in the world wear each print, counted over every chunk as they're uploaded
+		Only prints that are drawn are in here, so a video print nothing wears is never decoded, see isPrintUsed
+	*/
+	std::unordered_map<uint16_t, int> printCounts;
+
 	//Counted by the shadow passes, read and cleared once a frame, see getShadowStats
 	mutable int shadowChunksDrawn = 0;
 	mutable int shadowChunksTested = 0;
@@ -108,6 +118,9 @@ class InstancedBrickRenderer
 	//Non-owning
 	const BrickTypes* types = nullptr;
 
+	//Non-owning, for the decal layer a brick's print is loaded into
+	const PrintTypes* prints = nullptr;
+
 	//Every special type's shape one after another, see SpecialBrickType::vertices
 	GLuint specialMeshBuffer = 0;
 	//Vertex each special type starts at in specialMeshBuffer
@@ -117,10 +130,12 @@ class InstancedBrickRenderer
 	Material* bottomMaterial = nullptr;
 	Material* sideMaterial = nullptr;
 	Material* rampMaterial = nullptr;
-	//Print faces are drawn plain until prints are supported
+	//Plain plastic, a brick's print itself is a decal drawn over it, see PrintTypes
 	Material* printMaterial = nullptr;
 
 	GLint tileByStudsUniform = -1;
+	//printFace in brick.vert, only set while drawing a special brick's TEX:PRINT faces
+	GLint printFaceUniform = -1;
 	GLint brickTransformUniform = -1;
 	GLint glowUniform = -1;
 
@@ -157,6 +172,12 @@ class InstancedBrickRenderer
 
 	//nullptr for basic bricks, and for special types this client never loaded
 	const SpecialBrickType* specialType(const Brick& brick) const;
+
+	//Decal array layer of a brick's print, -1 for a brick with none or a print this client doesn't have
+	int printLayer(const Brick& brick) const;
+
+	//Keeps printCounts in step with a chunk as it's rebuilt
+	void countPrints(Chunk* chunk, const std::vector<std::pair<uint16_t, int>>& newCounts);
 
 	void setTransform(const glm::mat4& transform) const;
 	void uploadSingleInstance(const glm::vec3& corner, const Brick& brick, float alpha) const;
@@ -245,6 +266,9 @@ class InstancedBrickRenderer
 	//Goes up every time a chunk is rebuilt, so anything drawn from the bricks earlier (like point light shadows) knows they've changed
 	unsigned int getGeneration() const { return generation; }
 
-	InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types);
+	//Whether any brick drawn anywhere in the world is wearing this print, see Graphics/PrintVideos.h
+	bool isPrintUsed(uint16_t printID) const { return printCounts.count(printID) > 0; }
+
+	InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types, const PrintTypes* _prints);
 	~InstancedBrickRenderer();
 };

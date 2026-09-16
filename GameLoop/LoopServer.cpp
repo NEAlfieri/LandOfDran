@@ -673,6 +673,7 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.bricks->spawnAttachments = updateBrickAttachments;
 	pd.bricks->removeAttachments = removeBrickAttachments;
 	pd.brickTypes.load("Assets/brick/types");
+	pd.prints.load("Assets/brick/prints");
 	pd.bricks->makeLuaMetatable(pd.luaState, "metatable_brick", getBrickFunctions(pd.luaState));
 
 	info("Loading serverstart.lua");

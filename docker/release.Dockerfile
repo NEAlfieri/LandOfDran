@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglew-dev \
         libopenal-dev \
         libopus-dev \
+        libvpx-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src

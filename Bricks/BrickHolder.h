@@ -67,9 +67,9 @@ class BrickHolder
 	public:
 
 	//Bytes per brick in AddBricks packets
-	static constexpr unsigned int recordBytes = 21;
+	static constexpr unsigned int recordBytes = 23;
 
-	//typeID is written as is, so the caller maps it between the client's and server's special types
+	//typeID and printID are written as is, so the caller maps them between the client's and server's special types and prints
 	static void writeRecord(const Brick* brick, enet_uint8* data);
 	static Brick readRecord(const enet_uint8* data);
 
@@ -98,6 +98,9 @@ class BrickHolder
 
 	//An unknown material becomes BrickMaterial_None
 	void setMaterial(Brick* brick, unsigned char material);
+
+	//0 for no print, otherwise 1 more than an index into PrintTypes, see Brick::printID
+	void setPrint(Brick* brick, uint16_t printID);
 
 	//Would a brick with this min corner and rotated size overlap an existing one
 	bool overlaps(int x, int y, int z, int footprintWidth, int height, int footprintLength) const;

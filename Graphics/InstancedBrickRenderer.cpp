@@ -9,8 +9,8 @@
 static constexpr int cubeVertexFloats = 14;
 //Min corner, size, color, material
 static constexpr int instanceFloats = 11;
-//Min corner, size, color, material, quarter turns
-static constexpr int specialInstanceFloats = 12;
+//Min corner, size, color, material, quarter turns, print decal layer
+static constexpr int specialInstanceFloats = 13;
 //In studs horizontally and plates vertically
 static constexpr int chunkSize = 64;
 
@@ -55,10 +55,12 @@ static void appendInstance(std::vector<float>& instances, const glm::vec3& corne
 	instances.insert(instances.end(), { corner.x, corner.y, corner.z, size.x, size.y, size.z, color.r, color.g, color.b, alpha, (float)brick.material });
 }
 
-static void appendSpecialInstance(std::vector<float>& instances, const glm::vec3& corner, const Brick& brick, float alpha)
+//printLayer is which layer of the decal array holds the brick's print, or -1 for a brick with none
+static void appendSpecialInstance(std::vector<float>& instances, const glm::vec3& corner, const Brick& brick, float alpha, int printLayer)
 {
 	appendInstance(instances, corner, brick, alpha);
 	instances.push_back((float)brick.angleID);
+	instances.push_back((float)printLayer);
 }
 
 static std::vector<float> makeCube()
@@ -188,7 +190,7 @@ void InstancedBrickRenderer::createSpecialVao(GLuint& vao, GLuint& instanceBuffe
 
 	glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
 	glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-	for (GLuint attribute : { 5, 6, 7, 9, 10 })
+	for (GLuint attribute : { 5, 6, 7, 9, 10, 11 })
 	{
 		glEnableVertexAttribArray(attribute);
 		glVertexAttribDivisor(attribute, 1);
@@ -209,6 +211,28 @@ void InstancedBrickRenderer::pointSpecialInstances(GLsizei firstInstance) const
 	glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 6 * sizeof(float)));
 	glVertexAttribPointer(10, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 10 * sizeof(float)));
 	glVertexAttribPointer(9, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 11 * sizeof(float)));
+	glVertexAttribPointer(11, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 12 * sizeof(float)));
+}
+
+int InstancedBrickRenderer::printLayer(const Brick& brick) const
+{
+	return prints ? prints->getDecalLayer(brick.printID) : -1;
+}
+
+void InstancedBrickRenderer::countPrints(Chunk* chunk, const std::vector<std::pair<uint16_t, int>>& newCounts)
+{
+	//What the chunk had before comes out of the total, whatever it has now goes in
+	for (const auto& entry : chunk->prints)
+	{
+		auto found = printCounts.find(entry.first);
+		if (found != printCounts.end() && (found->second -= entry.second) <= 0)
+			printCounts.erase(found);
+	}
+
+	for (const auto& entry : newCounts)
+		printCounts[entry.first] += entry.second;
+
+	chunk->prints = newCounts;
 }
 
 const SpecialBrickType* InstancedBrickRenderer::specialType(const Brick& brick) const
@@ -298,6 +322,7 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 {
 	std::vector<float> instances[2];
 	std::vector<std::pair<int, const Brick*>> specials[2];
+	std::vector<std::pair<uint16_t, int>> prints;
 	glm::vec3 min = glm::vec3(FLT_MAX);
 	glm::vec3 max = glm::vec3(-FLT_MAX);
 	bool anyUndulo = false;
@@ -315,6 +340,16 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 
 		if (const SpecialBrickType* type = specialType(*brick))
 		{
+			//Only a print that's really drawn counts, a brick can wear one Lua gave it with no face to show it on
+			if (brick->printID != 0 && type->groupCount[BrickTexturePrint] > 0)
+			{
+				auto found = std::find_if(prints.begin(), prints.end(), [&](const auto& entry) { return entry.first == brick->printID; });
+				if (found == prints.end())
+					prints.push_back({ brick->printID, 1 });
+				else
+					found->second++;
+			}
+
 			//A type with see-through faces is drawn with the transparent bricks even when it's painted opaque
 			specials[brick->color.a < 255 || type->hasTransparency ? 1 : 0].push_back({ brick->typeID - 1, brick });
 			continue;
@@ -322,6 +357,8 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 
 		appendInstance(instances[brick->color.a < 255 ? 1 : 0], corner, *brick, brick->color.a / 255.0f);
 	}
+
+	countPrints(chunk, prints);
 
 	glm::vec3 wiggle = glm::vec3(anyUndulo ? unduloAmplitude : 0.0f);
 	chunk->min = min * gridScale - wiggle;
@@ -354,7 +391,7 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 				runs.push_back({ sorted[a].first, (GLsizei)a, 0 });
 			runs.back().count++;
 
-			appendSpecialInstance(specialInstances, glm::vec3(brick->x, brick->y, brick->z), *brick, brick->color.a / 255.0f);
+			appendSpecialInstance(specialInstances, glm::vec3(brick->x, brick->y, brick->z), *brick, brick->color.a / 255.0f, printLayer(*brick));
 		}
 
 		glBindBuffer(GL_ARRAY_BUFFER, chunk->specialInstanceBuffer[transparency]);
@@ -433,7 +470,7 @@ void InstancedBrickRenderer::uploadSingleInstance(const glm::vec3& corner, const
 void InstancedBrickRenderer::uploadSingleSpecialInstance(const glm::vec3& corner, const Brick& brick, float alpha) const
 {
 	std::vector<float> instance;
-	appendSpecialInstance(instance, corner, brick, alpha);
+	appendSpecialInstance(instance, corner, brick, alpha, printLayer(brick));
 
 	glBindBuffer(GL_ARRAY_BUFFER, singleSpecialInstanceBuffer);
 	glBufferData(GL_ARRAY_BUFFER, instance.size() * sizeof(float), instance.data(), GL_DYNAMIC_DRAW);
@@ -489,6 +526,7 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 	for (int faceGroup = 0; faceGroup < BrickTextureCount; faceGroup++)
 	{
 		bool materialInUse = false;
+		glUniform1i(printFaceUniform, faceGroup == BrickTexturePrint);
 
 		for (size_t a = 0; a < sets.size(); a++)
 		{
@@ -506,6 +544,11 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 
 				if (!materialInUse)
 				{
+					//A print covers its whole face, however DecalArea was left by the last mesh drawn, see brick.vert
+					//Set right here so Material::use uploads it, since Mesh::render only re-uploads when it sees a different one
+					if (faceGroup == BrickTexturePrint)
+						shaders->basicUniforms.DecalArea = glm::vec4(0, 0, 1, 1);
+
 					materials[faceGroup]->use(shaders);
 					materialInUse = true;
 				}
@@ -519,6 +562,7 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	glUniform1i(specialMeshUniform, 0);
+	glUniform1i(printFaceUniform, 0);
 }
 
 void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>& shaders, bool transparent, std::vector<const Chunk*>& out) const
@@ -926,6 +970,8 @@ void InstancedBrickRenderer::removeFromList(Chunk* chunk)
 
 void InstancedBrickRenderer::destroyChunk(Chunk* chunk)
 {
+	countPrints(chunk, {});
+
 	glDeleteVertexArrays(2, chunk->vao);
 	glDeleteBuffers(2, chunk->instanceBuffer);
 	glDeleteVertexArrays(2, chunk->specialVao);
@@ -943,7 +989,8 @@ void InstancedBrickRenderer::clear()
 	dirtyChunks.clear();
 }
 
-InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types) : types(_types)
+InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types,
+	const PrintTypes* _prints) : types(_types), prints(_prints)
 {
 	std::vector<float> cube = makeCube();
 
@@ -978,6 +1025,7 @@ InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> sh
 		error("Could not load brick materials from Assets/brick/");
 
 	tileByStudsUniform = shaders->brickShader->getUniformLocation("tileByStuds");
+	printFaceUniform = shaders->brickShader->getUniformLocation("printFace");
 	brickTransformUniform = shaders->brickShader->getUniformLocation("brickTransform");
 	glowUniform = shaders->brickShader->getUniformLocation("glow");
 	specialMeshUniform = shaders->brickShader->getUniformLocation("specialMesh");

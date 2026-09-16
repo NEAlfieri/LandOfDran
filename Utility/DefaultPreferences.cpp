@@ -83,6 +83,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("graphics/brickdebrisseconds", "How long removed bricks stay as debris, 0 for none");
 	settings->addInt("graphics/maxparticles",		20000, false,	"Max Particles", 0, 100000);
 	settings->setTooltip("graphics/maxparticles",	"Emitters stop making particles while this many are alive, 0 for no particles");
+	settings->addInt("graphics/maxvideoprints",		4, false,		"Video Prints Playing", 0, 32);
+	settings->setTooltip("graphics/maxvideoprints",	"How many .webm prints play at once, the rest hold a frame. Each one decodes video every frame it's in the world");
 	settings->addEnum("graphics/rainquality",		2,				"Rain Quality",		{"Sound Only","Low","Medium","High"});
 	settings->setTooltip("graphics/rainquality",		"Falling drops, splashes, and wet surfaces when a server makes it rain. Costs nothing while it isn't raining");
 

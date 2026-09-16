@@ -181,6 +181,7 @@ enum FromServerPacketType : unsigned char
 	VehicleSaveData = 37,	//Part of a vehicle save the client asked for, see VehicleSaveDataPacket
 	VehicleBricksBroken = 38,	//Bricks Lua's radiusImpulse broke off a destructable vehicle, which fly off as debris, see VehicleBricksBrokenPacket
 	NameTag = 39,			//Text drawn floating over a dynamic, like a player's name, see Dynamic::makeNameTagPacket
+	BrickPrintTypes = 40,	//The server's print IDs and names as a client joins, so it can match them to its own, see BrickPrintTypesPacket
 };
 
 //Flags byte of a PlayerAbilities packet

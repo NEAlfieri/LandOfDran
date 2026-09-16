@@ -195,6 +195,9 @@ class TextureManager
 	*/
 	void allocateForDecals(unsigned int dimensions, unsigned int maxEntries = 256);
 
+	//Width and height of one decal, see allocateForDecals
+	unsigned int getDecalSize() const { return decals ? (unsigned int)decals->width : 0; }
+
 	/*
 		Should be called after all decals for a given server have been loaded
 		AND after all programs you're going to use decals in have been loaded
@@ -208,6 +211,15 @@ class TextureManager
 		Returns false if the image couldn't be loaded
 	*/
 	bool addDecal(const std::string &filePath,int id);
+
+	/*
+		Puts RGBA pixels of any size in a decal layer, resized to the decal size like addDecal
+		withMipmaps fills in that one layer's smaller levels as well, which a decal that changes after
+		finalizeDecals (a video print's frames, see Graphics/PrintVideos.h) needs, since glGenerateMipmap
+		would redo every layer for it
+		Returns false if the layer is out of range or there are no pixels
+	*/
+	bool setDecalPixels(const unsigned char* rgba, int width, int height, int id, bool withMipmaps);
 
 	/*
 		Creates a non-array texture from a single image file and returns it

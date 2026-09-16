@@ -22,6 +22,7 @@
 #include "PacketsFromServer/AddBricks.h"
 #include "PacketsFromServer/RemoveBricks.h"
 #include "PacketsFromServer/SpecialBrickTypes.h"
+#include "PacketsFromServer/BrickPrintTypes.h"
 #include "PacketsFromServer/AddSoundType.h"
 #include "PacketsFromServer/OneShotSound.h"
 #include "PacketsFromServer/SoundLoop.h"

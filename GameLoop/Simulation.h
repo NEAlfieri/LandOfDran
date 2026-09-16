@@ -83,6 +83,14 @@ struct Simulation
 	//Indexed by our type ID, gives the server's, or 0 if the server doesn't have it
 	std::vector<uint16_t> brickTypeToServer;
 
+	/*
+		Prints are matched by name the same way, see BrickPrintTypesPacket
+		Indexed by the server's print ID, gives ours, or 0 for a print we don't have
+	*/
+	std::vector<uint16_t> printFromServer;
+	//Every print name the server offers, in its own order, for the wrench dialog to pick from
+	std::vector<std::string> serverPrintNames;
+
 	//A vehicle save we asked for from its wrench dialog, where it goes and as much of it as has arrived, see VehicleSaveDataPacket
 	struct PendingVehicleSave
 	{
