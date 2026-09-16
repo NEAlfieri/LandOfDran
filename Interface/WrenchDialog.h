@@ -51,6 +51,21 @@ class WrenchDialog : public Window
 
 	bool submitted = false;
 
+	//The Copy button at the top, which stays on between windows: what the last one held when it closed, put onto the next one it can go on
+	bool copying = false;
+	bool hasCopy = false;
+	bool copiedFromVehicle = false;
+	WrenchSubmission copied;
+
+	//Whether the last frame drew the window, so closing it any way, even the X or another dialog opening, is noticed
+	bool wasOpen = false;
+
+	//Remembers what was being edited as the window closes, if Copy is on
+	void stashCopy();
+
+	//Puts the remembered settings that apply to what's opening onto it, over what the server sent
+	void applyCopy();
+
 	//A vehicle's Save: the file name typed, and whether it was clicked
 	std::string saveName = "";
 	bool saveRequested = false;
