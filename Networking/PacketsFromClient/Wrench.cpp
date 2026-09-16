@@ -185,7 +185,7 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 		pd->bricks->setColliding(brick, collides);
 	if (brick->printID != printID)
 		pd->bricks->setPrint(brick, printID);
-	brick->name = name;
+	pd->bricks->setName(brick, name);
 	setBrickAttachments(brick, settings);
 }
 

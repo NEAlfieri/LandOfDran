@@ -503,6 +503,8 @@ as they join, and draw bricks of types they don't have as plain boxes.
 | `addSpecialBrick(x, y, z, typeName, r, g, b, a[, angleID])` | min corner in studs/plates; a special brick type's name (like `"45° Ramp 2x"`, case-insensitive, or its `.blb` file name); color; `angleID` 0-3 | Brick, or `nil` | Adds a special brick, which takes its type's size. Logs an error if there's no type by that name. Returns `nil` without an error if it would overlap another brick or be out of bounds. The shape's color faces (like a pine tree's green) keep their own color. |
 | `getNumBricks()` | none | count | How many bricks exist. |
 | `getBrickIdx(index)` | 0-based index | Brick | Looks up a brick by its position in the internal list. Removing bricks changes the order. |
+| `getNumNamedBricks(name)` | a brick's name | count | How many bricks are named that, matching case exactly, so `"Door"` and `"door"` are different names. Bricks with no name aren't counted under any name, so an empty name is always 0. |
+| `getNamedBrickIdx(name, index)` | the name, matching case exactly; 0-based index | Brick | Looks up one of the bricks with that name. Logs an error and returns nothing past the last one. Removing or renaming a brick with that name changes the order of the rest, like `getBrickIdx`. Both of these are constant time lookups, unlike scanning every brick with `getNumBricks`. |
 | `getBrickId(id)` | net ID | Brick or `nil` | Looks up a brick by its net ID. |
 | `getBrickAt(x, y, z)` | one stud/plate grid cell | Brick or `nil` | The brick filling that cell, if any. |
 | `clearAllBricks()` | none | none | Removes every brick. |
@@ -576,7 +578,7 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 | `brick:setColliding(collides)` | bool | none | Turns collision on or off. Non-colliding bricks can still be hit by `raycast()`. |
 | `brick:getOwner()` | none | client net ID, or `-1` | Who planted it. `-1` for bricks added by Lua or loaded from a save. |
 | `brick:getName()` | none | string | The brick's name, empty by default. |
-| `brick:setName(name)` | string | none | Sets the brick's name. |
+| `brick:setName(name)` | string | none | Sets the brick's name, which `getNumNamedBricks` and `getNamedBrickIdx` find it by. `""` takes its name away. Names are only kept on the server (and in saves); clients never learn them. |
 | `brick:remove([showEffect])` | optional bool | none | Removes the brick. With `true`, clients show it popping loose and flying off like an undone brick. Leave it off when removing many bricks at once. |
 | `brick:isSpecial()` | none | bool | Whether it's a special brick with its own shape, rather than a basic box. |
 | `brick:getTypeName()` | none | string | A special brick's type name, like `"45° Ramp 2x"`. Empty for basic bricks. |

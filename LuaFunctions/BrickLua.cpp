@@ -307,6 +307,50 @@ static int LUA_getBrickIdx(lua_State* L)
 	return 1;
 }
 
+static int LUA_getNumNamedBricks(lua_State* L)
+{
+	scope("(LUA) getNumNamedBricks");
+
+	if (lua_gettop(L) != 1 || !lua_isstring(L, 1))
+	{
+		error("Expected 1 argument getNumNamedBricks(name)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 1);
+	lua_settop(L, 0);
+
+	lua_pushinteger(L, LUA_pd->bricks->numNamed(name));
+	return 1;
+}
+
+static int LUA_getNamedBrickIdx(lua_State* L)
+{
+	scope("(LUA) getNamedBrickIdx");
+
+	if (lua_gettop(L) != 2 || !lua_isstring(L, 1))
+	{
+		error("Expected 2 arguments getNamedBrickIdx(name, index)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 1);
+	lua_Integer index = lua_tointeger(L, 2);
+	lua_settop(L, 0);
+
+	Brick* brick = index < 0 ? nullptr : LUA_pd->bricks->getNamed(name, (size_t)index);
+	if (!brick)
+	{
+		error("Named brick index out of range");
+		return 0;
+	}
+
+	LUA_pd->bricks->pushLua(L, brick);
+	return 1;
+}
+
 static int LUA_getBrickId(lua_State* L)
 {
 	scope("(LUA) getBrickId");
@@ -746,7 +790,7 @@ static int LUA_brickSetName(lua_State* L)
 	if (!brick)
 		return 0;
 
-	brick->name = lua_tostring(L, 2);
+	LUA_pd->bricks->setName(brick, lua_tostring(L, 2));
 	return 0;
 }
 
@@ -1188,6 +1232,8 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "addSpecialBrick", LUA_addSpecialBrick);
 	lua_register(L, "getNumBricks", LUA_getNumBricks);
 	lua_register(L, "getBrickIdx", LUA_getBrickIdx);
+	lua_register(L, "getNumNamedBricks", LUA_getNumNamedBricks);
+	lua_register(L, "getNamedBrickIdx", LUA_getNamedBrickIdx);
 	lua_register(L, "getBrickId", LUA_getBrickId);
 	lua_register(L, "getBrickAt", LUA_getBrickAt);
 	lua_register(L, "clearAllBricks", LUA_clearAllBricks);
