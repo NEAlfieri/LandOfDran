@@ -21,4 +21,8 @@ OldServer/
 Saves/
 Assets/music/
 
+# Print videos, which are far too big to keep in git. Like the music above they still reach players:
+# package_release copies Assets out of the working tree rather than out of git, see the scripts
+Assets/brick/prints/**/*.webm
+
 LandOfDran-release-*.tar.gz
