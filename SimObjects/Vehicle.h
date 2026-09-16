@@ -203,6 +203,16 @@ class Vehicle : public SimObject
 	//Server: no engine or steering, and every wheel's brakes on, for a vehicle nobody is driving
 	void park();
 
+	/*
+		Server: stands it back on its wheels facing the way it was, still, and lifts it clear of whatever it was stuck in,
+		for a player left clicking a vehicle nobody is in, see Networking/PacketsFromClient/ClickDetails.cpp
+	*/
+	void flipUpright();
+
+	//How far above half its height flipUpright lifts it, and the most it lifts it at all, world units
+	static constexpr float flipLift = 1.0f;
+	static constexpr float maxFlipLift = 10.0f;
+
 	//Server: copies each wheel's steering, suspension, and contact out of the physics, after a step
 	void updateWheelStates();
 

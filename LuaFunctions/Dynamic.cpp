@@ -1088,6 +1088,50 @@ static int LUA_dynamicClearHighlight(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicSetNameTag(lua_State* L)
+{
+	scope("(LUA) dynamic:setNameTag");
+
+	int args = lua_gettop(L);
+
+	if (args != 5)
+	{
+		error("Expected 5 arguments dynamic:setNameTag(text,r,g,b)");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	float b = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float g = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float r = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	const char* text = lua_tostring(L, -1);
+	std::string tag = text ? std::string(text) : "";
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	dynamic->setNameTag(tag, glm::vec3(r, g, b));
+
+	LUA_server->broadcast(dynamic->makeNameTagPacket(), OtherReliable);
+
+	return 0;
+}
+
 static int LUA_newDynamicType(lua_State* L)
 {
 	scope("(LUA) newDynamicType");
@@ -1813,7 +1857,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[37];
+	luaL_Reg* regs = new luaL_Reg[38];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1840,6 +1884,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "setMeshDecal",    LUA_dynamicSetMeshDecal };
 	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
 	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };
+	regs[iter++] = { "setNameTag",    LUA_dynamicSetNameTag };
 	regs[iter++] = { "getNumControllers", LUA_dynamicGetNumControllers };
 	regs[iter++] = { "getControllerIdx", LUA_dynamicGetControllerIdx };
 	regs[iter++] = { "snapToCursor", LUA_dynamicSnapToCursor };

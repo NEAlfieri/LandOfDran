@@ -17,6 +17,7 @@
 #include "PacketsFromServer/ServerPerformanceDetails.h"
 #include "PacketsFromServer/CenterPrint.h"
 #include "PacketsFromServer/HighlightAppearance.h"
+#include "PacketsFromServer/NameTag.h"
 #include "PacketsFromServer/WorldStateUpdate.h"
 #include "PacketsFromServer/AddBricks.h"
 #include "PacketsFromServer/RemoveBricks.h"

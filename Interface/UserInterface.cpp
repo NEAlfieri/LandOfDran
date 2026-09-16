@@ -277,6 +277,26 @@ void UserInterface::render(int screenX,int screenY,bool drawCrossHair,const std:
 		}
 	}
 
+	//Names over players' heads and anything else Lua gave a name tag, farthest first so nearer ones cover them
+	if (!nameTags.empty())
+	{
+		std::sort(nameTags.begin(), nameTags.end(),
+			[](const WorldNameTag& a, const WorldNameTag& b) { return a.distance > b.distance; });
+
+		auto draw = ImGui::GetBackgroundDrawList();
+		for (const WorldNameTag& tag : nameTags)
+		{
+			ImVec2 textSize = ImGui::CalcTextSize(tag.text.c_str());
+			ImVec2 at(tag.position.x - textSize.x * 0.5f, tag.position.y - textSize.y * 0.5f);
+			//The plate behind it fades out along with the text, so a tag is readable over anything
+			unsigned int alpha = (tag.color >> IM_COL32_A_SHIFT) & 0xFF;
+			ImVec2 padding(5.0f, 2.0f);
+			draw->AddRectFilled(ImVec2(at.x - padding.x, at.y - padding.y), ImVec2(at.x + textSize.x + padding.x, at.y + textSize.y + padding.y),
+				IM_COL32(20, 20, 20, (int)(alpha * 0.55f)), 3.0f);
+			draw->AddText(at, tag.color, tag.text.c_str());
+		}
+	}
+
 	//Building mode toggles, from the bottom right corner leftwards
 	{
 		auto draw = ImGui::GetBackgroundDrawList();

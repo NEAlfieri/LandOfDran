@@ -238,6 +238,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/CenterPrint.cpp"
 "Networking/PacketsFromServer/HighlightAppearance.h"
 "Networking/PacketsFromServer/HighlightAppearance.cpp"
+"Networking/PacketsFromServer/NameTag.h"
+"Networking/PacketsFromServer/NameTag.cpp"
 "Networking/PacketsFromServer/WorldStateUpdate.h"
 "Networking/PacketsFromServer/WorldStateUpdate.cpp"
 "Networking/PacketsFromServer/AddBricks.h"

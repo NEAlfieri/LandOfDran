@@ -4,6 +4,9 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 {
 	info("Leaving server");
 
+	//Nobody to talk to anymore
+	voiceToggled = false;
+
 	pd.serverBrowser->open();
 
 	if (!client)
@@ -380,6 +383,74 @@ void LoopClient::updateItemHotbar()
 
 		const std::shared_ptr<DynamicType>& type = dynamic->getType();
 		pd.itemHotbar->setSlot(slot, true, type->itemName, findItemIcon(type->itemIconPath));
+	}
+}
+
+//How far away a name tag still shows, and where it starts fading out, world units
+static constexpr float nameTagRange = 250.0f;
+static constexpr float nameTagFadeStart = 150.0f;
+
+//How far over the top of what it belongs to a name tag floats, world units, enough to clear a player's head
+static constexpr float nameTagLift = 5.5f;
+
+void LoopClient::updateNameTags()
+{
+	pd.gui->nameTags.clear();
+
+	if (!simulation.dynamics || !simulation.camera)
+		return;
+
+	//The appearance editor covers the scene, so nothing in it is there to put a tag over
+	if (pd.appearanceEditor && pd.appearanceEditor->isOpen())
+		return;
+
+	const glm::vec2 resolution = pd.context->getResolution();
+	const glm::vec3 cameraPosition = simulation.camera->getPosition();
+
+	for (size_t a = 0; a < simulation.dynamics->size(); a++)
+	{
+		std::shared_ptr<Dynamic> dynamic = (*simulation.dynamics)[a];
+
+		if (!dynamic || dynamic->nameTag.empty() || dynamic->getHidden())
+			continue;
+
+		//Our own name would just sit in the middle of our view
+		if (dynamic->clientControlled)
+			continue;
+
+		//Over the top of it, wherever it's drawn, which is where it is in a vehicle's seat too
+		glm::vec3 where = dynamic->getMeshCenter(-1);
+		if (const std::shared_ptr<DynamicType>& type = dynamic->getType())
+			if (std::shared_ptr<Model> model = type->getModel())
+				where.y += model->getColHalfExtents().y + nameTagLift;
+
+		float distance = glm::distance(where, cameraPosition);
+		if (distance > nameTagRange)
+			continue;
+
+		glm::vec4 clip = simulation.camera->worldToClipSpace(where);
+		//Behind the camera
+		if (clip.w <= 0.0001f)
+			continue;
+
+		//A little past the edges still counts, a tag half off screen shouldn't blink out
+		glm::vec3 ndc = glm::vec3(clip) / clip.w;
+		if (std::abs(ndc.x) > 1.2f || std::abs(ndc.y) > 1.2f)
+			continue;
+
+		float fade = distance < nameTagFadeStart ? 1.0f : 1.0f - (distance - nameTagFadeStart) / (nameTagRange - nameTagFadeStart);
+
+		WorldNameTag tag;
+		tag.text = dynamic->nameTag;
+		tag.position = ImVec2((ndc.x * 0.5f + 0.5f) * resolution.x, (0.5f - ndc.y * 0.5f) * resolution.y);
+		tag.color = IM_COL32(
+			(int)(std::clamp(dynamic->nameTagColor.r, 0.0f, 1.0f) * 255.0f),
+			(int)(std::clamp(dynamic->nameTagColor.g, 0.0f, 1.0f) * 255.0f),
+			(int)(std::clamp(dynamic->nameTagColor.b, 0.0f, 1.0f) * 255.0f),
+			(int)(std::clamp(fade, 0.0f, 1.0f) * 255.0f));
+		tag.distance = distance;
+
+		pd.gui->nameTags.push_back(tag);
 	}
 }
 
@@ -927,12 +998,19 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	{
 		pd.serverBrowser->clearAppearanceReady();
 		pd.serverBrowser->close();
+		appearanceEditorFromBrowser = true;
 		pd.appearanceEditor->open();
 	}
 
-	//Saved or not
+	//Saved or not: the browser comes back if that's where it was opened from, otherwise we go back to playing
 	if (appearanceEditorWasOpen && !pd.appearanceEditor->isOpen())
-		pd.serverBrowser->open();
+	{
+		if (appearanceEditorFromBrowser)
+			pd.serverBrowser->open();
+		else if (pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
+			pd.context->setMouseLock(true);
+		appearanceEditorFromBrowser = false;
+	}
 	appearanceEditorWasOpen = pd.appearanceEditor->isOpen();
 
 	//Saving while connected changes our player right away, if the server's Lua put our appearance on it
@@ -966,6 +1044,14 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		case OpenSettings:
 		{
 			pd.settingsMenu->open();
+			break;
+		}
+
+		case OpenAppearance:
+		{
+			appearanceEditorFromBrowser = false;
+			pd.appearanceEditor->open();
+			pd.context->setMouseLock(false);
 			break;
 		}
 
@@ -1016,6 +1102,10 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	if (pd.input->pollCommand(DebugView))
 		pd.debugMenu->showDebugPhysicsView = !pd.debugMenu->showDebugPhysicsView;
+
+	//Talking is a toggle rather than a key you hold down, so it keeps going while you do something else
+	if (pd.input->pollCommand(PushToTalk))
+		voiceToggled = !voiceToggled;
 
 	//Building
 	if (pd.input->pollCommand(OpenBrickSelector))
@@ -2291,6 +2381,8 @@ void LoopClient::renderEverything(float deltaT)
 		pd.appearanceEditor->renderPreview(pd.shaders, (int)pd.context->getResolution().x, (int)pd.context->getResolution().y, deltaT);
 
 	//GUI
+	updateNameTags();
+
 	bool crossHair = false;
 	if (simulation.camera)
 		crossHair = pd.context->getMouseLocked() && simulation.camera->getFirstPerson();
@@ -2623,9 +2715,10 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		}
 	}
 
-	//Push to talk is suppressed like every other game key while typing in chat or another window
-	bool pushToTalk = client && cmdArgs.gameState == InGame && pd.input->isCommandKeydown(PushToTalk);
-	pd.voice->update(pushToTalk, [this](unsigned char flags, uint16_t sequence, const unsigned char* data, unsigned int length)
+	//The key toggles it, so unlike a held key it isn't dropped by typing in chat, but leaving the game still ends it
+	if (!client || cmdArgs.gameState != InGame)
+		voiceToggled = false;
+	pd.voice->update(voiceToggled, [this](unsigned char flags, uint16_t sequence, const unsigned char* data, unsigned int length)
 	{
 		if (client)
 			client->send(makeVoiceFramePacket(flags, sequence, data, length), VoiceData);

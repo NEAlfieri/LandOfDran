@@ -36,7 +36,7 @@ std::string GetInputCommandString(InputCommand command)
         case HideGhostBrick: return "Put Bricks Away";
         case UndoBrick: return "Undo Last Brick (with Ctrl)";
         case ResizeToggle: return "Toggle Brick Resize Mode";
-        case PushToTalk: return "Push to Talk (hold)";
+        case PushToTalk: return "Voice Chat (toggle)";
         case Zoom: return "Zoom (hold)";
         case Flashlight: return "Flashlight (hold for color)";
         case Wrench: return "Wrench (hold and click)";

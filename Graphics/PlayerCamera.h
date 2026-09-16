@@ -52,6 +52,9 @@ class Camera
 	//Takes OpenGL normalized device coordinates and returns a position in world space
 	glm::vec3 mouseCoordsToWorldSpace(glm::vec2 mouseCoords) const;
 
+	//Takes a world position to clip space as of the last render(), for putting HUD text over something in the world
+	glm::vec4 worldToClipSpace(const glm::vec3& worldPosition) const { return projectionMatrix * viewMatrix * glm::vec4(worldPosition, 1.0f); }
+
 	//TODO: Move this to environment class
 	//Three shadow cascades covering the view out to shadowDistance, nearest first, for a mapResolution square shadow map
 	//radii, if given, comes back with how wide each cascade is in world units, for deciding when a cached one has gone stale

@@ -162,6 +162,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new HighlightAppearancePacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case NameTag:
+					packets.push_back(new NameTagPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case DynamicBuoyancy:
 					packets.push_back(new DynamicBuoyancyPacket(packetHoldTime, event.packet));
 					return NotKicked;

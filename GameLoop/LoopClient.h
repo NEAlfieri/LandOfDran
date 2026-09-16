@@ -41,8 +41,12 @@ class LoopClient
 
 	unsigned int lastSentControlledObjects = 0;
 
-	//The server browser comes back the frame the appearance editor closes
+	//The server browser comes back the frame the appearance editor closes, but only when it was the browser that opened it
 	bool appearanceEditorWasOpen = false;
+	bool appearanceEditorFromBrowser = false;
+
+	//The voice chat key toggles talking on and off rather than being held down, see handleInput
+	bool voiceToggled = false;
 
 	//The mouse goes back to playing the frame the wrench dialog closes
 	bool wrenchDialogWasOpen = false;
@@ -82,6 +86,9 @@ class LoopClient
 
 	//Moves item swings along and draws carried items in their holders' hands, or hides them, after the camera moves for the frame
 	void placeHeldItems(float deltaT);
+
+	//Puts every dynamic with a name tag (players' names, see serverstart.lua) on screen over its head, for the GUI to draw
+	void updateNameTags();
 
 	//Right mouse got us into or out of a vehicle, so it doesn't jet until it's let go
 	bool jetSuppressed = false;

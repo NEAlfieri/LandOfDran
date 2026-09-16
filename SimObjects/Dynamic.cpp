@@ -608,6 +608,32 @@ ENetPacket* Dynamic::makeHighlightPacket(const glm::vec4& color, float thickness
 	return ret;
 }
 
+void Dynamic::setNameTag(const std::string& text, const glm::vec3& color)
+{
+	nameTag = text.substr(0, maxNameTagLength);
+	nameTagColor = color;
+}
+
+/*
+	1 byte		-	NameTag
+	4 bytes		-	net ID
+	12 bytes	-	color
+	1 byte		-	text length, 0 to take the tag off
+	0-64 bytes	-	the text
+*/
+ENetPacket* Dynamic::makeNameTagPacket() const
+{
+	ENetPacket* ret = enet_packet_create(NULL, 2 + sizeof(netIDType) + sizeof(float) * 3 + nameTag.length(), getFlagsFromChannel(OtherReliable));
+
+	ret->data[0] = (unsigned char)NameTag;
+	memcpy(ret->data + 1, &netID, sizeof(netIDType));
+	memcpy(ret->data + 1 + sizeof(netIDType), &nameTagColor.r, sizeof(float) * 3);
+	ret->data[1 + sizeof(netIDType) + sizeof(float) * 3] = (unsigned char)nameTag.length();
+	memcpy(ret->data + 2 + sizeof(netIDType) + sizeof(float) * 3, nameTag.data(), nameTag.length());
+
+	return ret;
+}
+
 ENetPacket* Dynamic::makeBuoyancyPacket() const
 {
 	ENetPacket* ret = enet_packet_create(NULL, 1 + sizeof(netIDType) + sizeof(float), getFlagsFromChannel(OtherReliable));
@@ -775,8 +801,11 @@ unsigned int Dynamic::getCreationPacketBytes() const
 	for (const auto& [meshIdx, decalName] : meshDecals)
 		decalsSize += 2 + (int)decalName.length();
 
-	//Buoyancy and then decals go last, then a DynamicKind byte and whatever that kind adds
-	return meshColorsSize + highlightSize + decalsSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
+	//1 byte for how long the name tag is, then its color and text if it has one
+	int nameTagSize = 1 + (nameTag.empty() ? 0 : (int)sizeof(float) * 3 + (int)nameTag.length());
+
+	//Buoyancy, decals, and then the name tag go last, then a DynamicKind byte and whatever that kind adds
+	return meshColorsSize + highlightSize + decalsSize + nameTagSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
 }
 
 void Dynamic::addToCreationPacket(enet_uint8* dest) const
@@ -856,6 +885,17 @@ void Dynamic::addToCreationPacket(enet_uint8* dest) const
 		dest[byteIterator + 1] = (unsigned char)decalName.length();
 		memcpy(dest + byteIterator + 2, decalName.data(), decalName.length());
 		byteIterator += 2 + decalName.length();
+	}
+
+	dest[byteIterator] = (unsigned char)nameTag.length();
+	byteIterator++;
+
+	if (!nameTag.empty())
+	{
+		memcpy(dest + byteIterator, &nameTagColor.r, sizeof(float) * 3);
+		byteIterator += sizeof(float) * 3;
+		memcpy(dest + byteIterator, nameTag.data(), nameTag.length());
+		byteIterator += nameTag.length();
 	}
 
 	dest[byteIterator] = (unsigned char)getKind();

@@ -10,6 +10,17 @@
 
 class UserInterface;
 
+//Text drawn over the world where something is, like a player's name over their head, see UserInterface::nameTags
+struct WorldNameTag
+{
+	std::string text;
+	//Screen pixels the middle of the text goes over
+	ImVec2 position = ImVec2(0, 0);
+	ImU32 color = IM_COL32_WHITE;
+	//How far from the camera it is, so nearer tags are drawn over farther ones
+	float distance = 0;
+};
+
 //A temporary message shown centered on screen, see UserInterface::addCenterPrint
 struct CenterPrintMessage
 {
@@ -96,6 +107,9 @@ class UserInterface
 	//Building mode toggle indicators in the corner of the HUD: -1 hidden, 0 off, 1 on
 	int superShiftIndicator = -1;
 	int resizeIndicator = -1;
+
+	//Name tags over the world for this frame, filled in by LoopClient::updateNameTags before render
+	std::vector<WorldNameTag> nameTags;
 
 	//Voice chat, in the same corner: -1 hidden, 0 muted by the server, 1 talking. And the names of who else can be heard talking
 	int voiceIndicator = -1;

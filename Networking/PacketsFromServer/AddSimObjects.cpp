@@ -317,6 +317,26 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					byteIterator += nameLength;
 				}
 
+				//Text drawn floating over it, from Dynamic::setNameTag
+				std::string nameTag = "";
+				glm::vec3 nameTagColor(1, 1, 1);
+				if (byteIterator < packet->dataLength)
+				{
+					unsigned int nameTagLength = packet->data[byteIterator];
+					byteIterator++;
+
+					if (nameTagLength > 0)
+					{
+						if (byteIterator + sizeof(float) * 3 + nameTagLength > packet->dataLength)
+							break;
+
+						memcpy(&nameTagColor.r, packet->data + byteIterator, sizeof(float) * 3);
+						byteIterator += sizeof(float) * 3;
+						nameTag = std::string((char*)packet->data + byteIterator, nameTagLength);
+						byteIterator += nameTagLength;
+					}
+				}
+
 				//Items are followed by who carries them and what they play, see Item::writeState
 				unsigned char kind = DynamicKind_Plain;
 				enet_uint8* itemState = nullptr;
@@ -367,6 +387,9 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 
 				for (const auto& [meshIdx, decalId] : meshDecals)
 					newDynamic->setMeshDecal(meshIdx, decalId);
+
+				if (!nameTag.empty())
+					newDynamic->setNameTag(nameTag, nameTagColor);
 
 				if (itemState)
 					std::static_pointer_cast<Item>(newDynamic)->readState(itemState, true, simulation.idealBufferSize);

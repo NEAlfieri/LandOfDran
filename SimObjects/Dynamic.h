@@ -236,6 +236,22 @@ class Dynamic : public SimObject
 	//applying a packet and server-side for bookkeeping so late-joining clients get it baked into their creation packet
 	void setHighlight(const glm::vec4& color, float thickness);
 
+	/*
+		Text drawn floating over it on clients, empty for none, and the color it's drawn in, see dynamic:setNameTag in Lua
+		Players get their name put here as they join, see serverstart.lua, and LoopClient::updateNameTags draws them
+	*/
+	std::string nameTag = "";
+	glm::vec3 nameTagColor = glm::vec3(1, 1, 1);
+
+	//Longer text is cut down to this, so one packet always holds a whole tag
+	static constexpr size_t maxNameTagLength = 64;
+
+	//Sets nameTag (cut to maxNameTagLength) and its color, both server and client side
+	void setNameTag(const std::string& text, const glm::vec3& color);
+
+	//Server side: returns a fully created packet ready to broadcast with the current name tag, see NameTagPacket
+	ENetPacket* makeNameTagPacket() const;
+
 	//Server side: returns a fully created packet ready to broadcast to relay the highlight update, does not apply it locally
 	ENetPacket* makeHighlightPacket(const glm::vec4& color, float thickness) const;
 

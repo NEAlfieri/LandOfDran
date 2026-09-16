@@ -393,6 +393,9 @@ function join(client)
 	--The colors, face, and shirt they picked in their appearance editor
 	client:applyAppearance(dynamic)
 
+	--Their name floats over their head for everyone else
+	dynamic:setNameTag(client:getName(),1,1,1)
+
 	playSound("PlayerConnect")
 
 	return client
