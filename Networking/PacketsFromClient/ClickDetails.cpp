@@ -97,9 +97,10 @@ void clickDetails(JoinedClient* source, Server const* const server, ENetPacket c
 			client->lastHonkMS = SDL_GetTicks();
 			playSoundAt("Honk", b2g3(vehicle->body->getWorldTransform().getOrigin()), 1.0f, 1.0f);
 		}
-		else if (!vehicle)
+		else if (!vehicle && !client->getHeldItem())
 		{
-			//Left clicking a vehicle nobody is in stands it back on its wheels, for getting one unstuck
+			//An empty hand left clicking a vehicle nobody is in stands it back on its wheels, for getting one unstuck
+			//A tool in their hand gets the click instead, so a wrench still opens the vehicle's dialog rather than flipping it out from under the crosshair
 			btRigidBody* ignore = client->controlledObjects.empty() ? nullptr : client->controlledObjects[0]->body;
 			btVector3 hitPosition, hitNormal;
 			btRigidBody* hit = pd->physicsWorld->doRaycast(g2b3(pos), g2b3(pos + glm::normalize(dir) * vehicleReach), ignore, hitPosition, hitNormal);

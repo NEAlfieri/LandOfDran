@@ -581,10 +581,7 @@ static int LUA_clientGetHeldItem(lua_State* L)
 	if (!client)
 		return 0;
 
-	//An item Lua put in their hand is held instead of whatever their item bar has picked, see Item::isEquipped
-	std::shared_ptr<Item> item = client->handItem.lock();
-	if (!item && client->inventoryOpen)
-		item = client->inventory[client->selectedSlot].lock();
+	std::shared_ptr<Item> item = client->getHeldItem();
 
 	if (item)
 		LUA_pd->dynamics->pushLua(L, item);

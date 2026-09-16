@@ -177,6 +177,18 @@ std::shared_ptr<Item> ClientData::setHandItem(const ServerProgramData* pd, const
 	return previous;
 }
 
+std::shared_ptr<Item> ClientData::getHeldItem() const
+{
+	//An item Lua put in their hand is held instead of whatever their item bar has picked, see Item::isEquipped
+	if (std::shared_ptr<Item> hand = handItem.lock())
+		return hand;
+
+	if (!inventoryOpen || selectedSlot < 0 || selectedSlot >= inventorySize)
+		return nullptr;
+
+	return inventory[selectedSlot].lock();
+}
+
 void ClientData::forgetItem(const Item& item)
 {
 	//An item in their hand was never in a slot, see setHandItem

@@ -106,6 +106,9 @@ struct ClientData
 	//Returns whatever was in their hand before, which also goes back into the world, or nullptr
 	std::shared_ptr<Item> setHandItem(const ServerProgramData* pd, const std::shared_ptr<Item>& item);
 
+	//The item in their player's hand, whatever setHandItem put there, otherwise the slot their item bar has picked while it's out. nullptr for an empty hand
+	std::shared_ptr<Item> getHeldItem() const;
+
 	//Where an item they're carrying goes when it leaves their inventory, just in front of their player or where it last was without one
 	btTransform droppedItemTransform(const Item& item) const;
 
