@@ -12,7 +12,7 @@ local function blocklandLight(uiName, r, g, b, radius, brightness, coronaWidth, 
 	local brightestChannel = math.max(r, g, b, 0.01)
 	addBlocklandLight(uiName, {
 		color = {r, g, b},
-		brightness = 0.02 * (reach * reach + 1) / brightestChannel * (brightness / 9),
+		brightness = 0.05 * (reach * reach + 1) / brightestChannel * (brightness / 9),
 		coronaWidth = coronaWidth,
 		blinkSpeed = blinkSpeed,
 		blinkStrength = blinkStrength
