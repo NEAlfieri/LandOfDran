@@ -310,7 +310,7 @@ btTransform Vehicle::getPassengerTransform(int seatIndex, const Dynamic& rider, 
 	return btTransform(btQuaternion(facing.x, facing.y, facing.z, facing.w), g2b3(position));
 }
 
-int Vehicle::findFreeSeat(const glm::vec3& near) const
+int Vehicle::findFreeSeat(const glm::vec3& targetPos) const
 {
 	glm::vec3 origin;
 	glm::quat rotation;
@@ -323,7 +323,7 @@ int Vehicle::findFreeSeat(const glm::vec3& near) const
 		if (passengerSeats[a].riderID != NO_ID || passengerSeats[a].broken)
 			continue;
 
-		float distance = glm::distance2(origin + rotation * passengerSeats[a].top, near);
+		float distance = glm::distance2(origin + rotation * passengerSeats[a].top, targetPos);
 		if (best == -1 || distance < bestDistance)
 		{
 			best = a;

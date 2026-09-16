@@ -216,7 +216,7 @@ class Vehicle : public SimObject
 	btTransform getPassengerTransform(int seat, const Dynamic& rider, const glm::vec3& look, bool drawn) const;
 
 	//Server: the free passenger seat nearest a world position, -1 if they're all taken or it has none
-	int findFreeSeat(const glm::vec3& near) const;
+	int findFreeSeat(const glm::vec3& targetPos) const;
 
 	//Client: once every brick has arrived, makes its body, has renderer draw its bricks, and gives each wheel an instance of tireModel (which can be nullptr)
 	void finishClient(const BrickTypes* types, InstancedBrickRenderer* _renderer, Model* tireModel);

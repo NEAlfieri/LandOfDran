@@ -46,7 +46,7 @@ if (-not $SkipBuild) {
 
 $Binary = Join-Path $OutDir "LandOfDran.exe"
 if (-not (Test-Path $Binary)) {
-    Write-Error "No binary found at '$Binary' — build the project first (or drop -SkipBuild)."
+    Write-Error "No binary found at '$Binary' - build the project first (or drop -SkipBuild)."
 }
 
 $Staging = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
