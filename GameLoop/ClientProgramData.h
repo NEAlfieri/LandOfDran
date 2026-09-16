@@ -121,6 +121,9 @@ struct ClientProgramData
 	//graphics/startresolutionx and y as of launch or the last settings save, so a newly picked one can be applied
 	glm::ivec2 appliedStartResolution = glm::ivec2(0);
 	std::shared_ptr<RenderTarget> shadows = nullptr;
+	//graphics/shadowresolution is off, so the sun and moon cast nothing and shadows is a single texel
+	bool sunShadows = true;
+
 	//graphics/shadowresolution, graphics/shadowsoftness, and graphics/shadowcolor as of launch or the last settings save
 	int shadowResolution = 0;
 	int shadowSoftness = 1;

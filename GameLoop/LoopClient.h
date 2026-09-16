@@ -31,6 +31,9 @@ class LoopClient
 
 	//Per land of dran kino agent special request
 	//Technically some UI specific calculations might happen during rendering, oh well
+	//Fits the sun's shadow cascades and picks which are redrawn this frame, see the definition
+	void pickShadowCascades(bool* drawCascade);
+
 	void renderEverything(float deltaT);
 
 	//Last window of timings written to the log by -profile, so each is only written once

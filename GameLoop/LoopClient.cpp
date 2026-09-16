@@ -1423,10 +1423,15 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 {
 	pd.shadowSoftness = std::min(std::max(settings->getInt("graphics/shadowsoftness"), 0), 3);
 
-	//0 = 2k, 1 = 4k, 2 = 8k, capped at what the graphics card allows
+	//0 = off, 1 = 2k, 2 = 4k, capped at what the graphics card allows
 	GLint maxTextureSize = 0;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
-	int resolution = 2048 << std::min(std::max(settings->getInt("graphics/shadowresolution"), 0), 2);
+	int picked = std::min(std::max(settings->getInt("graphics/shadowresolution"), 0), 2);
+	pd.sunShadows = picked > 0;
+
+	//Turned off, the maps shrink to a single texel rather than going away: model.frag and brick.frag still have
+	//ShadowArray bound, and the matrices they look it up with put every surface outside the cascades, so it all reads lit
+	int resolution = pd.sunShadows ? (1024 << picked) : 1;
 	if (maxTextureSize > 0)
 		resolution = std::min(resolution, (int)maxTextureSize);
 
@@ -1444,12 +1449,20 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 		shadowSettings.depthCompare = true;
 		pd.shadows.reset();
 		pd.shadows = std::make_shared<RenderTarget>(shadowSettings, pd.textures);
+
+		//A new depth texture holds whatever was in that memory, and with the sun's shadows off nothing ever
+		//draws into it, so every layer is cleared to fully lit here rather than left to chance
+		for (int cascade = 0; cascade < 3; cascade++)
+			pd.shadows->useLayer(cascade);
+		pd.context->select();
 	}
 
 	pd.coloredShadows = settings->getBool("graphics/shadowcolor");
 
 	//Each cube face is a quarter of a cascade, capped so 8 shadowed lights stay under 200 MB, plus under 100 MB of tint maps with colored shadows
-	pd.pointLights->setShadowSettings(settings->getInt("graphics/pointshadows"), std::min(resolution / 4, 1024), pd.coloredShadows, pd.textures);
+	//Point lights have their own setting, so with the sun's shadows off they keep the size 2k cascades would have given them
+	int pointCascade = pd.sunShadows ? resolution : 2048;
+	pd.pointLights->setShadowSettings(settings->getInt("graphics/pointshadows"), std::min(pointCascade / 4, 1024), pd.coloredShadows, pd.textures);
 
 	//Half resolution to save memory, colored shadows just come out a little softer
 	int tintResolution = pd.coloredShadows ? std::max(1, resolution / 2) : 1;
@@ -1866,6 +1879,68 @@ void LoopClient::updateParticles()
 	pd.particles->update(nowMS, cameraPosition, pd.environment.fogDistanceMax);
 }
 
+/*
+	Works out where each of the sun's shadow cascades sits this frame and which of them are redrawn into.
+	The near one is small, cheap and right in front of the player, so it always goes. The two farther ones cover
+	far more of the build and cost most of the pass, while a frame or two of lag in them can't be seen at that
+	distance, so they take turns on an offset count and rarely land on the same frame. A cascade that isn't
+	redrawn keeps the matrix it was drawn with, so its map is still looked up in exactly the right place - it
+	just sits a little behind where the camera has got to
+*/
+void LoopClient::pickShadowCascades(bool* drawCascade)
+{
+	drawCascade[0] = drawCascade[1] = drawCascade[2] = false;
+
+	/*
+		With the sun's shadows turned off every surface has to come out lit. Rather than branch in model.frag,
+		the cascades are pointed somewhere nothing can be, so cascadeLight finds each one out of range and
+		returns fully lit, the same trick AppearanceEditor::renderPreview uses for its turntable
+	*/
+	if (!pd.sunShadows)
+	{
+		//Far enough out that no brick can be inside a cascade: the world is bounded well within this
+		glm::mat4 noShadow = glm::translate(glm::vec3(1.0e7f, 1.0e7f, 0.0f));
+		pd.lightSpaceMatricies[0] = pd.lightSpaceMatricies[1] = pd.lightSpaceMatricies[2] = noShadow;
+		pd.cascadeDrawn[0] = pd.cascadeDrawn[1] = pd.cascadeDrawn[2] = false;
+		return;
+	}
+
+	//Fog fully hides anything past fogDistanceMax, so shadows don't need to reach further
+	glm::mat4 freshMatricies[3];
+	float freshRadius[3];
+	simulation.camera->calculateLightSpaceMatricies(pd.environment.lightDirection, pd.environment.fogDistanceMax, pd.shadowResolution, freshMatricies, freshRadius);
+
+	pd.cascadeFrame++;
+	drawCascade[0] = true;
+	drawCascade[1] = (pd.cascadeFrame % 2) == 0;
+	drawCascade[2] = (pd.cascadeFrame % 4) == 1;
+
+	/*
+		A build edit deliberately doesn't force the far ones. They come round on their own within a few frames
+		anyway, and forcing them lands all three redraws on the same frame: anything that changes a static sets
+		that off, so a server recolouring something twice a second would hitch twice a second. The near cascade
+		redraws every frame regardless, so a brick just placed still casts right away where the player is standing
+	*/
+
+	glm::vec3 cameraPosition = simulation.camera->getPosition();
+	for (int cascade = 0; cascade < 3; cascade++)
+	{
+		//Never drawn yet, or the camera has moved far enough across the cascade that a stale one would start
+		//running off the edges of its map. Neither of those can wait for a turn
+		if (!pd.cascadeDrawn[cascade] ||
+			glm::length(cameraPosition - pd.cascadeDrawnFrom[cascade]) > pd.cascadeRadius[cascade] * 0.1f)
+			drawCascade[cascade] = true;
+
+		if (!drawCascade[cascade])
+			continue;
+
+		pd.lightSpaceMatricies[cascade] = freshMatricies[cascade];
+		pd.cascadeRadius[cascade] = freshRadius[cascade];
+		pd.cascadeDrawnFrom[cascade] = cameraPosition;
+		pd.cascadeDrawn[cascade] = true;
+	}
+}
+
 void LoopClient::renderEverything(float deltaT)
 {
 	pd.profiler.begin("Update, no drawing");
@@ -1945,48 +2020,9 @@ void LoopClient::renderEverything(float deltaT)
 
 	updateParticles();
 
-	//Fog fully hides anything past fogDistanceMax, so shadows don't need to reach further
-	glm::mat4 freshMatricies[3];
-	float freshRadius[3];
-	simulation.camera->calculateLightSpaceMatricies(pd.environment.lightDirection, pd.environment.fogDistanceMax, pd.shadowResolution, freshMatricies, freshRadius);
-
-	/*
-		Which cascades to redraw this frame. The near one is small, cheap and right in front of the player, so it
-		always goes. The two farther ones cover far more of the build and cost most of the pass, while a frame or
-		two of lag in them is invisible at that distance, so they take turns on an offset count and rarely land on
-		the same frame. A cascade that isn't redrawn keeps the matrix it was drawn with, so its map is still looked
-		up in exactly the right place - it just sits a little behind where the camera has got to
-	*/
-	pd.cascadeFrame++;
+	//Fits this frame's shadow cascades and says which of them are being redrawn
 	bool drawCascade[3];
-	drawCascade[0] = true;
-	drawCascade[1] = (pd.cascadeFrame % 2) == 0;
-	drawCascade[2] = (pd.cascadeFrame % 4) == 1;
-
-	/*
-		A build edit deliberately doesn't force the far ones. They come round on their own within a few frames
-		anyway, and forcing them lands all three redraws on the same frame: anything that changes a static sets
-		that off, so a server recolouring something twice a second would hitch twice a second. The near cascade
-		redraws every frame regardless, so a brick just placed still casts right away where the player is standing
-	*/
-
-	glm::vec3 cameraPosition = simulation.camera->getPosition();
-	for (int cascade = 0; cascade < 3; cascade++)
-	{
-		//Never drawn yet, or the camera has moved far enough across the cascade that a stale one would start
-		//running off the edges of its map. Neither of those can wait for a turn
-		if (!pd.cascadeDrawn[cascade] ||
-			glm::length(cameraPosition - pd.cascadeDrawnFrom[cascade]) > pd.cascadeRadius[cascade] * 0.1f)
-			drawCascade[cascade] = true;
-
-		if (!drawCascade[cascade])
-			continue;
-
-		pd.lightSpaceMatricies[cascade] = freshMatricies[cascade];
-		pd.cascadeRadius[cascade] = freshRadius[cascade];
-		pd.cascadeDrawnFrom[cascade] = cameraPosition;
-		pd.cascadeDrawn[cascade] = true;
-	}
+	pickShadowCascades(drawCascade);
 
 	pd.profiler.end();
 
@@ -2064,7 +2100,8 @@ void LoopClient::renderEverything(float deltaT)
 	//not what it averages per frame. The Sun shadows row around them is the per frame number
 	static const char* cascadeZones[3] = { "Cascade 0 (near)", "Cascade 1 (mid)", "Cascade 2 (far)" };
 
-	for (int cascade = 0; cascade < 3; cascade++)
+	//Nothing is drawn into any of them while they're off, and pickShadowCascades has pointed them out of the way
+	for (int cascade = 0; cascade < 3 && pd.sunShadows; cascade++)
 	{
 		//Its map and its matrix are both still the ones from the frame it was last drawn on
 		if (!drawCascade[cascade])

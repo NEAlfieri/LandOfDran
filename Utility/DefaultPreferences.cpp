@@ -69,7 +69,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 
 	//Graphics settings
 	settings->addEnum("graphics/waterquality",		1, 	 			"Water Quality",	{"No Reflection/Refraction", "Half Res Reflection/Refraction", "Full Res Reflection/Refraction"});
-	settings->addEnum("graphics/shadowresolution",	1, 	 			"Shadow Resolution", 	{"2k Shadows","4k Shadows","8k Shadows"});
+	settings->addEnum("graphics/shadowresolution",	2, 	 			"Shadow Resolution", 	{"Off","2k Shadows","4k Shadows"});
+	settings->setTooltip("graphics/shadowresolution",	"Sun and moon shadows. Off leaves everything lit by them, which is the cheapest the scene gets, and doesn't affect point light shadows");
 	settings->addEnum("graphics/shadowsoftness",		1,  			"Shadow Softness" , 	{"Hard","Soft (3x3 texels)","Softer (5x5 texels)","Softest (7x7 texels)"});
 	settings->addBool("graphics/shadowcolor",		true, false, 	"Colored Shadows");
 	settings->setTooltip("graphics/shadowcolor",		"Light through transparent bricks takes on their color");
