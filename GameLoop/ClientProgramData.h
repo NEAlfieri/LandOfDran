@@ -21,6 +21,7 @@
 #include "../Graphics/WaterRipples.h"
 #include "../Graphics/ParticleSystem.h"
 #include "../Graphics/Rain.h"
+#include "../Graphics/GpuProfiler.h"
 #include "../Bricks/GhostBrick.h"
 #include "../Bricks/SelectionBox.h"
 #include "../Bricks/VehicleGhost.h"
@@ -119,6 +120,9 @@ struct ClientProgramData
 	//graphics/imagebasedlighting as of launch or the last settings save
 	bool imageBasedLighting = true;
 
+	//graphics/depthprepass as of launch or the last settings save, see the pre-pass in LoopClient::renderScene
+	bool depthPrePass = true;
+
 	//Empty, sky.vert builds a fullscreen triangle from gl_VertexID but core profile still needs a VAO bound
 	GLuint skyVao = 0;
 
@@ -135,6 +139,9 @@ struct ClientProgramData
 
 	//Rain of whichever server we're on, and the map of what's overhead that keeps it outside
 	Rain rain;
+
+	//Times each render pass while the debug menu asks for it, otherwise costs nothing, see LoopClient::renderEverything
+	GpuProfiler profiler;
 
 	//Copy of the finished scene that underwater.frag draws back warped, made the first time the camera goes under the water
 	std::shared_ptr<RenderTarget> underwaterScene = nullptr;

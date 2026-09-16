@@ -71,6 +71,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->addEnum("graphics/shadowsoftness",		1,  			"Shadow Softness" , 	{"Hard","Soft (3x3 texels)","Softer (5x5 texels)","Softest (7x7 texels)"});
 	settings->addBool("graphics/shadowcolor",		true, false, 	"Colored Shadows");
 	settings->setTooltip("graphics/shadowcolor",		"Light through transparent bricks takes on their color");
+	settings->addBool("graphics/depthprepass",		true, false,	"Depth Pre-Pass");
+	settings->setTooltip("graphics/depthprepass",	"Draws bricks into the depth buffer first so hidden ones are never shaded. Much faster inside a big build, slightly slower looking at almost nothing");
 	settings->addBool("graphics/imagebasedlighting",	true, false,	"Image Based Lighting");
 	settings->setTooltip("graphics/imagebasedlighting", "Servers with a .hdr sky light everything with it and show it in reflections, otherwise it's only drawn as the sky");
 	settings->addInt("graphics/pointshadows",		4, false,		"Point Light Shadows", 0, 8);

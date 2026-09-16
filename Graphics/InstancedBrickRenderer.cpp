@@ -510,14 +510,18 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 	glUniform1i(specialMeshUniform, 0);
 }
 
-void InstancedBrickRenderer::render(std::shared_ptr<ShaderManager> shaders, bool transparent) const
+void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>& shaders, bool transparent, std::vector<const Chunk*>& out) const
 {
 	int transparency = transparent ? 1 : 0;
 
 	std::array<glm::vec4, 6> planes = frustumPlanes(shaders->cameraUniforms.CameraProjection * shaders->cameraUniforms.CameraView);
+	const glm::vec3& eye = shaders->cameraUniforms.CameraPosition;
 
-	std::vector<InstanceSet> visible;
-	std::vector<SpecialSet> visibleSpecial;
+	//Chunks come out of the map in no particular order, so they're sorted before drawing. Opaque bricks go
+	//nearest first, which lets the depth test throw away everything behind a wall before model.frag ever runs
+	//on it, and transparent ones farthest first, since they blend and have to arrive in back to front order
+	std::vector<std::pair<float, const Chunk*>> sorted;
+	sorted.reserve(chunks.size());
 	for (const auto& entry : chunks)
 	{
 		const Chunk* chunk = entry.second;
@@ -526,14 +530,83 @@ void InstancedBrickRenderer::render(std::shared_ptr<ShaderManager> shaders, bool
 		if (!boxVisible(planes, chunk->min, chunk->max))
 			continue;
 
+		//Squared distance to the nearest point of the chunk, 0 for the one the camera is inside
+		glm::vec3 toBox = glm::clamp(eye, chunk->min, chunk->max) - eye;
+		sorted.push_back({ glm::dot(toBox, toBox), chunk });
+	}
+
+	std::sort(sorted.begin(), sorted.end(), [transparent](const std::pair<float, const Chunk*>& a, const std::pair<float, const Chunk*>& b)
+		{ return transparent ? a.first > b.first : a.first < b.first; });
+
+	out.clear();
+	out.reserve(sorted.size());
+	for (const auto& entry : sorted)
+		out.push_back(entry.second);
+}
+
+void InstancedBrickRenderer::renderDepth(std::shared_ptr<ShaderManager> shaders) const
+{
+	std::vector<const Chunk*> visible;
+	visibleChunks(shaders, false, visible);
+	if (visible.empty())
+		return;
+
+	const glm::mat4 identity(1.0f);
+	glUniformMatrix4fv(brickDepthTransformUniform, 1, GL_FALSE, &identity[0][0]);
+
+	//Nothing here writes color, so the whole cube goes in one draw instead of three by face group
+	for (const Chunk* chunk : visible)
+	{
+		if (chunk->count[0] > 0)
+		{
+			glBindVertexArray(chunk->vao[0]);
+			glDrawArraysInstanced(GL_TRIANGLES, 0, topCount + bottomCount + sidesCount, chunk->count[0]);
+		}
+
+		if (chunk->specialRuns[0].empty())
+			continue;
+
+		//Special shapes aren't always closed, so both of their sides have to be drawn to get their depth right
+		glUniform1i(brickDepthSpecialMeshUniform, 1);
+		glDisable(GL_CULL_FACE);
+		glBindVertexArray(chunk->specialVao[0]);
+		glBindBuffer(GL_ARRAY_BUFFER, chunk->specialInstanceBuffer[0]);
+		for (const SpecialRun& run : chunk->specialRuns[0])
+		{
+			const SpecialBrickType* type = types->getSpecial(run.type);
+			if (!type)
+				continue;
+
+			pointSpecialInstances(run.first);
+			glDrawArraysInstanced(GL_TRIANGLES, specialTypeOffsets[run.type], type->vertexCount(), run.count);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glEnable(GL_CULL_FACE);
+		glUniform1i(brickDepthSpecialMeshUniform, 0);
+	}
+
+	glBindVertexArray(0);
+}
+
+void InstancedBrickRenderer::render(std::shared_ptr<ShaderManager> shaders, bool transparent) const
+{
+	int transparency = transparent ? 1 : 0;
+
+	std::vector<const Chunk*> chunkOrder;
+	visibleChunks(shaders, transparent, chunkOrder);
+	if (chunkOrder.empty())
+		return;
+
+	std::vector<InstanceSet> visible;
+	std::vector<SpecialSet> visibleSpecial;
+	visible.reserve(chunkOrder.size());
+	for (const Chunk* chunk : chunkOrder)
+	{
 		if (chunk->count[transparency] > 0)
 			visible.push_back({ chunk->vao[transparency], chunk->count[transparency] });
 		if (!chunk->specialRuns[transparency].empty())
 			visibleSpecial.push_back({ chunk->specialVao[transparency], chunk->specialInstanceBuffer[transparency], &chunk->specialRuns[transparency] });
 	}
-
-	if (visible.empty() && visibleSpecial.empty())
-		return;
 
 	setTransform(glm::mat4(1.0f));
 
@@ -864,6 +937,8 @@ InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> sh
 	brickTransformUniform = shaders->brickShader->getUniformLocation("brickTransform");
 	glowUniform = shaders->brickShader->getUniformLocation("glow");
 	specialMeshUniform = shaders->brickShader->getUniformLocation("specialMesh");
+	brickDepthSpecialMeshUniform = shaders->brickDepthShader->getUniformLocation("specialMesh");
+	brickDepthTransformUniform = shaders->brickDepthShader->getUniformLocation("brickTransform");
 	shadowSpecialMeshUniform = shaders->brickShadowCascadeShader->getUniformLocation("specialMesh");
 	tintSpecialMeshUniform = shaders->brickShadowTintShader->getUniformLocation("specialMesh");
 	shadowTransformUniform = shaders->brickShadowCascadeShader->getUniformLocation("brickTransform");

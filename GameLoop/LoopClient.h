@@ -33,6 +33,9 @@ class LoopClient
 	//Technically some UI specific calculations might happen during rendering, oh well
 	void renderEverything(float deltaT);
 
+	//Last window of timings written to the log by -profile, so each is only written once
+	unsigned int loggedProfilerWindow = 0;
+
 	//Called every frame the program runs. Every frame: in a game, not in a game, loading into a game...
 	void handleInput(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
 

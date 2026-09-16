@@ -163,6 +163,9 @@ class ShaderManager
 	//Program for drawing bricks to screen
 	Program* brickShader = new Program();
 
+	//Program for the brick depth pre-pass, brick.vert with almost no fragment work, see graphics/depthprepass
+	Program* brickDepthShader = new Program();
+
 	//Programs for drawing shadows of normal meshes and bricks into one shadow cascade at a time
 	Program* modelShadowCascadeShader = new Program();
 	Program* brickShadowCascadeShader = new Program();

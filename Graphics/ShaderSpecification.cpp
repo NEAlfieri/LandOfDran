@@ -70,6 +70,8 @@ bool ShaderManager::readShaderList(const std::string &filePath)
 				modelShader = lastProgram;
 			else if (programName == "brick")
 				brickShader = lastProgram;
+			else if (programName == "brickDepth")
+				brickDepthShader = lastProgram;
 			else if (programName == "modelShadowCascade")
 				modelShadowCascadeShader = lastProgram;
 			else if (programName == "brickShadowCascade")

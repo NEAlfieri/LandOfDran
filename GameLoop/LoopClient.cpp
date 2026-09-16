@@ -828,6 +828,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			simulation.brickDebris->setLifetime(settings->getFloat("graphics/brickdebrisseconds"));
 		pd.particles->setMaxParticles(settings->getInt("graphics/maxparticles"));
 		pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
+		pd.depthPrePass = settings->getBool("graphics/depthprepass");
 		pd.rain.setQuality(settings->getInt("graphics/rainquality"), pd.textures);
 	}
 
@@ -1348,19 +1349,15 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 
 void LoopClient::renderScene(bool clipAtWater)
 {
-	//Sky is behind everything, so it's drawn first without touching depth
-	pd.shaders->skyShader->use();
-	glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glBindVertexArray(pd.skyVao);
-	glDrawArrays(GL_TRIANGLES, 0, 3);
-	glBindVertexArray(0);
-	glDepthMask(GL_TRUE);
-	glEnable(GL_DEPTH_TEST);
+	//The water's reflection and refraction draw the scene again, which would just overwrite these,
+	//so only the pass the player actually sees is broken down
+	bool timePasses = !clipAtWater && pd.profiler.isEnabled();
 
-	//The sky shader doesn't write gl_ClipDistance, so clipping can only be turned on after it
 	if (clipAtWater)
 		glEnable(GL_CLIP_DISTANCE0);
+
+	if (timePasses)
+		pd.profiler.begin("Models");
 
 	pd.shaders->modelShader->use();
 	glUniformMatrix4fv(pd.lightSpaceMatriciesUniformModel, 3, GL_FALSE, (GLfloat*)pd.lightSpaceMatricies);
@@ -1381,6 +1378,12 @@ void LoopClient::renderScene(bool clipAtWater)
 	if (pd.tireModel)
 		pd.tireModel->render(pd.shaders);
 
+	if (timePasses)
+	{
+		pd.profiler.end();
+		pd.profiler.begin("Grass");
+	}
+
 	//Render grass
 	pd.shaders->basicUniforms.ScaleMatrix = glm::mat4(1.0);
 	pd.shaders->basicUniforms.TranslationMatrix = glm::mat4(1.0);
@@ -1393,21 +1396,80 @@ void LoopClient::renderScene(bool clipAtWater)
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glBindVertexArray(0);
 
+	if (timePasses)
+	{
+		pd.profiler.end();
+		pd.profiler.begin("Brick depth pre-pass");
+	}
+
+	/*
+		Depth pre-pass: the opaque bricks are drawn nearest first into depth alone with almost no fragment work,
+		then drawn again for real with the depth test on equal. Bricks behind a wall fail that test and never
+		reach model.frag, which in a build you're standing inside is most of them. Early-Z already throws some
+		away from the sorted order alone, but only whole chunks at a time, not bricks buried inside one
+	*/
+	if (pd.depthPrePass)
+	{
+		pd.shaders->brickDepthShader->use();
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		pd.brickRenderer->renderDepth(pd.shaders);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	}
+
+	if (timePasses)
+	{
+		pd.profiler.end();
+		pd.profiler.begin("Bricks");
+	}
+
 	//Bricks, transparent ones last
 	pd.shaders->brickShader->use();
 	glUniformMatrix4fv(pd.lightSpaceMatriciesUniformBrick, 3, GL_FALSE, (GLfloat*)pd.lightSpaceMatricies);
 	glUniform1i(pd.shaders->brickShader->getUniformLocation("shadowSoftness"), pd.shadowSoftness);
 	glUniform1i(pd.shaders->brickShader->getUniformLocation("coloredShadows"), pd.tintShadowsActive);
+	//Everything the pre-pass drew is already in the depth buffer at exactly this depth, so the test has to
+	//accept equal or those bricks would all fail it and vanish. brick.vert's gl_Position is invariant so the
+	//two programs agree on that depth to the bit
+	if (pd.depthPrePass)
+		glDepthFunc(GL_LEQUAL);
+
 	pd.brickRenderer->render(pd.shaders, false);
 	pd.brickRenderer->renderGroups(pd.shaders, vehicleDraws, false);
+
+	if (pd.depthPrePass)
+		glDepthFunc(GL_LESS);
 
 	//Only in the main view, not reflected or refracted by water
 	//Debris writes depth, so it goes before anything drawn without depth writes
 	if (!clipAtWater && simulation.brickDebris)
 		simulation.brickDebris->render(pd.shaders, pd.brickRenderer);
 
+	if (timePasses)
+		pd.profiler.end();
+
+	//The sky shader doesn't write gl_ClipDistance, so clipping has to come off before it
 	if (clipAtWater)
 		glDisable(GL_CLIP_DISTANCE0);
+
+	if (timePasses)
+		pd.profiler.begin("Sky");
+
+	/*
+		The sky goes last rather than first: sky.vert puts it right on the far plane, so every pixel the
+		scene already covered fails the depth test and sky.frag never runs there. Looking at a build that
+		fills the screen that's most of them
+	*/
+	pd.shaders->skyShader->use();
+	glDepthFunc(GL_LEQUAL);
+	glDepthMask(GL_FALSE);
+	glBindVertexArray(pd.skyVao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	if (timePasses)
+		pd.profiler.end();
 }
 
 void LoopClient::renderTransparent(bool clipAtWater)
@@ -1684,6 +1746,8 @@ void LoopClient::updateParticles()
 
 void LoopClient::renderEverything(float deltaT)
 {
+	pd.profiler.begin("Update, no drawing");
+
 	//TODO: Get rid of this
 	if (simulation.dynamics)
 	{
@@ -1762,7 +1826,14 @@ void LoopClient::renderEverything(float deltaT)
 	//Fog fully hides anything past fogDistanceMax, so shadows don't need to reach further
 	simulation.camera->calculateLightSpaceMatricies(pd.environment.lightDirection, pd.environment.fogDistanceMax, pd.shadowResolution, pd.lightSpaceMatricies);
 
-	pd.brickRenderer->rebuildDirty(4.0f);
+	pd.profiler.end();
+
+	{
+		GpuZone zone(pd.profiler, "Brick chunk uploads");
+		pd.brickRenderer->rebuildDirty(4.0f);
+	}
+
+	pd.profiler.begin("Sun shadows");
 
 	//Render shadows to texture, one cascade at a time so each only draws the chunks that can cast into it
 	//Casters between the light and a cascade still shadow it, flattened onto its near plane instead of clipped away
@@ -1851,6 +1922,8 @@ void LoopClient::renderEverything(float deltaT)
 
 		glCullFace(GL_BACK);
 	}
+
+	pd.profiler.end();
 
 	//Point light shadows use perspective views that already start right at the light
 	glDisable(GL_DEPTH_CLAMP);
@@ -1956,7 +2029,10 @@ void LoopClient::renderEverything(float deltaT)
 		drawShadowTint(lightSpaceMatrix, &lightPosition);
 	};
 
-	pd.pointLights->renderShadows(pd.brickRenderer->getGeneration() + simulation.staticsChanged, pd.tintShadowsActive, movingCastersNear, drawPointShadowCasters, drawPointShadowTint);
+	{
+		GpuZone zone(pd.profiler, "Point light shadows");
+		pd.pointLights->renderShadows(pd.brickRenderer->getGeneration() + simulation.staticsChanged, pd.tintShadowsActive, movingCastersNear, drawPointShadowCasters, drawPointShadowTint);
+	}
 
 	glDisable(GL_POLYGON_OFFSET_FILL);
 
@@ -1964,6 +2040,8 @@ void LoopClient::renderEverything(float deltaT)
 	//Nearly see-through bricks let rain through, and players and other dynamics don't keep it off anything
 	if (pd.rain.mapNeedsDrawing(pd.brickRenderer->getGeneration(), !vehicleDraws.empty(), deltaT))
 	{
+		GpuZone zone(pd.profiler, "Rain map");
+
 		//Bricks above the map's top are flattened onto it, so they still count as overhead
 		glEnable(GL_DEPTH_CLAMP);
 		glDisable(GL_CULL_FACE);
@@ -1991,6 +2069,8 @@ void LoopClient::renderEverything(float deltaT)
 
 	if (renderWaterPasses)
 	{
+		GpuZone zone(pd.profiler, "Water reflect/refract");
+
 		//Reflection: the scene above the water, from a camera mirrored below the surface
 		if (!cameraUnderwater)
 		{
@@ -2015,12 +2095,15 @@ void LoopClient::renderEverything(float deltaT)
 	}
 
 	//Start rendering to screen:
+	pd.profiler.begin("Scene to screen");
 	pd.context->select();
 	pd.context->clear(pd.environment.fogColor.r, pd.environment.fogColor.g, pd.environment.fogColor.b);
 	renderScene(false);
+	pd.profiler.end();
 
 	if (simulation.waterEnabled)
 	{
+		GpuZone zone(pd.profiler, "Water surface");
 		pd.shaders->waterShader->use();
 		pd.pointLights->bindShadowMaps();
 		//Always reaches past the end of the fog, so its edge is never visible
@@ -2047,11 +2130,17 @@ void LoopClient::renderEverything(float deltaT)
 	}
 
 	//After the water, which writes depth, so water behind a transparent brick can't paint over it
-	renderTransparent(false);
+	{
+		GpuZone zone(pd.profiler, "Transparent, particles, coronae");
+		renderTransparent(false);
+	}
 
 	//Rain drops and splashes, not seen from under the water
 	if (!(simulation.waterEnabled && cameraUnderwater))
+	{
+		GpuZone zone(pd.profiler, "Rain drops");
 		pd.rain.render(pd.shaders, pd.skyVao, pd.context->getResolution().y);
+	}
 
 	//Outlines/highlights: a selection-style indicator that should show through everything in the scene except
 	//its own source object (so it doesn't just paint a solid blob over the object it's highlighting) and other
@@ -2192,10 +2281,17 @@ void LoopClient::renderEverything(float deltaT)
 	pd.gui->voiceLevel = pd.voice->getInputLevel();
 	pd.gui->voiceClipping = pd.voice->isClipping();
 	pd.gui->setMouseCaptured(pd.context->getMouseLocked());
-	pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair,hudLines);
+	{
+		GpuZone zone(pd.profiler, "GUI");
+		pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair,hudLines);
+	}
 
 	//End frame
-	pd.context->swap();
+	{
+		GpuZone zone(pd.profiler, "Swap");
+		pd.context->swap();
+	}
+
 }
 
 void LoopClient::sendControlledObjects()
@@ -2264,15 +2360,29 @@ void LoopClient::updateControllers(float deltaT)
 
 void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
+	//-profile times every pass from launch and writes a breakdown to the log each window, so a scene can be
+	//measured without anything having to click through the UI
+	pd.profiler.setEnabled(cmdArgs.profileRendering || pd.debugMenu->wantsPassTimings());
+
+	/*
+		The whole frame is timed, not just the drawing: a hitch anywhere here shows up as a long frame, and
+		if it's on the CPU the GPU runs dry waiting for commands, which stretches whatever pass happened to
+		be in flight. Timing only the render passes makes that look like the renderer's fault when it isn't
+	*/
+	pd.profiler.beginFrame(deltaT);
+	pd.profiler.begin("Whole frame");
+
 	//Single player: tick our embedded server before doing any client work this frame.
 	//It shares the SimObject::world static with us, so reclaim it for our own PhysicsWorld once it's done.
 	if (localServer)
 	{
+		GpuZone zone(pd.profiler, "Local server tick");
 		localServer->run(deltaT, cmdArgs, settings);
 		if (pd.physicsWorld)
 			SimObject::world = pd.physicsWorld;
 	}
 
+	pd.profiler.begin("Networking");
 	if (client)
 	{
 		//We're in game, equivalent to gameState == InGame
@@ -2293,10 +2403,14 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		simulation.worldTimeSeconds += (deltaT / 1000.0) * simulation.timeScale;
 	}
 
+	pd.profiler.end();
+
 	//movement keys and camera direction as it relates to players / controlled objects 
+	pd.profiler.begin("Controllers and input");
 	updateControllers(deltaT); 
 
 	handleInput(deltaT,cmdArgs,settings); //mouse and keyboard input
+	pd.profiler.end();
 
 	// --- UI Updates and Requests ---
 
@@ -2392,6 +2506,7 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	}
 
 	//Vehicles' bodies move to where they're drawn before the step, so they push players around from there
+	pd.profiler.begin("Physics");
 	if (simulation.vehicles)
 	{
 		for (unsigned int a = 0; a < simulation.vehicles->size(); a++)
@@ -2405,8 +2520,14 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		simulation.brickDebris->update(deltaT);
 
 	predictLocalCollisions();
+	pd.profiler.end();
 
-	renderEverything(deltaT);
+	{
+		GpuZone zone(pd.profiler, "Rendering");
+		renderEverything(deltaT);
+	}
+
+	pd.profiler.begin("Audio");
 
 	//The listener is the camera, which rendering just moved for this frame
 	glm::vec3 listener = simulation.camera->getPosition();
@@ -2463,6 +2584,18 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		pd.gui->addCenterPrint(microphoneProblem, 4000, 1.0f, 0.45f, 0.45f);
 
 	pd.audio->update(listener, simulation.camera->getDirection(), listenerVelocity, deltaT);
+	pd.profiler.end();
+
+	pd.profiler.end();
+	pd.profiler.endFrame();
+	pd.debugMenu->passProfilerResults(pd.profiler.getResults());
+
+	if (cmdArgs.profileRendering && pd.profiler.getWindow() != loggedProfilerWindow)
+	{
+		loggedProfilerWindow = pd.profiler.getWindow();
+		for (const std::string& line : pd.profiler.getReport())
+			info(line);
+	}
 }
 
 LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
@@ -2655,6 +2788,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 	pd.skybox = new Skybox(pd.shaders);
 	pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
+	pd.depthPrePass = settings->getBool("graphics/depthprepass");
 
 	glGenVertexArrays(1, &pd.skyVao);
 

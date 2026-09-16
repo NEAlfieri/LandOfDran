@@ -5,6 +5,8 @@ model	frag	model.frag.glsl
 model	vert	model.vert.glsl
 brick	frag	model.frag.glsl
 brick	vert	brick.vert.glsl
+brickDepth	frag	brickDepth.frag.glsl
+brickDepth	vert	brick.vert.glsl
 outline	vert	highlight.vert.glsl
 outline	frag	highlight.frag.glsl
 modelShadowCascade	vert	modelShadowCascade.vert.glsl

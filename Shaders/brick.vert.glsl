@@ -74,6 +74,14 @@ const float unduloAmplitude = 0.3;
 //A bouncy brick grows up to this much of its height taller
 const float bouncyStretch = 0.35;
 
+/*
+	The depth pre-pass draws these same bricks through brickDepth.frag instead, and the shading pass then
+	only keeps fragments at exactly the depth it left behind. Two programs sharing this vertex shader are
+	free to optimize it differently unless gl_Position is invariant, which would make those depths disagree
+	by the odd last bit and drop whole faces out of the picture
+*/
+invariant gl_Position;
+
 out vec2 uvs;
 out vec3 normal;
 out vec3 tangent;

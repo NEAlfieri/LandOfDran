@@ -3,6 +3,7 @@
 #include "../LandOfDran.h"
 
 #include "UserInterface.h"
+#include "../Graphics/GpuProfiler.h"
 #include "../Utility/GlobalStartup.h" //getTicksMS
 
 //Stuff we pass to DebugMenu to display
@@ -31,6 +32,9 @@ class DebugMenu : public Window
 	float serverAverageFrame = 0.0;
 
 	std::vector<std::string> extraLines;
+
+	//Per pass timings from GpuProfiler, replaced every frame rather than added to, see showPassTimings
+	std::vector<GpuProfiler::Result> passTimings;
 
 	virtual void render(ImGuiIO* io) override;
 	virtual void init() override;
@@ -66,6 +70,14 @@ public:
 
 	//I got tired of extending passDetails for each new thing
 	void addExtraLine(const std::string& line) { extraLines.push_back(line); }
+
+	//While this is on LoopClient times each render pass and hands the results to passProfilerResults
+	bool showPassTimings = false;
+
+	//Only worth asking for while the menu is open, timing every pass isn't free
+	bool wantsPassTimings() const { return opened && showPassTimings; }
+
+	void passProfilerResults(std::vector<GpuProfiler::Result> results) { passTimings = std::move(results); }
 
 	bool isCommandWaiting() const { return luaCommandWaiting; }
 

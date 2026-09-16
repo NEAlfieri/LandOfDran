@@ -102,6 +102,9 @@ class InstancedBrickRenderer
 
 	//specialMesh in brick.vert and brickShadowCascade.vert, for each program that uses them
 	GLint specialMeshUniform = -1;
+	//The same two in the depth pre-pass program, which shares brick.vert, see renderDepth
+	GLint brickDepthSpecialMeshUniform = -1;
+	GLint brickDepthTransformUniform = -1;
 	GLint shadowSpecialMeshUniform = -1;
 	GLint tintSpecialMeshUniform = -1;
 
@@ -113,6 +116,9 @@ class InstancedBrickRenderer
 
 	void createInstancedVao(GLuint& vao, GLuint& instanceBuffer) const;
 	void createSpecialVao(GLuint& vao, GLuint& instanceBuffer) const;
+
+	//Visible opaque or transparent chunks, nearest first for opaque and farthest first for transparent
+	void visibleChunks(const std::shared_ptr<ShaderManager>& shaders, bool transparent, std::vector<const Chunk*>& out) const;
 
 	Chunk* getChunk(const Brick* brick);
 	void markDirty(Chunk* chunk);
@@ -174,6 +180,13 @@ class InstancedBrickRenderer
 
 	//Expects shaders->brickShader to be in use, culls chunks against the camera currently in shaders->cameraUniforms
 	void render(std::shared_ptr<ShaderManager> shaders, bool transparent) const;
+
+	/*
+		Expects shaders->brickDepthShader to be in use: draws the same opaque bricks render would, nearest first,
+		filling only depth so the shading pass can throw away everything behind them. Each chunk is one draw of the
+		whole cube rather than three by face, since which material a face uses doesn't matter here
+	*/
+	void renderDepth(std::shared_ptr<ShaderManager> shaders) const;
 
 	//Same as render, for brick groups
 	void renderGroups(std::shared_ptr<ShaderManager> shaders, const std::vector<GroupDraw>& draws, bool transparent) const;

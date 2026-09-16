@@ -68,6 +68,53 @@ void DebugMenu::render(ImGuiIO* io)
 
 		ImGui::Text("Run time: %f seconds", getTicksMS()/1000.0f);
 
+		ImGui::NewLine();
+
+		//How long each render pass took, see GpuProfiler. GPU is the time the card spent on the pass,
+		//CPU the time this thread spent handing it over, so a pass that's slow on both is draw call bound
+		ImGui::Checkbox("Show pass timings", &showPassTimings);
+		if (showPassTimings)
+		{
+			if (passTimings.empty())
+				ImGui::Text("Measuring...");
+			else if (ImGui::BeginTable("passTimings", 5, ImGuiTableFlags_SizingStretchProp))
+			{
+				ImGui::TableSetupColumn("Pass");
+				ImGui::TableSetupColumn("GPU ms");
+				ImGui::TableSetupColumn("GPU worst");
+				ImGui::TableSetupColumn("CPU ms");
+				ImGui::TableSetupColumn("CPU worst");
+				ImGui::TableHeadersRow();
+
+				for (const GpuProfiler::Result& pass : passTimings)
+				{
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					//Passes drawn inside another one are indented under it
+					ImGui::Text("%*s%s", pass.depth * 2, "", pass.name.c_str());
+					ImGui::TableNextColumn();
+					ImGui::Text("%.2f", pass.gpuMS);
+					ImGui::TableNextColumn();
+					//A stutter is a worst frame far above the average, so it's worth making it stand out
+					if (pass.worstGpuMS > pass.gpuMS * 2.0f + 1.0f)
+						ImGui::TextColored(ImVec4(1, 0.5f, 0.3f, 1), "%.2f", pass.worstGpuMS);
+					else
+						ImGui::Text("%.2f", pass.worstGpuMS);
+					ImGui::TableNextColumn();
+					ImGui::Text("%.2f", pass.cpuMS);
+					ImGui::TableNextColumn();
+					if (pass.worstCpuMS > pass.cpuMS * 2.0f + 1.0f)
+						ImGui::TextColored(ImVec4(1, 0.5f, 0.3f, 1), "%.2f", pass.worstCpuMS);
+					else
+						ImGui::Text("%.2f", pass.worstCpuMS);
+				}
+
+				ImGui::EndTable();
+			}
+		}
+
+		ImGui::NewLine();
+
 		for(unsigned int a = 0; a<extraLines.size(); a++)
 			ImGui::Text(extraLines.at(a).c_str());
 		extraLines.clear();

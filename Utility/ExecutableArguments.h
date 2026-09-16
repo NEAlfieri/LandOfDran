@@ -39,6 +39,10 @@ struct ExecutableArguments
 	//"Start Server". Meant for automated testing (screenshots, etc) where nothing can click through the menu
 	bool autoSinglePlayer = false;
 
+	//Time every render pass from launch and write a breakdown to the log once a second, the same numbers the
+	//debug menu's "Show pass timings" shows. For profiling a scene without anything having to click through the UI
+	bool profileRendering = false;
+
 	//Parse flags and data from command line arguments on start-up
 	ExecutableArguments(int argc, char** argv);
 };
