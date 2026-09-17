@@ -75,6 +75,10 @@ class Light : public SimObject
 	//State written by both creation and update packets, after the net ID
 	static constexpr unsigned int packetBytes = sizeof(float) * 16 + sizeof(netIDType) * 2;
 
+	//Client only: a light no server object backs, which no ObjHolder owns and nothing is ever sent about
+	//Its settings come straight from the setters below, see LoopClient::updateLightPreview
+	static std::shared_ptr<Light> makeLocal(const glm::vec3& position);
+
 	//Server: the dynamic holding it. Client: the dynamic with getHolderID, found again whenever that isn't it
 	std::weak_ptr<Dynamic> holder;
 

@@ -30,6 +30,11 @@ Light::Light(const glm::vec3& _position, const glm::vec3& _color, float _brightn
 	updatesLeft = 0;
 }
 
+std::shared_ptr<Light> Light::makeLocal(const glm::vec3& position)
+{
+	return std::shared_ptr<Light>(new Light(position, glm::vec3(1), 0, 0, 0));
+}
+
 void Light::setPosition(const glm::vec3& _position)
 {
 	position = _position;

@@ -56,6 +56,18 @@ struct ClientData
 	bool jetsEnabled = true;
 	bool flashlightEnabled = true;
 
+	/*
+		Lua's client:setFreeCameraEnabled: whether they can drop their camera off their player and fly it around.
+		Off for everyone but admins, who are given it as they log in, since it sees the whole map, see setFreeCamera
+	*/
+	bool freeCameraEnabled = false;
+
+	//Whether their camera is off flying right now, from FreeCameraRequest packets
+	bool freeCamera = false;
+
+	//The light that marks where their loose camera is while it flies, see setFreeCamera
+	std::weak_ptr<Light> freeCameraLight;
+
 	//Their flashlight while it's on, held by the target of their first controller, see setFlashlight
 	std::weak_ptr<Light> flashlight;
 
@@ -138,6 +150,17 @@ struct ClientData
 	//Turns their flashlight on in color (or just recolors it), or off, playing LightOn or LightOff from their player for anyone nearby
 	//Won't turn it on while flashlightEnabled is off, or without a player from setDefaultController to hold it
 	void setFlashlight(const ServerProgramData* pd, bool on, const glm::vec3& color);
+
+	/*
+		Their camera comes off their player to fly around, or goes back on it. Their player stays where it is either way:
+		their game is what moves it, see LoopClient::dropPlayerAtCamera
+		While it's loose a light marks where it is for everyone, moved to their camera each tick by LoopServer::updatePlayerAbilities
+		Won't come loose while freeCameraEnabled is off
+	*/
+	void setFreeCamera(const ServerProgramData* pd, bool on);
+
+	//Where their camera is, which is where they're watching from while it flies, see setFreeCamera
+	glm::vec3 getCameraPosition() const;
 
 	//Tells their game whether jets and the flashlight are enabled, so it doesn't jet on its own when the server won't
 	void sendAbilities() const;

@@ -12,6 +12,11 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	paintCanOut = false;
 	paintCanSent = false;
 
+	//The next one decides for itself whether we can fly a camera around it
+	freeCamera = false;
+	cameraTargetBeforeFlying.reset();
+	simulation.freeCameraEnabled = false;
+
 	pd.serverBrowser->open();
 
 	if (!client)
@@ -429,8 +434,8 @@ void LoopClient::renderItemIcons()
 	pd.itemIcons->render(pd.shaders, requests, (int)pd.context->getResolution().x, (int)pd.context->getResolution().y);
 }
 
-//How far away a name tag still shows, and where it starts fading out, world units
-static constexpr float nameTagRange = 250.0f;
+//How far away a name tag still shows, and where it starts fading out, world units (a stud is one)
+static constexpr float nameTagRange = 256.0f;
 static constexpr float nameTagFadeStart = 150.0f;
 
 //How far over the top of what it belongs to a name tag floats, world units, enough to clear a player's head
@@ -449,6 +454,21 @@ void LoopClient::updateNameTags()
 
 	const glm::vec2 resolution = pd.context->getResolution();
 	const glm::vec3 cameraPosition = simulation.camera->getPosition();
+
+	//Our own player, which the camera starts inside of in first person, never counts as something in the way
+	btRigidBody* ownBody = simulation.controlledDynamics.empty() ? nullptr : simulation.controlledDynamics[0]->body;
+
+	//Whether the camera has a clear line to a point on the dynamic a tag belongs to, whose own body never blocks it
+	auto canSee = [&](const glm::vec3& point, const btRigidBody* theirBody) -> bool
+	{
+		if (!pd.physicsWorld)
+			return true;
+
+		if (glm::distance(point, cameraPosition) < 0.1f)
+			return true;
+
+		return pd.physicsWorld->rayHitFraction(g2b3(cameraPosition), g2b3(point), ownBody, theirBody) >= 1.0f;
+	};
 
 	for (size_t a = 0; a < simulation.dynamics->size(); a++)
 	{
@@ -481,6 +501,11 @@ void LoopClient::updateNameTags()
 		if (std::abs(ndc.x) > 1.2f || std::abs(ndc.y) > 1.2f)
 			continue;
 
+		//Last, since it's the expensive part: nothing solid between us and them, so a tag doesn't hang in the air over
+		//the wall someone stands behind. Their middle or the spot the tag floats at counts, so a head poking over one still shows
+		if (!canSee(dynamic->getMeshCenter(-1), dynamic->body) && !canSee(where, dynamic->body))
+			continue;
+
 		float fade = distance < nameTagFadeStart ? 1.0f : 1.0f - (distance - nameTagFadeStart) / (nameTagRange - nameTagFadeStart);
 
 		WorldNameTag tag;
@@ -495,6 +520,129 @@ void LoopClient::updateNameTags()
 
 		pd.gui->nameTags.push_back(tag);
 	}
+}
+
+std::shared_ptr<Dynamic> LoopClient::getOwnPlayer() const
+{
+	return simulation.controlledDynamics.empty() ? nullptr : simulation.controlledDynamics[0];
+}
+
+void LoopClient::setFreeCamera(bool on)
+{
+	if (on == freeCamera || !simulation.camera)
+		return;
+
+	//Only if the server allows it, and only with a player to come back to
+	if (on && (!simulation.freeCameraEnabled || !getOwnPlayer()))
+		return;
+
+	freeCamera = on;
+
+	if (on)
+	{
+		//So it can be put back the way the server had it, see CameraSettingsPacket
+		cameraTargetBeforeFlying = simulation.camera->target;
+		cameraFreePositionBeforeFlying = simulation.camera->freePosition;
+		cameraFreeDirectionBeforeFlying = simulation.camera->freeDirection;
+		cameraFreeUpVectorBeforeFlying = simulation.camera->freeUpVector;
+
+		//Where it already is, looking where it already looked, from here on flown by the walking keys, see Camera::control
+		simulation.camera->target.reset();
+		simulation.camera->freePosition = true;
+		simulation.camera->freeDirection = true;
+		simulation.camera->freeUpVector = false;
+		simulation.camera->setUp(glm::vec3(0, 1, 0));
+
+		//First person had our own model hidden, and there's no target left to show it again
+		if (std::shared_ptr<Dynamic> player = getOwnPlayer())
+			player->setHidden(false);
+	}
+	else
+	{
+		simulation.camera->target = cameraTargetBeforeFlying;
+		simulation.camera->freePosition = cameraFreePositionBeforeFlying;
+		simulation.camera->freeDirection = cameraFreeDirectionBeforeFlying;
+		simulation.camera->freeUpVector = cameraFreeUpVectorBeforeFlying;
+
+		//Whatever it was watching is gone, or it was never on anything: our own player is the sensible thing to come back to
+		if (simulation.camera->target.expired())
+		{
+			simulation.camera->target = getOwnPlayer();
+			simulation.camera->freePosition = true;
+			simulation.camera->freeDirection = true;
+		}
+
+		cameraTargetBeforeFlying.reset();
+	}
+
+	if (client)
+		client->send(makeFreeCameraPacket(freeCamera), OtherReliable);
+}
+
+void LoopClient::dropPlayerAtCamera()
+{
+	std::shared_ptr<Dynamic> player = getOwnPlayer();
+	if (!freeCamera || !player || !simulation.camera)
+		return;
+
+	//Our game owns our own player's physics, so this goes to the server the usual way, see sendControlledObjects
+	if (player->isInWorld())
+	{
+		player->setPosition(g2b3(simulation.camera->getPosition()));
+		player->setVelocity(btVector3(0, 0, 0));
+		player->setAngularVelocity(btVector3(0, 0, 0));
+		player->activate();
+	}
+
+	setFreeCamera(false);
+}
+
+/*
+	The preview light is ours alone, like a predicted click's: the server's lights are numbered up from 0 and those
+	count down from the top, so one number in the middle can never be mistaken for either
+*/
+static constexpr netIDType previewLightID = NO_ID / 2;
+
+void LoopClient::updateLightPreview(std::vector<PointLightSource>& lights, netIDType& hiddenLightID)
+{
+	hiddenLightID = NO_ID;
+
+	netIDType brickID = NO_ID;
+	BrickAttachments settings;
+	if (!pd.wrenchDialog || !pd.wrenchDialog->getLightPreview(brickID, hiddenLightID, settings))
+	{
+		lightPreview = nullptr;
+		return;
+	}
+
+	//The brick's real light stays hidden either way, so unchecking Has light shows it going out
+	const Brick* brick = simulation.bricks ? simulation.bricks->find(brickID) : nullptr;
+	if (!brick || !settings.hasLight)
+	{
+		lightPreview = nullptr;
+		return;
+	}
+
+	glm::vec3 position = brick->getWorldCenter() + settings.lightOffset;
+
+	if (!lightPreview)
+		lightPreview = Light::makeLocal(position);
+
+	//Where the server would put the light for these settings, see updateBrickAttachments
+	Light& light = *lightPreview;
+	light.setPosition(position);
+	light.setColor(settings.lightColor);
+	light.setBrightness(settings.lightBrightness);
+	light.setFlicker(settings.lightFlicker);
+	light.setBlink(settings.lightBlinkSpeed, settings.lightBlinkStrength);
+	light.setCoronaWidth(settings.lightCoronaWidth);
+	light.setConeAngle(settings.lightConeAngle);
+	light.setDirection(settings.lightDirection);
+	light.setSpin(settings.lightSpin);
+
+	uint32_t now = SDL_GetTicks();
+	lights.push_back({ previewLightID, light.getRenderedPosition(now), light.getColor(), light.getRenderedBrightness(now),
+		light.getCoronaWidth(), light.getRange(), light.getRenderedDirection(now), light.getConeCosine() });
 }
 
 /*
@@ -1200,6 +1348,28 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	if (pd.input->pollCommand(FirstThirdPerson))
 		simulation.camera->swapPerson();
+
+	//The free camera: off our player to fly around, and back onto it wherever we've flown to
+	if (cmdArgs.gameState == InGame)
+	{
+		if (pd.input->pollCommand(DropCameraAtPlayer))
+			setFreeCamera(true);
+
+		if (pd.input->pollCommand(DropPlayerAtCamera))
+			dropPlayerAtCamera();
+
+		//The server took it away, or our player is gone, so the camera goes back where it was
+		if (freeCamera && (!simulation.freeCameraEnabled || !getOwnPlayer()))
+			setFreeCamera(false);
+		//The server aimed our camera itself, with client:bindCamera or client:staticCamera, which wins over flying it
+		else if (freeCamera && (!simulation.camera->target.expired() || !simulation.camera->freePosition))
+		{
+			freeCamera = false;
+			cameraTargetBeforeFlying.reset();
+			if (client)
+				client->send(makeFreeCameraPacket(false), OtherReliable);
+		}
+	}
 
 	if (pd.input->pollCommand(DebugView))
 		pd.debugMenu->showDebugPhysicsView = !pd.debugMenu->showDebugPhysicsView;
@@ -2394,6 +2564,10 @@ void LoopClient::renderEverything(float deltaT)
 	//Lights a predicted click is shining, which are ours alone and aren't objects the server knows about
 	pd.clickActions->addLights(lightSources);
 
+	//Same for the light the wrench dialog is editing, which stands in for the brick's real one while it's open
+	netIDType hiddenLightID = NO_ID;
+	updateLightPreview(lightSources, hiddenLightID);
+
 	if (simulation.lights)
 	{
 		Uint32 now = SDL_GetTicks();
@@ -2401,6 +2575,11 @@ void LoopClient::renderEverything(float deltaT)
 		for (unsigned int a = 0; a < simulation.lights->size(); a++)
 		{
 			std::shared_ptr<Light> light = simulation.lights->get(a);
+
+			//The wrench dialog is showing what this one would look like with the settings being edited instead
+			if (light->getID() == hiddenLightID)
+				continue;
+
 			glm::vec3 position = light->getRenderedPosition(now);
 			glm::vec3 direction = light->getRenderedDirection(now);
 
@@ -2744,6 +2923,10 @@ void LoopClient::renderEverything(float deltaT)
 	}
 	if (pd.vehicleGhost.isActive())
 		hudLines.push_back("Placing " + pd.vehicleGhost.getName() + (pd.vehicleGhost.placesAsVehicle() ? " as a vehicle" : " as bricks") + ": aim with the crosshair, left click places it, Escape cancels");
+	if (freeCamera)
+		hudLines.push_back("Free camera: the walking keys fly it, " + std::string(SDL_GetScancodeName(pd.input->getKeyBind(DropPlayerAtCamera))) +
+			" drops your player here. Your player stays where you left it, and a yellow light shows everyone where the camera is");
+
 	if (getDrivenVehicle())
 		hudLines.push_back("Driving: W/S drive, A/D steer, jump brakes, left click honks, right click gets out");
 	else if (getRiddenVehicle())
@@ -2757,6 +2940,8 @@ void LoopClient::renderEverything(float deltaT)
 	pd.gui->voiceLevel = pd.voice->getInputLevel();
 	pd.gui->voiceClipping = pd.voice->isClipping();
 	pd.gui->setMouseCaptured(pd.context->getMouseLocked());
+	//The appearance editor fills the screen with your player, not the world the brick bar, item bar, and palette belong to
+	pd.gui->hideGameHud = pd.appearanceEditor && pd.appearanceEditor->isOpen();
 	{
 		GpuZone zone(pd.profiler, "GUI");
 		pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair,hudLines);
@@ -2801,14 +2986,22 @@ void LoopClient::updateControllers(float deltaT)
 	bool jet = simulation.jetsEnabled && pd.context->getMouseLocked() && !pd.input->supressed && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_RMASK) && !jetSuppressed && !getRiddenVehicle();
 	bool firing = pd.context->getMouseLocked() && !pd.input->supressed && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
 
+	//Left shift lies the player down. It shares its key with the ghost brick's resize mode, so it waits until they're done building
+	bool crawl = pd.context->getMouseLocked() && !pd.input->supressed && pd.input->isCommandKeydown(Crawl) && !pd.ghostBrick.isVisible() && !getRiddenVehicle();
+
 	//Go through player controllers, remove any that are bound to now deleted dynamics
 	auto ctrlIter = simulation.controllers.begin();
 	while (ctrlIter != simulation.controllers.end())
 	{
 		//Apply movement inputs client side 
 		float waterLevel = simulation.waterEnabled ? simulation.waterLevel : PlayerController::noWater;
-		(*ctrlIter)->sendQuickly = firing;
-		if ((*ctrlIter)->control(pd.input, simulation.camera, deltaT, pd.physicsWorld, jet, waterLevel))
+		//The keys fly the camera instead while it's loose, so the player they belong to stands where it was left
+		(*ctrlIter)->sendQuickly = firing || freeCamera;
+		bool gone = freeCamera ?
+			(*ctrlIter)->control(pd.physicsWorld, deltaT, simulation.camera->getDirection(), simulation.camera->getPosition(),
+				false, false, false, false, false, false, false, false, waterLevel) :
+			(*ctrlIter)->control(pd.input, simulation.camera, deltaT, pd.physicsWorld, jet, crawl, waterLevel);
+		if (gone)
 		{
 			ctrlIter = simulation.controllers.erase(ctrlIter);
 			continue;

@@ -89,6 +89,7 @@ enum FromClientPacketType : unsigned char
 	VehicleRemoveRequest = 24,	//Remove the vehicle in the wrench dialog the server last sent them
 	PaintCanRequest = 25,	//Whether the client's paint palette wants a paint can in their hand, see Networking/PacketsFromClient/Inventory.cpp
 	PrintSubmit = 26,		//The print the client picked in the print menu the server last sent them, see Networking/PacketsFromClient/Print.cpp
+	FreeCameraRequest = 27,	//Whether the client's camera has come loose from their player to fly around, see Networking/PacketsFromClient/FreeCamera.cpp
 };
 
 //Flags byte after the mask of a ClickDetails packet
@@ -125,6 +126,7 @@ enum DynamicKind : unsigned char
 #define MovementFlag_Right 16
 #define MovementFlag_JumpHeld 32	//Jump is down at all, swims up
 #define MovementFlag_Jet 64			//Right mouse is held, see PlayerController::control
+#define MovementFlag_Crawl 128		//The crawl key is held, which lies the player down, see PlayerController::crawlProgress
 
 //Flags byte of VoiceFrame and VoiceFrameFromServer packets
 #define VoiceFlag_End 1			//Push to talk was let go, no Opus frame follows
@@ -195,6 +197,7 @@ enum FromServerPacketType : unsigned char
 //Flags byte of a PlayerAbilities packet
 #define PlayerAbility_Jets 1
 #define PlayerAbility_Flashlight 2
+#define PlayerAbility_FreeCamera 4
 
 //Second byte of a VoiceStatus packet
 enum VoiceStatusKind : unsigned char

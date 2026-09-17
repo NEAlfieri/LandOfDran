@@ -34,6 +34,14 @@ struct PlayerController
 	bool lastJump, lastJumpHeld, lastForward, lastBackward, lastLeft, lastRight;
 	//Right mouse held, jetting if jetsAllowed
 	bool lastJet = false;
+	//The crawl key held, which lies the player down, see crawlProgress
+	bool lastCrawl = false;
+
+	/*
+		0 standing, 1 lying flat on the ground, moved along by control while the crawl key is held or let go
+		The body is tipped this far forward, collision box and all, so a crawling player fits where a standing one doesn't
+	*/
+	float crawlProgress = 0;
 
 	//Lua's client:setJetsEnabled on the server, the PlayerAbilities packet on the client
 	bool jetsAllowed = true;
@@ -74,13 +82,14 @@ struct PlayerController
 		Server and client side, called per frame, server caches last inputs from clients
 		jump is a new press of the jump key, jumpHeld is whether it's down at all (it swims up)
 		jet is whether right mouse is held, which lifts the player and speeds them along while jetsAllowed
+		crawl is whether the crawl key is held, which lies them down on land, slows them, and aims their jets forward
 		waterLevel is noWater if there's no water
 	*/
-	bool control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool jumpHeld, bool forward, bool backward, bool left, bool right, bool jet, float waterLevel);
+	bool control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool jumpHeld, bool forward, bool backward, bool left, bool right, bool jet, bool crawl, float waterLevel);
 
 	/*
 	    Client side wrapper
 		Call for each controller each frame, returns true if weak_ptr lock expired
 	*/
-	bool control(const std::shared_ptr<InputMap> input, const std::shared_ptr<Camera> camera, float deltaT, std::shared_ptr<PhysicsWorld> world, bool jet, float waterLevel);
+	bool control(const std::shared_ptr<InputMap> input, const std::shared_ptr<Camera> camera, float deltaT, std::shared_ptr<PhysicsWorld> world, bool jet, bool crawl, float waterLevel);
 };

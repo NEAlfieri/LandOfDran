@@ -110,8 +110,42 @@ class LoopClient
 	//Puts every dynamic with a name tag (players' names, see serverstart.lua) on screen over its head, for the GUI to draw
 	void updateNameTags();
 
+	/*
+		Shines the light the wrench dialog is editing while it's open, in place of the brick's real one, so a change to a
+		light shows before it's applied. Ours alone: the server hears nothing about it, and closing the window without
+		applying just stops it being drawn, which puts the real light back
+		hiddenLightID comes back with the brick's real light, or NO_ID when nothing is being previewed
+	*/
+	void updateLightPreview(std::vector<PointLightSource>& lights, netIDType& hiddenLightID);
+
+	//The preview itself, which keeps its own flicker, blink, and spin going, nullptr while no light is being edited
+	std::shared_ptr<Light> lightPreview = nullptr;
+
 	//Right mouse got us into or out of a vehicle, so it doesn't jet until it's let go
 	bool jetSuppressed = false;
+
+	/*
+		The free camera (Drop Camera At Player / Drop Player At Camera, F7 and F8): our camera comes off our player and
+		flies around with no collision while our player stays where it is, and the server shines a light where it is
+		Only if the server allows it, which is admins only unless its Lua says otherwise, see Simulation::freeCameraEnabled
+	*/
+	bool freeCamera = false;
+
+	//What the camera was bound to before it came loose, put back when our player is dropped at it
+	std::weak_ptr<Dynamic> cameraTargetBeforeFlying;
+	bool cameraFreePositionBeforeFlying = false;
+	bool cameraFreeDirectionBeforeFlying = false;
+	bool cameraFreeUpVectorBeforeFlying = false;
+
+	//Drops the camera off our player to fly around, or puts it back on it, telling the server either way
+	//Putting it back doesn't move our player, see dropPlayerAtCamera
+	void setFreeCamera(bool on);
+
+	//Our player is teleported to where the camera is flying and the camera goes back onto it
+	void dropPlayerAtCamera();
+
+	//Our own player, the first dynamic the server gave us control of, nullptr if we have none
+	std::shared_ptr<Dynamic> getOwnPlayer() const;
 
 	//Every vehicle's bricks and where they're drawn this frame, for each pass that draws bricks, see renderEverything
 	std::vector<InstancedBrickRenderer::GroupDraw> vehicleDraws;

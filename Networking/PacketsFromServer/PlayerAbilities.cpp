@@ -15,6 +15,7 @@ bool PlayerAbilitiesPacket::applyPacket(const ClientProgramData& pd, Simulation&
 
 	simulation.jetsEnabled = packet->data[1] & PlayerAbility_Jets;
 	simulation.flashlightEnabled = packet->data[1] & PlayerAbility_Flashlight;
+	simulation.freeCameraEnabled = packet->data[1] & PlayerAbility_FreeCamera;
 
 	return true;
 }

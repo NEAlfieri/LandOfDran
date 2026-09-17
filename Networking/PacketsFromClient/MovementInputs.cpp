@@ -46,5 +46,6 @@ void movementInputs(JoinedClient* source, Server const* const server, ENetPacket
 	//Pass movement keys and camera direction/position to the controller
 	float waterLevel = pd->waterEnabled ? pd->waterLevel : PlayerController::noWater;
 	controller->control(pd->physicsWorld, 0, glm::vec3(x, y, z), glm::vec3(px, py, pz), flags & MovementFlag_Jump, flags & MovementFlag_JumpHeld,
-		flags & MovementFlag_Forward, flags & MovementFlag_Backward, flags & MovementFlag_Left, flags & MovementFlag_Right, flags & MovementFlag_Jet, waterLevel);
+		flags & MovementFlag_Forward, flags & MovementFlag_Backward, flags & MovementFlag_Left, flags & MovementFlag_Right, flags & MovementFlag_Jet,
+		flags & MovementFlag_Crawl, waterLevel);
 }

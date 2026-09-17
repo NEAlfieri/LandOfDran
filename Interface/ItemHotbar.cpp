@@ -65,6 +65,10 @@ bool ItemHotbar::takeChange()
 
 void ItemHotbar::render(ImGuiIO* io)
 {
+	//Nothing of the game's own HUD while the appearance editor is up
+	if (userInterface->hideGameHud)
+		return;
+
 	unsigned int now = SDL_GetTicks();
 
 	//Restart the slide from wherever the last one got to, so quick taps don't make the bar jump

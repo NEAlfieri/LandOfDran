@@ -76,6 +76,7 @@ void appearanceChoice(JoinedClient* source, Server const* const server, ENetPack
 void wrenchRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void printSubmit(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+void freeCameraRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void playerGrab(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void inventorySelect(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void dropItemRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);

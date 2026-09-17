@@ -124,6 +124,13 @@ class UserInterface
 	int superShiftIndicator = -1;
 	int resizeIndicator = -1;
 
+	/*
+		Set each frame by LoopClient: something like the appearance editor is drawn over the whole scene, so the parts of
+		the HUD that belong to playing (the brick bar, the item bar, and the paint palette) stay out of it
+		They check it themselves in render, they aren't real windows that could just be closed
+	*/
+	bool hideGameHud = false;
+
 	//Name tags over the world for this frame, filled in by LoopClient::updateNameTags before render
 	std::vector<WorldNameTag> nameTags;
 

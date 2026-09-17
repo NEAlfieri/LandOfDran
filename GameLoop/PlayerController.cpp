@@ -28,6 +28,77 @@ static constexpr float jetMaxRiseSpeed = 30.0f;
 static constexpr float jetSpeedMultiplier = 2.0f;
 static constexpr float jetBlendTime = 150.0f;
 
+//MS lying down or getting back up takes, like the old game's crouch
+static constexpr float crawlBlendTime = 200.0f;
+
+//How much of walking speed a player flat on the ground moves at
+static constexpr float crawlSpeedMultiplier = 0.5f;
+
+/*
+	Top speed jets carry a player lying flat, world units a second, which is what their thrust builds up to and what
+	holding a movement key heads for. Faster than jetting upright (walking speed times jetSpeedMultiplier): the whole
+	point of flying flat out is that it beats flying along standing up
+*/
+static constexpr float crawlJetSpeed = 30.0f;
+
+//How far a box of these half extents, turned this way, reaches up and down from its middle
+static btScalar verticalHalfExtent(const btVector3& halfExtents, const btQuaternion& turn)
+{
+	btMatrix3x3 basis(turn);
+	return std::abs(basis[1].getX()) * halfExtents.getX() + std::abs(basis[1].getY()) * halfExtents.getY() + std::abs(basis[1].getZ()) * halfExtents.getZ();
+}
+
+/*
+	Whether a player lying down has room to stand up again: nothing solid over their collision box up to where a
+	standing one's top would be. Until there is, letting go of the key leaves them down, like the old game's crouch
+
+	Measured from where the box really is at whatever angle it's tipped to, not from a flat one: a box halfway up is
+	as much taller as its middle is higher, so guessing either would move the answer around as the player rises and
+	leave them flickering between lying and standing in a room that's tall enough
+*/
+static bool roomToStand(std::shared_ptr<PhysicsWorld> world, const std::shared_ptr<Dynamic>& player)
+{
+	std::shared_ptr<Model> model = player->getType()->getModel();
+	btVector3 halfExtents = g2b3(model->getColHalfExtents());
+
+	const btTransform& transform = player->body->getWorldTransform();
+	btVector3 center = transform * g2b3(model->getColOffset());
+
+	//setPose keeps the box standing on the same spot however it's turned, so this is the floor under them either way
+	btScalar bottom = center.getY() - verticalHalfExtent(halfExtents, transform.getRotation());
+
+	//Straight up the middle of where they'd stand, from just off the floor to the top of a standing box
+	btVector3 from(center.getX(), bottom + 0.05f, center.getZ());
+	btVector3 to(center.getX(), bottom + halfExtents.getY() * 2.0f, center.getZ());
+
+	if (to.getY() <= from.getY())
+		return true;
+
+	return world->rayHitFraction(from, to, player->body, nullptr) >= 1;
+}
+
+/*
+	Turns the player's body, collision box and all, keeping the box where it stood: its middle stays over the same
+	spot and its lowest point stays at the same height, so lying down doesn't sink it into the ground or pop it out
+*/
+static void setPose(const std::shared_ptr<Dynamic>& player, const btQuaternion& rotation)
+{
+	std::shared_ptr<Model> model = player->getType()->getModel();
+	btVector3 halfExtents = g2b3(model->getColHalfExtents());
+	btVector3 boxOffset = g2b3(model->getColOffset());
+
+	btTransform transform = player->body->getWorldTransform();
+	btQuaternion turned = transform.getRotation();
+
+	//Where the box's middle would go on its own, undone, plus however much taller or shorter the turned box is
+	btVector3 stay = quatRotate(turned, boxOffset) - quatRotate(rotation, boxOffset);
+	btScalar rise = verticalHalfExtent(halfExtents, rotation) - verticalHalfExtent(halfExtents, turned);
+
+	transform.setOrigin(transform.getOrigin() + stay + btVector3(0, rise, 0));
+	transform.setRotation(rotation);
+	player->body->setWorldTransform(transform);
+}
+
 /*
 	If the player is walking into a wall no taller than maxStepHeight with room above it, lifts them on top of it
 	Works on anything solid except other dynamics, so walking into a loose object still pushes it
@@ -142,7 +213,8 @@ static void swim(const std::shared_ptr<Dynamic>& player, float deltaT, glm::vec3
 ENetPacket* PlayerController::makeMovementInputsPacket()
 {
 	unsigned char flags = (lastJump ? MovementFlag_Jump : 0) | (lastForward ? MovementFlag_Forward : 0) | (lastBackward ? MovementFlag_Backward : 0) |
-		(lastLeft ? MovementFlag_Left : 0) | (lastRight ? MovementFlag_Right : 0) | (lastJumpHeld ? MovementFlag_JumpHeld : 0) | (lastJet ? MovementFlag_Jet : 0);
+		(lastLeft ? MovementFlag_Left : 0) | (lastRight ? MovementFlag_Right : 0) | (lastJumpHeld ? MovementFlag_JumpHeld : 0) | (lastJet ? MovementFlag_Jet : 0) |
+		(lastCrawl ? MovementFlag_Crawl : 0);
 
 	//Jets starting or stopping go out right away, so the flames under the player don't lag behind, and so does any other key, which steers a vehicle
 	//While left mouse is held they go out more often, so scripts following the crosshair, like the paint can, keep up with it
@@ -166,6 +238,7 @@ ENetPacket* PlayerController::makeMovementInputsPacket()
 		lastLeft,
 		lastRight,
 		lastJet,
+		lastCrawl,
 		lastCameraDirection,
 		lastCameraPosition
 	);
@@ -175,11 +248,11 @@ ENetPacket* PlayerController::makeMovementInputsPacket()
 bool PlayerController::controlWithLastInput(std::shared_ptr<PhysicsWorld> world, float deltaT, float waterLevel)
 {
 	serverSide = true;
-	return control(world, deltaT, lastCameraDirection, lastCameraPosition, lastJump, lastJumpHeld, lastForward, lastBackward, lastLeft, lastRight, lastJet, waterLevel);
+	return control(world, deltaT, lastCameraDirection, lastCameraPosition, lastJump, lastJumpHeld, lastForward, lastBackward, lastLeft, lastRight, lastJet, lastCrawl, waterLevel);
 }
 
 //Server and client side, called per frame, server caches last inputs from clients
-bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool jumpHeld, bool forward, bool backward, bool left, bool right, bool jet, float waterLevel)
+bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT, glm::vec3 cameraDirection, glm::vec3 cameraPosition, bool jump, bool jumpHeld, bool forward, bool backward, bool left, bool right, bool jet, bool crawl, float waterLevel)
 {
 	lastCameraDirection = cameraDirection;
 	lastCameraPosition = cameraPosition;
@@ -190,6 +263,7 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 	lastLeft = left;
 	lastRight = right;
 	lastJet = jet;
+	lastCrawl = crawl;
 	jumped = false;
 
 	//Prevent huge deltaTs from causing huge jumps (like when debugging and pausing the game for a while)
@@ -246,14 +320,39 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 	//Past Dynamic::swimDepth they go wherever the camera points
 	bool swimming = submerged >= Dynamic::swimDepth &&getTicksMS() - lastWaterJump >= waterJumpMS;
 
+	btVector3 dir = g2b3(cameraDirection);
+	dir.setY(0);
+	dir = dir.length2() > 0.00000001f ? dir.normalized() : btVector3(0, 0, 1);
+	float cameraYaw = atan2(dir.getX(), dir.getZ());
+
+	/*
+		Lying down, on land only - water already decides how the player moves. Getting back up waits for the room to do it,
+		so crawling under something doesn't push them through it
+	*/
+	bool lyingDown = crawl && !swimming;
+	if (!lyingDown && crawlProgress > 0.5f && !roomToStand(world, targetLock))
+		lyingDown = true;
+
+	float lastCrawlProgress = crawlProgress;
+	crawlProgress = std::clamp(crawlProgress + (lyingDown ? deltaT : -deltaT) / crawlBlendTime, 0.0f, 1.0f);
+	bool crawling = crawlProgress > 0.5f;
+
+	//The body's yaw, tipped forward as far as it has lain down, which turns its collision box with it
+	btQuaternion pose = playerYaw * btQuaternion(btVector3(1, 0, 0), -SIMD_HALF_PI * crawlProgress);
+
 	//Not while swimming, which already decides how the player moves
 	bool jetting = jet && jetsAllowed && !swimming;
 	if (jetting && deltaT > 0 && targetLock->body->getInvMass() > 0)
 	{
 		btRigidBody* body = targetLock->body;
 		btScalar mass = 1.0f / body->getInvMass();
-		btScalar lift = targetLock->getVelocity().getY() < jetMaxRiseSpeed ? jetLift : 0.0f;
-		body->applyCentralForce((btVector3(0, lift, 0) - body->getGravity()) * mass);
+		btVector3 velocity = targetLock->getVelocity();
+
+		//Standing, the jets lift. Lying down they push along the way the player faces instead, like the old game's crouch jet
+		btScalar lift = velocity.getY() < jetMaxRiseSpeed ? jetLift : 0.0f;
+		btScalar push = dir.dot(velocity) < crawlJetSpeed ? jetLift : 0.0f;
+		btVector3 thrust = btVector3(0, lift * (1.0f - crawlProgress), 0) + dir * (push * crawlProgress);
+		body->applyCentralForce((thrust - body->getGravity()) * mass);
 	}
 
 	//TODO: Move this to a constructor or something
@@ -262,19 +361,28 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 	float speed = 10.0;
 	float blendTime = 50.0; //MS
 
-	btVector3 dir = g2b3(cameraDirection);
-	dir.setY(0);
-	dir = dir.length2() > 0.00000001f ? dir.normalized() : btVector3(0, 0, 1);
-	float cameraYaw = atan2(dir.getX(), dir.getZ());
+	//On foot, crawling is slower, all the way down to crawlSpeedMultiplier of walking flat on the ground
+	float walkSpeed = speed * (1.0f - crawlProgress * (1.0f - crawlSpeedMultiplier));
+
+	/*
+		Jetting is its own speed rather than that one doubled: crawling slows the legs, not the jets, and a player
+		flat out flies faster than an upright one. Heading for the same speed the thrust above builds to means
+		holding a movement key steers the flight instead of dragging it back to a walk
+	*/
+	float jetSpeed = speed * jetSpeedMultiplier + (crawlJetSpeed - speed * jetSpeedMultiplier) * crawlProgress;
 
 	if (faceCamera && !serverSide)
 	{
 		playerYaw = playerYaw.slerp(btQuaternion(3.1415 + cameraYaw, 0, 0), std::min(deltaT / blendTime, 1.0f));
+		pose = playerYaw * btQuaternion(btVector3(1, 0, 0), -SIMD_HALF_PI * crawlProgress);
 
 		//Don't want to compete with ControlledPhysics packets from the same client
-		btTransform t = targetLock->body->getWorldTransform();
-		t.setRotation(playerYaw);
-		targetLock->body->setWorldTransform(t);
+		setPose(targetLock, pose);
+	}
+	else if (!serverSide && crawlProgress != lastCrawlProgress)
+	{
+		//Lying down or getting up turns the body even when nothing else would, like standing still in third person
+		setPose(targetLock, pose);
 	}
 
 	bool leftRightUsed = false;
@@ -307,7 +415,8 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 
 	if (!moving && !(swimming && jumpHeld))
 	{
-		targetLock->body->setFriction(1.0);
+		//Jets pushing a crawling player along shouldn't have to drag them over the ground
+		targetLock->body->setFriction(crawling && jetting ? 0.0 : 1.0);
 		targetLock->stop(0);
 		targetLock->playWalkingAnimation = false;
 		return false;
@@ -342,9 +451,7 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 		playerYaw = playerYaw.slerp(turn, deltaT / blendTime);
 
 		//Don't want to compete with ControlledPhysics packets from the same client
-		btTransform t = targetLock->body->getWorldTransform();
-		t.setRotation(playerYaw);
-		targetLock->body->setWorldTransform(t);
+		setPose(targetLock, playerYaw * btQuaternion(btVector3(1, 0, 0), -SIMD_HALF_PI * crawlProgress));
 	}
 
 	if (swimming)
@@ -355,10 +462,12 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 
 	btVector3 walkDir = btMatrix3x3(turn) * btVector3(0.0, 0.0, -1.0);
 
-	stepUp(world, targetLock, walkDir);
+	//Someone flat on the ground doesn't pull themselves onto ledges, and their box isn't upright to sweep with anyway
+	if (!crawling)
+		stepUp(world, targetLock, walkDir);
 
 	btVector3 oldVel = targetLock->getVelocity();
-	float moveSpeed = jetting ? speed * jetSpeedMultiplier : speed;
+	float moveSpeed = jetting ? jetSpeed : walkSpeed;
 	float moveBlendTime = jetting ? jetBlendTime : blendTime;
 	//TODO: This LERP isn't right
 	btVector3 newVel = oldVel.lerp(walkDir * moveSpeed, deltaT / moveBlendTime);
@@ -372,7 +481,7 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 	Client side wrapper
 	Call for each controller each frame, returns true if weak_ptr lock expired
 */
-bool PlayerController::control(const std::shared_ptr<InputMap> input, const std::shared_ptr<Camera> camera, float deltaT, std::shared_ptr<PhysicsWorld> world, bool jet, float waterLevel)
+bool PlayerController::control(const std::shared_ptr<InputMap> input, const std::shared_ptr<Camera> camera, float deltaT, std::shared_ptr<PhysicsWorld> world, bool jet, bool crawl, float waterLevel)
 {
 	serverSide = false;
 	faceCamera = camera->getFirstPerson() && camera->target.lock() == target.lock();
@@ -381,5 +490,5 @@ bool PlayerController::control(const std::shared_ptr<InputMap> input, const std:
 	bool ctrlDown = SDL_GetModState() & KMOD_CTRL;
 	bool forward = input->isCommandKeydown(WalkForward) && !(ctrlDown && input->getKeyBind(DropItem) == input->getKeyBind(WalkForward));
 
-	return control(world, deltaT, camera->getDirection(), camera->getPosition(), input->pollCommand(Jump), input->isCommandKeydown(Jump), forward, input->isCommandKeydown(WalkBackward), input->isCommandKeydown(WalkLeft), input->isCommandKeydown(WalkRight), jet, waterLevel);
+	return control(world, deltaT, camera->getDirection(), camera->getPosition(), input->pollCommand(Jump), input->isCommandKeydown(Jump), forward, input->isCommandKeydown(WalkBackward), input->isCommandKeydown(WalkLeft), input->isCommandKeydown(WalkRight), jet, crawl, waterLevel);
 }

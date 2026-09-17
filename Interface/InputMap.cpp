@@ -45,6 +45,9 @@ std::string GetInputCommandString(InputCommand command)
         case OpenInventory: return "Show/Hide Items";
         case DropItem: return "Drop Item (with Ctrl)";
         case StartSelection: return "Select Bricks for Vehicle";
+        case Crawl: return "Crawl";
+        case DropCameraAtPlayer: return "Drop Camera At Player";
+        case DropPlayerAtCamera: return "Drop Player At Camera";
         default: return "Other error";
     }
 }
@@ -113,6 +116,11 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
         bindKey(DropItem, SDL_SCANCODE_W);
         //The old game's Insert is the wrench now
         bindKey(StartSelection, SDL_SCANCODE_G);
+        //Same key as the old game's crouch. It shares Left Shift with brick resize mode, which only crawls while not building
+        bindKey(Crawl, SDL_SCANCODE_LSHIFT);
+        //The free camera, which only admins have unless the server's Lua says otherwise, see LoopClient::setFreeCamera
+        bindKey(DropCameraAtPlayer, SDL_SCANCODE_F7);
+        bindKey(DropPlayerAtCamera, SDL_SCANCODE_F8);
 
         //Number keys 1 through 9 then 0, SDL's scancodes for them are in that order
         for (int a = 0; a < 10; a++)
