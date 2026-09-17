@@ -407,6 +407,7 @@ add_executable (LandOfDran
 "Bricks/BrickAttachments.h"
 "Bricks/BrickAttachments.cpp"
 "Networking/PacketsFromClient/Wrench.cpp"
+"Networking/PacketsFromClient/Print.cpp"
 "Networking/PacketsFromClient/PlayerGrab.cpp"
 "Networking/PacketsFromClient/Slice.cpp"
 "Networking/PacketsFromClient/VehicleFiles.cpp"
@@ -420,7 +421,11 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/OpenWrenchDialog.h"
 "Networking/PacketsFromServer/OpenWrenchDialog.cpp"
 "Interface/WrenchDialog.h"
-"Interface/WrenchDialog.cpp"   )
+"Interface/WrenchDialog.cpp"
+"Networking/PacketsFromServer/OpenPrintMenu.h"
+"Networking/PacketsFromServer/OpenPrintMenu.cpp"
+"Interface/PrintMenu.h"
+"Interface/PrintMenu.cpp"   )
 
 target_include_directories(LandOfDran PRIVATE ${LUA_INCLUDE_DIR})
 

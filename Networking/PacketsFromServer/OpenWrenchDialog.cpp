@@ -9,8 +9,6 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		1 byte		-	name length
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
-		1 byte		-	print name length
-		0-255 bytes	-	print name, "" for no print
 	*/
 
 	if (cmdArgs.gameState != InGame)
@@ -37,21 +35,6 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		return true;
 	}
 
-	if (at >= packet->dataLength)
-	{
-		error("Wrench dialog packet was too short");
-		return true;
-	}
-
-	size_t printNameLength = packet->data[at++];
-	if (at + printNameLength > packet->dataLength)
-	{
-		error("Wrench dialog packet was too short");
-		return true;
-	}
-
-	editing.printName.assign((char*)packet->data + at, printNameLength);
-
 	std::string label = "Brick";
 	if (const Brick* brick = simulation.bricks ? simulation.bricks->find(editing.brickID) : nullptr)
 	{
@@ -60,8 +43,6 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		{
 			label = type->uiName;
 			editing.part = type->vehiclePart;
-			//Only a print brick has faces to put a print on
-			editing.canPrint = type->groupCount[BrickTexturePrint] > 0;
 		}
 		else
 			label = std::to_string(brick->width) + "x" + std::to_string(brick->length) + " brick, " + std::to_string(brick->height) + (brick->height == 1 ? " plate" : " plates") + " tall";
@@ -71,7 +52,7 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 	if (!editing.attachments.hasLight)
 		editing.attachments.resetLight();
 
-	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames(), simulation.serverPrintNames);
+	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames());
 	pd.context->setMouseLock(false);
 
 	return true;

@@ -120,6 +120,11 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 			wrenchSubmit(source, this, packet, pd);
 			return;
 		}
+		case PrintSubmit:
+		{
+			printSubmit(source, this, packet, pd);
+			return;
+		}
 		case PlayerGrab:
 		{
 			playerGrab(source, this, packet, pd);

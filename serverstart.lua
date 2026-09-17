@@ -22,6 +22,10 @@ wrenchItem = newItemType("wrench","Assets/tools/wrench.txt",0.02,0.02,0.02,"Wren
 setItemHand(wrenchItem,0,-1,0,-20,0,0)
 paintCanItem = newItemType("paintCan","Assets/tools/spraycan.txt",0.02,0.02,0.02,"Paint Can","Assets/tools/icons/paintCanIcon.png")
 setItemHand(paintCanItem,0,0,0,-10,0,0)
+--Puts prints on printed bricks, see Inventory.lua. Its model has no textures of its own, so printGun.txt
+--gives the whole thing one light grey metal material
+printGunItem = newItemType("printGun","Assets/tools/printGun.txt",2,2,2,"Print Gun","")
+setItemHand(printGunItem,0,-0.378,0,0,0,0)
 --Fires launcherShell projectiles, see Inventory.lua. Its fire animation is frames 1 to 26 of the model
 dranLauncherItem = newItemType("dranLauncher","Assets/dranlauncher/gun.txt",0.02,0.02,0.02,"Launcher","Assets/dranlauncher/icon.png")
 setItemHand(dranLauncherItem,0,0.2,0.1,0,0,0)
@@ -58,6 +62,8 @@ newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
 newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
 --And Launch from a firing launcher
 newSoundType("Launch","Assets/sound/launch.wav")
+--And PrintFire from a firing print gun
+newSoundType("PrintFire","Assets/sound/printFire.wav")
 --Drivers left click to honk
 newSoundType("Honk","Assets/sound/434878__mickthemicguy__car-honking.wav")
 --Music, which players can put on bricks by holding Insert and clicking one to open the wrench dialog

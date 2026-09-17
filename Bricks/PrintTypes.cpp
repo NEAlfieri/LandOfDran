@@ -26,6 +26,19 @@ static std::string printName(const std::filesystem::path& file)
 	return group + "/" + file.stem().string();
 }
 
+/*
+	The print menu's button for a print, from the icons folder each add-on keeps next to its prints one:
+	"Assets/brick/prints/Print_2x2f_Default/prints/arrow.png" becomes ".../icons/arrow.png"
+	"" if the add-on didn't ship one, like for the videos
+*/
+static std::string printIconPath(const std::filesystem::path& file)
+{
+	std::filesystem::path icon = file.parent_path().parent_path() / "icons" / (file.stem().string() + ".png");
+
+	std::error_code errorCode;
+	return std::filesystem::is_regular_file(icon, errorCode) ? icon.generic_string() : "";
+}
+
 void PrintTypes::load(const std::string& printsFolder)
 {
 	scope("PrintTypes::load");
@@ -53,7 +66,7 @@ void PrintTypes::load(const std::string& printsFolder)
 		if (lowercase(file.parent_path().filename().string()) != "prints")
 			continue;
 
-		prints.push_back({ printName(file), file.generic_string(), extension == ".webm", -1 });
+		prints.push_back({ printName(file), file.generic_string(), printIconPath(file), extension == ".webm", -1 });
 	}
 
 	std::sort(prints.begin(), prints.end(), [](const PrintType& a, const PrintType& b) { return lowercase(a.name) < lowercase(b.name); });

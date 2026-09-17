@@ -35,6 +35,7 @@
 #include "PacketsFromServer/PlayerAbilities.h"
 #include "PacketsFromServer/MeshDecal.h"
 #include "PacketsFromServer/OpenWrenchDialog.h"
+#include "PacketsFromServer/OpenPrintMenu.h"
 #include "PacketsFromServer/SkyboxPaths.h"
 #include "PacketsFromServer/ItemState.h"
 #include "PacketsFromServer/InventoryContents.h"

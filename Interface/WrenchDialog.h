@@ -13,12 +13,6 @@ struct WrenchSubmission
 	std::string name = "";
 	BrickAttachments attachments;
 
-	//A PrintType's name, "" for a brick with no print, see Bricks/PrintTypes.h
-	std::string printName = "";
-
-	//Only a brick whose type has TEX:PRINT faces gets a print section, the dialog fills this in itself
-	bool canPrint = false;
-
 	//A wheel or steering wheel brick gets a section for its vehicle settings
 	VehiclePart part = VehiclePart_None;
 
@@ -27,7 +21,8 @@ struct WrenchSubmission
 };
 
 /*
-	Changes a brick's collision, name, music loop, light, and emitter
+	Changes a brick's collision, name, music loop, light, and emitter. Its print isn't here, the print gun's menu
+	puts that on, see Interface/PrintMenu.h
 	The server opens it when a player wrenches a brick, or when Lua calls client:openWrenchDialog, see OpenWrenchDialogPacket
 */
 class WrenchDialog : public Window
@@ -40,7 +35,6 @@ class WrenchDialog : public Window
 	//What the server has to pick from, plus the brick's own pick if Lua gave it one that isn't listed
 	std::vector<std::string> musicNames;
 	std::vector<std::string> emitterNames;
-	std::vector<std::string> printNames;
 
 	//The spotlight's direction as sliders, in degrees, a pitch of -90 points straight down
 	float lightYaw = 0;
@@ -80,8 +74,7 @@ class WrenchDialog : public Window
 	public:
 
 	//Shows a brick's settings from the server, replacing anything that was being edited
-	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters,
-		const std::vector<std::string>& prints);
+	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters);
 
 	//True once after Apply is clicked, with what to send
 	bool takeSubmission(WrenchSubmission& submission);

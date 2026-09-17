@@ -145,11 +145,8 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 		1 byte		-	name length
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
-		1 byte		-	print name length
-		0-255 bytes	-	print name, "" for no print
 	*/
 	std::string name = brick->name.substr(0, 255);
-	std::string printName = LUA_pd->prints.getName((int)brick->printID - 1).substr(0, 255);
 
 	std::vector<unsigned char> bytes;
 	bytes.push_back(OpenWrenchDialog);
@@ -159,11 +156,42 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 	bytes.push_back((unsigned char)name.length());
 	bytes.insert(bytes.end(), name.begin(), name.end());
 	(brick->attachments ? *brick->attachments : BrickAttachments()).write(bytes);
+
+	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
+	client.wrenchedBrickID = brick->netId;
+}
+
+bool brickCanPrint(const Brick* brick)
+{
+	if (!brick || !brick->isSpecial())
+		return false;
+
+	const SpecialBrickType* type = LUA_pd->brickTypes.getSpecial(brick->typeID - 1);
+	return type && type->groupCount[BrickTexturePrint] > 0;
+}
+
+void openPrintMenu(ClientData& client, const Brick* brick)
+{
+	if (!client.client)
+		return;
+
+	/*
+		1 byte		-	packet type
+		4 bytes		-	brick net ID
+		1 byte		-	print name length
+		0-255 bytes	-	the print it already wears, "" for none
+	*/
+	std::string printName = LUA_pd->prints.getName((int)brick->printID - 1).substr(0, 255);
+
+	std::vector<unsigned char> bytes;
+	bytes.push_back(OpenPrintMenu);
+	bytes.resize(1 + sizeof(netIDType));
+	memcpy(bytes.data() + 1, &brick->netId, sizeof(netIDType));
 	bytes.push_back((unsigned char)printName.length());
 	bytes.insert(bytes.end(), printName.begin(), printName.end());
 
 	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
-	client.wrenchedBrickID = brick->netId;
+	client.printedBrickID = brick->netId;
 }
 
 //Methods are called as brick:method(...), so the brick is always argument 1
@@ -674,6 +702,24 @@ static int LUA_brickGetPrint(lua_State* L)
 		return 0;
 
 	lua_pushstring(L, LUA_pd->prints.getName((int)brick->printID - 1).c_str());
+	return 1;
+}
+
+static int LUA_brickCanPrint(lua_State* L)
+{
+	scope("(LUA) brick:canPrint");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:canPrint()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	lua_pushboolean(L, brickCanPrint(brick));
 	return 1;
 }
 
@@ -1243,7 +1289,7 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "addBlocklandLight", LUA_addBlocklandLight);
 	lua_register(L, "addBlocklandEmitter", LUA_addBlocklandEmitter);
 
-	luaL_Reg* methods = new luaL_Reg[24];
+	luaL_Reg* methods = new luaL_Reg[25];
 	methods[0] = { "getPosition", LUA_brickGetPosition };
 	methods[1] = { "getDimensions", LUA_brickGetDimensions };
 	methods[2] = { "getAngleID", LUA_brickGetAngleID };
@@ -1267,6 +1313,7 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	methods[20] = { "setMaterial", LUA_brickSetMaterial };
 	methods[21] = { "getPrint", LUA_brickGetPrint };
 	methods[22] = { "setPrint", LUA_brickSetPrint };
-	methods[23] = { NULL, NULL };
+	methods[23] = { "canPrint", LUA_brickCanPrint };
+	methods[24] = { NULL, NULL };
 	return methods;
 }

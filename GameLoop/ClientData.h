@@ -39,6 +39,9 @@ struct ClientData
 	//Same for the last vehicle wrench dialog
 	netIDType wrenchedVehicleID = NO_ID;
 
+	//The brick in the last print menu sent to them, the only one a PrintSubmit from them can change, NO_ID once they've submitted
+	netIDType printedBrickID = NO_ID;
+
 	//Voice chat, see Networking/PacketsFromClient/VoiceFrame.cpp
 	//Lua's client:setVoiceMuted, their voice is dropped while it's set
 	bool voiceMuted = false;

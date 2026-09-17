@@ -264,7 +264,7 @@ the paint palette away in turn. A
 carried item is held by the first dynamic `client:setDefaultController` gave its client, and isn't drawn anywhere
 without one. Pressing Ctrl+W fires `ClientDropItem`, and letting go of a mouse button fires `ClientClickRelease`.
 
-`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, and
+`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, `printGun`, and
 `dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped).
 The `paintCan` isn't one of them: opening the paint palette puts one in their hand with `client:setHandItem` (see
 `ClientPaintCan`), and it's destroyed again once their item bar or brick bar takes it back. Left clicking an
@@ -284,6 +284,9 @@ Left clicking with the launcher in hand plays its `fire` animation and the `Laun
 end of its barrel, and fires a `launcherShell` (`addProjectile`, tagged `"launcherShell"`) at 90 studs a second toward
 whatever the crosshair is on, trailing a `shellTrailEmitter`, at most once every 650 ms. Where a shell lands it makes a
 `radiusImpulse` of 140, three `hammerExplosionEmitter` puffs, and two `FogEmitterA` that stop after a second.
+Left clicking with the print gun in hand plays `PrintFire` from it and sends a `LaserEmitterA` at what the crosshair is
+on for 150 ms. If that's a brick with printed faces it opens that brick's print menu, see
+[Print menu](#print-menu); anything else within 60 studs, or nothing at all, just makes the noise.
 Ctrl+W throws the item in hand the way the player looks.
 
 ### Global functions
@@ -629,8 +632,8 @@ A print is a picture drawn over the paint of a print brick's printed faces, the 
 like `1x1 Print` or `2x2F Print`. Prints load from Blockland style folders under `Assets/brick/prints`
 (`Print_<group>[_Default]/prints/<image>.png`) and are named `<group>/<image>`, so
 `Assets/brick/prints/Print_Letters_Default/prints/X.png` is `Letters/X`, the same name Blockland saves use.
-Each brick wears one print, on every printed face it has. Players pick one in the wrench dialog, Lua with
-`brick:setPrint`, and a print's see-through parts show the brick's own color.
+Each brick wears one print, on every printed face it has. Players pick one in the print menu the print gun
+opens, Lua with `brick:setPrint`, and a print's see-through parts show the brick's own color.
 
 Clients load their own copy of the folder and match the server's prints by name as they join, so a print a
 client doesn't have leaves that brick plain for them. Prints come along in `saveBuild` files and are read
@@ -675,22 +678,22 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 | `brick:setLight(table)` / `brick:setLight(nil)` | light fields, see below | none | Puts a light on the brick, or changes it. Fields left out keep the brick's current values, or a new light's defaults. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` takes the light off. |
 | `brick:getEmitter()` | none | emitter type name, or `nil` | The emitter on the brick. |
 | `brick:setEmitter(typeName)` / `brick:setEmitter(nil)` | an emitter type's name | none | Puts an emitter of that type in the middle of the brick, replacing any it had. `nil` takes it off. |
+| `brick:canPrint()` | none | bool | Whether the brick's type has printed faces, so a print put on it would actually show. `Inventory.lua`'s print gun checks this before opening the print menu. |
 | `brick:getPrint()` | none | print name, or `""` | The print on the brick, like `"Letters/X"`. |
 | `brick:setPrint(name)` / `brick:setPrint("")` | a print's name, case-insensitive | none | Puts a print on the brick, drawn on the printed faces of a print brick type. A `.webm` print plays there, see Prints above. Logs an error and changes nothing for a name no print has. `""` takes it off. Prints on a brick whose type has no printed face are kept but never drawn. |
 
 ### Wrench dialog and brick attachments
 
 Players wrench a brick to open its wrench dialog, where they can change whether it collides, its name,
-its music loop with volume and pitch, its light, its emitter, and, on a print brick, its print. Wheel and steering wheel bricks also get a section for
+its music loop with volume and pitch, its light, and its emitter. Its print isn't here, the print gun's menu
+puts that on, see [Print menu](#print-menu). Wheel and steering wheel bricks also get a section for
 how they drive once sliced into a vehicle, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
 wrench item in hand (see [Items](#items)), or holding Insert (the `Wrench` key bind) and left clicking one. Lua can
 veto or redirect the Insert way with the `ClientWrenchBrick` event, or open a dialog itself with `client:openWrenchDialog`.
 Anyone can currently wrench any brick; there are no build permissions yet. The music list only shows
 sounds registered with `newSoundType(name, file, true)` and the emitter list every emitter type, but a
 brick keeps any sound or emitter Lua put on it when a player applies the dialog without changing it.
-The Print section only shows on a brick whose type has a printed face, and lists every print the server
-loaded from `Assets/brick/prints`, `.webm` videos included; players whose own copy is missing one see the
-brick plain.
+Applying the dialog never touches the brick's print.
 
 The music loop, light, and emitter are real sound loops, lights, and emitters: they show up in
 `getNumLights`/`getLightIdx` and `getNumEmitters`/`getEmitterIdx`, are sent to players who join later,
@@ -711,6 +714,20 @@ Light fields for `brick:setLight` and `brick:getLight` (see [Lights](#lights) fo
 | `direction` | `{0, -1, 0}` | Which way a spotlight points, any length but zero. |
 | `spin` | `0` | Degrees per second, -3600 to 3600. |
 | `offset` | `{0, 0, 0}` | Where the light is from the middle of the brick, in world units, -32 to 32 on each axis. Point light shadows leave out any brick a light is inside, so a light in the middle of its brick shines out through it, though bricks right next to it still cast shadows. |
+
+### Print menu
+
+The print menu is every print the server loaded from `Assets/brick/prints` as a button with its picture on it
+(from the `icons` folder each add-on keeps next to its `prints` one), plus Cancel. Clicking one puts it on the
+brick straight away, and so does hitting the key of a print that's a single letter, number, or piece of
+punctuation, like `X` for `Letters/X` or `.` for `Letters/-period`. The button of the print the brick already
+wears is drawn lit up. A print the server has that this client doesn't get a `?` button, and the brick stays
+plain for them either way.
+
+`Inventory.lua`'s print gun opens it: left clicking with the `printGun` item in hand plays `PrintFire` from the
+gun, sends a `LaserEmitterA` at what the player looks at, and, if that's a brick whose type has printed faces
+(`brick:canPrint`), opens that brick's print menu with `client:openPrintMenu`. Anything else it hits just makes
+the noise. What a player picks only reaches the brick in the last print menu they were sent, once.
 
 ---
 
@@ -942,6 +959,7 @@ A "client" represents one connected player/connection.
 | `client:getCameraDirection()` | none | x, y, z | Which way their camera looked then, normalized. Needs `setDefaultController`. While they hold left mouse, their camera is sent about every 30 ms instead. |
 | `client:getPaintColor()` | none | r, g, b, a | The color their paint palette (E, or Right Shift's custom color) has picked, 0-1. Their game sends it as they connect and whenever it changes. White until then. |
 | `client:getPaintMaterial()` | none | material name | The brick material their paint palette has picked, like `"Chrome"`, see [Brick materials](#brick-materials). |
+| `client:openPrintMenu(brick)` | Brick | none | Opens the print menu for the brick on the client's screen, see [Print menu](#print-menu). The print they pick only reaches the brick in the last print menu they were sent, once, and only if that brick's type has printed faces. |
 | `client:openWrenchDialog(brick)` / `client:openWrenchDialog(vehicle)` | Brick or Vehicle | none | Opens the wrench dialog for the brick (or vehicle, with just its music) on the client's screen, as if they'd wrenched it, without firing `ClientWrenchBrick` or `ClientWrenchVehicle`. What they apply only reaches the brick or vehicle in the last dialog of that kind they were sent, once. See [Wrench dialog and brick attachments](#wrench-dialog-and-brick-attachments) and [Vehicles](#vehicles). |
 | `client:getVehicle()` | none | Vehicle and seat, or `nil` | The vehicle the client is driving (seat `nil`) or riding on (the passenger seat, 0 or more). |
 | `client:enterVehicle(vehicle[, seat])` | Vehicle; a passenger seat, 0 to `getNumSeats() - 1`, or none to drive | bool | Puts the player from `setDefaultController` in the vehicle's driver's seat, or on that passenger seat, without firing `ClientEnterVehicle`. `false` if someone's already in that seat, the seat doesn't exist, the client is already in a vehicle, or their player isn't standing in the world (like one Lua took out of it). |

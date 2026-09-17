@@ -101,8 +101,6 @@ void wrenchRequest(JoinedClient* source, Server const* const server, ENetPacket 
 	1 byte		-	name length
 	0-255 bytes	-	name
 	Then		-	BrickAttachments::write
-	1 byte		-	print name length
-	0-255 bytes	-	print name, "" for no print
 */
 void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv)
 {
@@ -141,16 +139,6 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 	if (!settings.read(packet->data, packet->dataLength, at))
 		return;
 
-	if (at >= packet->dataLength)
-		return;
-
-	size_t printNameLength = packet->data[at++];
-	if (at + printNameLength > packet->dataLength)
-		return;
-
-	std::string printName((char*)packet->data + at, printNameLength);
-	at += printNameLength;
-
 	//Players pick from the server's music and emitter types, but whatever Lua put on the brick can stay
 	const BrickAttachments* current = brick->attachments.get();
 	if (!settings.musicName.empty() && !isMusicSoundType(settings.musicName) && !(current && current->musicName == settings.musicName))
@@ -172,19 +160,8 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 		settings.steering = current ? current->steering : SteeringSettings();
 	}
 
-	//A print we don't have leaves the brick's own alone, and only a print brick has faces to wear one
-	uint16_t printID = brick->printID;
-	if (type && type->groupCount[BrickTexturePrint] > 0)
-	{
-		int found = pd->prints.find(printName);
-		if (printName.empty() || found >= 0)
-			printID = (uint16_t)(found + 1);
-	}
-
 	if (brick->collides != collides)
 		pd->bricks->setColliding(brick, collides);
-	if (brick->printID != printID)
-		pd->bricks->setPrint(brick, printID);
 	pd->bricks->setName(brick, name);
 	setBrickAttachments(brick, settings);
 }

@@ -30,7 +30,7 @@ bool OpenVehicleWrenchPacket::applyPacket(const ClientProgramData& pd, Simulatio
 	}
 
 	std::string label = "Vehicle, " + std::to_string(brickCount) + (brickCount == 1 ? " brick" : " bricks");
-	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), {}, {});
+	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), {});
 	pd.context->setMouseLock(false);
 
 	return true;

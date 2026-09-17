@@ -124,10 +124,6 @@ void WrenchDialog::applyCopy()
 
 	to.emitterName = from.emitterName;
 
-	//Only a print brick has a print section to fill in
-	if (editing.canPrint)
-		editing.printName = copied.printName;
-
 	if (editing.part == VehiclePart_Wheel && from.hasWheel)
 		to.wheel = from.wheel;
 
@@ -135,8 +131,7 @@ void WrenchDialog::applyCopy()
 		to.steering = from.steering;
 }
 
-void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters,
-	const std::vector<std::string>& prints)
+void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters)
 {
 	//Opening one dialog right on top of another still counts as closing the first
 	stashCopy();
@@ -149,7 +144,6 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	brickLabel = label;
 	musicNames = music;
 	emitterNames = emitters;
-	printNames = prints;
 
 	//Applying a wheel or steering wheel's dialog keeps its settings, even the defaults it opened with
 	if (editing.part == VehiclePart_Wheel)
@@ -165,9 +159,6 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	const std::string& emitterName = editing.attachments.emitterName;
 	if (!emitterName.empty() && std::find(emitterNames.begin(), emitterNames.end(), emitterName) == emitterNames.end())
 		emitterNames.push_back(emitterName);
-
-	if (!editing.printName.empty() && std::find(printNames.begin(), printNames.end(), editing.printName) == printNames.end())
-		printNames.push_back(editing.printName);
 
 	const glm::vec3& direction = editing.attachments.lightDirection;
 	lightPitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
@@ -190,7 +181,6 @@ bool WrenchDialog::takeSubmission(WrenchSubmission& submission)
 	submitted = false;
 	submission = editing;
 	submission.name = submission.name.substr(0, 255);
-	submission.printName = submission.printName.substr(0, 255);
 	submission.attachments.clampValues();
 	return true;
 }
@@ -405,17 +395,6 @@ void WrenchDialog::render(ImGuiIO* io)
 				ImGui::SliderFloat("Spin", &settings.lightSpin, -720.0f, 720.0f, "%.0f degrees/s");
 				tooltip("Turns the beam around the vertical like a lighthouse. Ctrl+click to type up to 3600");
 			}
-		}
-	}
-
-	if (!forVehicle && editing.canPrint && sectionHeader("Print"))
-	{
-		if (printNames.empty())
-			ImGui::TextDisabled("The server has no prints");
-		else
-		{
-			nameCombo("Image##Print", editing.printName, printNames);
-			tooltip("The picture on the printed face of the brick");
 		}
 	}
 
