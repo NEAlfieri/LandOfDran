@@ -572,6 +572,9 @@ void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>&
 	std::array<glm::vec4, 6> planes = frustumPlanes(shaders->cameraUniforms.CameraProjection * shaders->cameraUniforms.CameraView);
 	const glm::vec3& eye = shaders->cameraUniforms.CameraPosition;
 
+	bool cullFar = drawDistance > 0;
+	float maxDistance2 = drawDistance * drawDistance;
+
 	//Chunks come out of the map in no particular order, so they're sorted before drawing. Opaque bricks go
 	//nearest first, which lets the depth test throw away everything behind a wall before model.frag ever runs
 	//on it, and transparent ones farthest first, since they blend and have to arrive in back to front order
@@ -587,7 +590,13 @@ void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>&
 
 		//Squared distance to the nearest point of the chunk, 0 for the one the camera is inside
 		glm::vec3 toBox = glm::clamp(eye, bounds.min, bounds.max) - eye;
-		sorted.push_back({ glm::dot(toBox, toBox), chunk });
+		float distance2 = glm::dot(toBox, toBox);
+
+		//Past the draw distance the whole chunk is left out, see setDrawDistance
+		if (cullFar && distance2 > maxDistance2)
+			continue;
+
+		sorted.push_back({ distance2, chunk });
 	}
 
 	std::sort(sorted.begin(), sorted.end(), [transparent](const std::pair<float, const Chunk*>& a, const std::pair<float, const Chunk*>& b)
@@ -692,6 +701,9 @@ void InstancedBrickRenderer::renderGroups(std::shared_ptr<ShaderManager> shaders
 {
 	int transparency = transparent ? 1 : 0;
 	std::array<glm::vec4, 6> planes = frustumPlanes(shaders->cameraUniforms.CameraProjection * shaders->cameraUniforms.CameraView);
+	const glm::vec3& eye = shaders->cameraUniforms.CameraPosition;
+	bool cullFar = drawDistance > 0;
+	float maxDistance2 = drawDistance * drawDistance;
 	bool drewAny = false;
 
 	for (const GroupDraw& draw : draws)
@@ -708,6 +720,14 @@ void InstancedBrickRenderer::renderGroups(std::shared_ptr<ShaderManager> shaders
 		transformBounds(draw.transform, chunk->min, chunk->max, min, max);
 		if (!boxVisible(planes, min, max))
 			continue;
+
+		//Same radius the chunks of the world are cut at, see setDrawDistance
+		if (cullFar)
+		{
+			glm::vec3 toBox = glm::clamp(eye, min, max) - eye;
+			if (glm::dot(toBox, toBox) > maxDistance2)
+				continue;
+		}
 
 		if (!drewAny && transparent)
 		{

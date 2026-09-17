@@ -97,6 +97,9 @@ class InstancedBrickRenderer
 	//See getGeneration
 	unsigned int generation = 0;
 
+	//Chunks whose nearest corner is further than this from the camera aren't drawn, 0 for no limit, see setDrawDistance
+	float drawDistance = 0;
+
 	/*
 		How many bricks in the world wear each print, counted over every chunk as they're uploaded
 		Only prints that are drawn are in here, so a video print nothing wears is never decoded, see isPrintUsed
@@ -219,6 +222,15 @@ class InstancedBrickRenderer
 	void updateBrick(Brick* brick);
 
 	void clear();
+
+	/*
+		graphics/drawdistance: chunks further than this from the camera are dropped before they're drawn, measured
+		to the nearest corner of the chunk so a chunk you're standing at the edge of is never cut. 0 for no limit.
+		The camera's far plane already clips them in the view direction; this makes it a radius, so the corners of
+		a wide screen are cut at the same distance as what's straight ahead. Doesn't affect the shadow passes,
+		which are limited by how far the cascades reach instead
+	*/
+	void setDrawDistance(float distance) { drawDistance = distance; }
 
 	//Re-uploads chunks changed since the last call, stopping once budgetMS has been spent
 	void rebuildDirty(float budgetMS);

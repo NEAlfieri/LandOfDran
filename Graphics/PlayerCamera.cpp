@@ -106,6 +106,11 @@ void Camera::updateSettings(std::shared_ptr<SettingManager> settings)
     mouseSensitivity = settings->getFloat("input/mousesensitivity");
     invertMouse = settings->getBool("input/invertmousey");
 
+    //Nothing past here reaches the screen at all: the projection clips it and everything that culls against
+    //the frustum drops it before it's ever submitted, see graphics/drawdistance
+    farPlane = (float)std::min(std::max(settings->getInt("graphics/drawdistance"), 100), 1000);
+    updateProjection();
+
     //While zooming the view keeps its zoom, and eases to the new field of view once the key is let go
     float fov = (float)std::min(std::max(settings->getInt("graphics/fieldofview"), 60), 120);
     if (zooming)

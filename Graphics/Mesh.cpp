@@ -1915,10 +1915,13 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	valid = true;
 }
 
-void Mesh::recompileInstances()
+void Mesh::recompileInstances(const glm::vec3& cullFrom, float cullDistance)
 {
 	if (nonRenderingMesh)
 		return;
+
+	bool cullFar = cullDistance > 0;
+	float cullDistance2 = cullDistance * cullDistance;
 
 	std::vector<glm::mat4> transforms;
 	std::vector<unsigned int> flags;
@@ -1928,10 +1931,22 @@ void Mesh::recompileInstances()
 
 	for (unsigned int a = 0; a < instances.size(); a++)
 	{
-		if (instances[a]->hidden && !instances[a]->hiddenCastsShadow)
-			transforms.push_back(glm::mat4(0.0));
-		else
-			transforms.push_back(instances[a]->wholeModelTransform * instances[a]->MeshTransforms[meshIndex]);
+		//A zero matrix puts every corner of the primitive on the same point, which discards it, see setHidden
+		glm::mat4 meshTransform(0.0);
+		if (!instances[a]->hidden || instances[a]->hiddenCastsShadow)
+		{
+			meshTransform = instances[a]->wholeModelTransform * instances[a]->MeshTransforms[meshIndex];
+
+			//Past the draw distance it's dropped the same way, which takes it out of the shadow passes too
+			if (cullFar)
+			{
+				glm::vec3 away = glm::vec3(meshTransform[3]) - cullFrom;
+				if (glm::dot(away, away) > cullDistance2)
+					meshTransform = glm::mat4(0.0);
+			}
+		}
+
+		transforms.push_back(meshTransform);
 		flags.push_back(instances[a]->MeshFlags[meshIndex] | (instances[a]->hidden ? ModelInstance::hiddenCastingShadowFlag : 0));
 		colors.push_back(instances[a]->MeshColors[meshIndex]);
 		highlightColors.push_back(instances[a]->highlightColor);
@@ -1993,12 +2008,28 @@ void Mesh::recompileInstances()
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * highlightThicknesses.size(), &highlightThicknesses[0]);
 }
 
-void Model::updateAll(float deltaT)
+void Model::updateAll(float deltaT, const glm::vec3& cullFrom, float cullDistance)
 {
 	for (unsigned int a = 0; a < instances.size(); a++)
 		instances[a]->calculateMeshTransforms(deltaT);
+
+	/*
+		The cull measures to each mesh's own origin, so the radius is opened up by however far the model reaches
+		away from there. Without that a big model, or one whose meshes sit well off their origin, would wink out
+		while part of it was still inside the draw distance
+	*/
+	if (cullDistance > 0)
+	{
+		glm::vec3 low, high;
+		if (getDrawnBounds(low, high))
+		{
+			float scale = std::max(std::max(std::abs(baseScale.x), std::abs(baseScale.y)), std::abs(baseScale.z));
+			cullDistance += glm::length(high - low) * 0.5f * scale;
+		}
+	}
+
 	for (unsigned int a = 0; a < allMeshes.size(); a++)
-		allMeshes[a]->recompileInstances();
+		allMeshes[a]->recompileInstances(cullFrom, cullDistance);
 }
 
 void Model::render(std::shared_ptr<ShaderManager> graphics,bool useMaterials) const

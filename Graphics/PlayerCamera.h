@@ -29,6 +29,7 @@ class Camera
 	float zoomedFieldOfVision = 15.0;
 	float currentFieldOfVision = 90.0;
 	float nearPlane = 0.5;
+	//Doubles as the draw distance, see updateSettings and graphics/drawdistance
 	float farPlane = 1000.0;
 	float aspectRatio = 1.0;
 
@@ -48,6 +49,9 @@ class Camera
 	bool zooming = false;
 
 	bool getFirstPerson() const { return firstPerson; }
+
+	//How far from the camera anything is drawn at all, graphics/drawdistance, which is also the far plane
+	float getDrawDistance() const { return farPlane; }
 
 	//Takes OpenGL normalized device coordinates and returns a position in world space
 	glm::vec3 mouseCoordsToWorldSpace(glm::vec2 mouseCoords) const;

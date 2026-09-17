@@ -1117,6 +1117,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 		Logger::setDebug(settings->getBool("logger/verbose"));
 		simulation.camera->updateSettings(settings);
+		applyDrawDistance();
 		pd.gui->updateSettings(settings);
 		simulation.idealBufferSize = settings->getInt("network/snapshotbuffer");
 		createWaterTargets(settings);
@@ -1885,6 +1886,15 @@ void LoopClient::renderGodRays()
 	glEnable(GL_DEPTH_TEST);
 }
 
+void LoopClient::applyDrawDistance()
+{
+	pd.drawDistance = simulation.camera ? simulation.camera->getDrawDistance() : 1000.0f;
+
+	//The far plane clips whatever still gets submitted, but a chunk dropped here is never submitted at all
+	if (pd.brickRenderer)
+		pd.brickRenderer->setDrawDistance(pd.drawDistance);
+}
+
 void LoopClient::renderScene(bool clipAtWater)
 {
 	//The water's reflection and refraction draw the scene again, which would just overwrite these,
@@ -2137,7 +2147,8 @@ void LoopClient::updateParticles()
 
 	double nowMS = ParticleSystem::getNowMS();
 	glm::vec3 cameraPosition = simulation.camera->getPosition();
-	float ejectDistance = pd.environment.fogDistanceMax + ejectPastFog;
+	//Or the draw distance, if that's nearer, since nothing past it is drawn at all
+	float ejectDistance = std::min(pd.environment.fogDistanceMax + ejectPastFog, pd.drawDistance);
 
 	//Where an aimed emitter's particles go: what the dynamic aiming it looks at within the emitter's range, or the end of that
 	//For our own player that's what our crosshair is on, otherwise what's in front of the dynamic's eyes the way it looks
@@ -2279,7 +2290,7 @@ void LoopClient::updateParticles()
 		}
 	}
 
-	pd.particles->update(nowMS, cameraPosition, pd.environment.fogDistanceMax);
+	pd.particles->update(nowMS, cameraPosition, std::min(pd.environment.fogDistanceMax, pd.drawDistance));
 }
 
 /*
@@ -2405,13 +2416,15 @@ void LoopClient::renderEverything(float deltaT)
 	}
 
 	//Technically rendering related calculations based on previously inputted transform data
+	//Anything past the draw distance is left out of the instance buffers entirely, see Model::updateAll
+	glm::vec3 modelCullFrom = simulation.camera->getPosition();
 	for (unsigned int a = 0; a < simulation.dynamicTypes.size(); a++)
-		simulation.dynamicTypes[a]->getModel()->updateAll(deltaT);
+		simulation.dynamicTypes[a]->getModel()->updateAll(deltaT, modelCullFrom, pd.drawDistance);
 
 	if (pd.tireModel)
 	{
 		placeVehicleWheels();
-		pd.tireModel->updateAll(deltaT);
+		pd.tireModel->updateAll(deltaT, modelCullFrom, pd.drawDistance);
 	}
 
 	pd.environment.cycle = simulation.dayCycle;
@@ -2610,7 +2623,8 @@ void LoopClient::renderEverything(float deltaT)
 	}
 
 	const CameraUniforms& view = pd.shaders->cameraUniforms;
-	pd.pointLights->update(lightSources, pd.shaders, view.CameraPosition, view.CameraProjection * view.CameraView, pd.environment.fogDistanceMax);
+	pd.pointLights->update(lightSources, pd.shaders, view.CameraPosition, view.CameraProjection * view.CameraView,
+		std::min(pd.environment.fogDistanceMax, pd.drawDistance));
 
 	//Dynamics can move or animate at any time, so a light with one in range redraws its shadows every frame
 	auto movingCastersNear = [this](const glm::vec3& position, float range) -> bool
@@ -2750,8 +2764,9 @@ void LoopClient::renderEverything(float deltaT)
 		GpuZone zone(pd.profiler, "Water surface");
 		pd.shaders->waterShader->use();
 		pd.pointLights->bindShadowMaps();
-		//Always reaches past the end of the fog, so its edge is never visible
-		float surfaceRadius = std::max(waterRadius, pd.environment.fogDistanceMax + 10.0f);
+		//Always reaches past the end of the fog, so its edge is never visible, unless the draw distance cuts it
+		//nearer - then it ends exactly where the bricks and models around it do rather than carrying on past them
+		float surfaceRadius = std::min(std::max(waterRadius, pd.environment.fogDistanceMax + 10.0f), pd.drawDistance);
 		glUniform1f(pd.shaders->waterShader->getUniformLocation("waterRadius"), surfaceRadius);
 		glUniform1f(pd.shaders->waterShader->getUniformLocation("gridSpacing"), surfaceRadius * 2.0f / waterGridCells);
 		glUniform1i(pd.shaders->waterShader->getUniformLocation("useReflection"), renderWaterPasses && !cameraUnderwater);
@@ -3495,6 +3510,8 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.skybox = new Skybox(pd.shaders);
 	pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
 	pd.depthPrePass = settings->getBool("graphics/depthprepass");
+	//The camera picked the setting up in its own updateSettings above, before the brick renderer existed
+	applyDrawDistance();
 
 	glGenVertexArrays(1, &pd.skyVao);
 

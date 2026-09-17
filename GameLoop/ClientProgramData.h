@@ -159,6 +159,13 @@ struct ClientProgramData
 	//graphics/depthprepass as of launch or the last settings save, see the pre-pass in LoopClient::renderScene
 	bool depthPrePass = true;
 
+	/*
+		graphics/drawdistance as of launch or the last settings save: nothing further than this from the camera is
+		drawn at all. Kept in step with the camera's far plane, which clips whatever the culls below still submit,
+		see LoopClient::applyDrawDistance. 1000 is as far as anything was ever drawn, so it changes nothing there
+	*/
+	float drawDistance = 1000.0f;
+
 	//Empty, sky.vert builds a fullscreen triangle from gl_VertexID but core profile still needs a VAO bound
 	GLuint skyVao = 0;
 
