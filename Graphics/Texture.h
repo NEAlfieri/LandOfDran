@@ -258,9 +258,26 @@ class TextureManager
 
 	/*
 		Adds a channel to a layer filled entirely with undefined values
-		Cannot be the first component of the first layer
+		Cannot be the first component of the first layer unless sizeFromFile has been called
 	*/
 	void addEmptyComponent(Texture* target);
+
+	/*
+		True if every pixel of an image file is the same colour, handing that colour back on a 0 to 1 scale.
+		flattenAlphaOntoWhite mixes it toward white by its own alpha the way addLayer would, which is how the
+		see-through blacks a Blockland shape names are meant to be read
+		A material whose texture turns out to be one flat colour is better off naming it as a number, since a
+		texture pins the size of every other layer it shares an array with, see Material's constant values
+	*/
+	bool flatColor(const std::string& filePath, bool flattenAlphaOntoWhite, glm::vec4& color) const;
+
+	/*
+		Takes a texture's size and channel count from an image file without putting anything in it, so that a
+		layer whose first channels are empty ones can still be built. A material of nothing but a roughness
+		map needs it: its metalness and occlusion channels come first and neither has a file to be measured
+		Only for a texture nothing has been added to yet. False, having logged why, if the file can't be read
+	*/
+	bool sizeFromFile(Texture* target, const std::string& filePath, int channels);
 
 	/*
 		Destroys any textures with a usage count less than 1

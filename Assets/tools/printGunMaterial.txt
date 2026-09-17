@@ -1,3 +1,6 @@
-albedo	printGunAlbedo.png
-roughness	printGunRoughness.png
-metalness	printGunMetalness.png
+#The print gun has no textures of its own: one light grey metal, scuffed so it does not mirror the sky
+#A number here instead of a file name is a flat value, see Material
+albedo	0.72 0.72 0.72
+metalness	0.94
+occlusion	../brickhead/scuffed-plastic-ao.png
+roughness	../brickhead/scuffed-plastic-rough.png

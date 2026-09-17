@@ -1,5 +1,15 @@
 #include "Material.h"
 
+#include <filesystem>
+
+//One spelling for a file however a descriptor reached it, so tools/../brickhead/x.png and brickhead/x.png are the same file
+static std::string sameFile(const std::string& path)
+{
+	if (path.empty())
+		return path;
+	return std::filesystem::path(path).lexically_normal().generic_string();
+}
+
 void Material::finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager>  textures, bool flattenAlbedoAlpha)
 {
 	int howManyLayers = 0;
@@ -13,8 +23,16 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 	debug(std::to_string(howManyLayers) + " layers expected for " + name);
 
 	int currentLayer = 0;
-	
-	PBRArrayTexture = textures->createTexture(howManyLayers, name);
+
+	/*
+		The texture is kept by what's in it rather than by which material asked for it, so materials made of
+		the same files share one copy: TextureManager::createTexture hands back an existing texture of the same
+		name, and every flat coloured DTS material in an add-on folder is made of the same three scuff maps.
+		Named by material, twenty one of them loaded those maps twenty one times over
+	*/
+	std::string key = sameFile(albedo) + "|" + sameFile(normal) + "|" + sameFile(metalness) + "|"
+		+ sameFile(occlusion) + "|" + sameFile(roughness) + (flattenAlbedoAlpha ? "|flat" : "");
+	PBRArrayTexture = textures->createTexture(howManyLayers, key);
 
 	if (!PBRArrayTexture)
 	{
@@ -80,6 +98,18 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 			valid = true;
 
 		return;
+	}
+
+	/*
+		With no albedo and no normal map the MOHR layer is the first one, and its metalness and occlusion
+		channels can be empty, which leaves nothing to say how big the texture is. Take the size from
+		whichever of the three does have a file, which is what a material of one roughness map needs
+	*/
+	if (currentLayer == 0)
+	{
+		const std::string& sizeFrom = metalness.length() > 0 ? metalness : (occlusion.length() > 0 ? occlusion : roughness);
+		if (!textures->sizeFromFile(PBRArrayTexture, sizeFrom, 3))
+			return;
 	}
 
 	//Metalness
@@ -197,20 +227,88 @@ Material::Material(const std::string &filePath, std::shared_ptr<TextureManager> 
 			return;
 		}
 
+		/*
+			A line can give plain numbers instead of a file name, which is what a surface of one flat value
+			wants: one number for metalness, roughness or occlusion, and one or three for an albedo colour.
+			The numbers are on the same 0 to 1 scale a texture's pixels are read on
+
+			Better than a tiny single colour image, which the old materials here used: every layer of the
+			PBR array has to be the same size, so a 1x1 metalness beside a real roughness map is refused
+		*/
+		std::vector<float> numbers;
+		bool allNumbers = true;
+		{
+			std::istringstream values(path);
+			std::string word;
+			while (values >> word)
+			{
+				try
+				{
+					size_t used = 0;
+					float value = std::stof(word, &used);
+					if (used != word.length())
+						throw std::invalid_argument("trailing");
+					numbers.push_back(value);
+				}
+				catch (const std::exception&)
+				{
+					allNumbers = false;
+					break;
+				}
+			}
+		}
+		allNumbers = allNumbers && !numbers.empty();
+
+		//Complains about a line like "roughness 0.5 0.5", which is neither a file name nor a value we can use
+		auto wrongCount = [&](const std::string& wanted)
+		{
+			error(type + " in " + filePath + " needs " + wanted + ", not " + std::to_string(numbers.size()) + " numbers");
+		};
+
 		//You can optionally specify a name for the material for use with Lua or whatever later
 		//It can also prevent reusing the same material
 		if (type == "name")
 			name = path;
 		else if (type == "albedo")
-			albedoPath = pathToTextures + path;
+		{
+			if (!allNumbers)
+				albedoPath = pathToTextures + path;
+			else if (numbers.size() == 1)
+				constantAlbedo = glm::vec4(numbers[0], numbers[0], numbers[0], 1);
+			else if (numbers.size() == 3)
+				constantAlbedo = glm::vec4(numbers[0], numbers[1], numbers[2], 1);
+			else
+				wrongCount("one number for a shade or three for a colour");
+		}
 		else if (type == "normal")
 			normalPath = pathToTextures + path;
 		else if (type == "metalness")
-			metalPath = pathToTextures + path;
+		{
+			if (!allNumbers)
+				metalPath = pathToTextures + path;
+			else if (numbers.size() == 1)
+				constantMOR.x = numbers[0];
+			else
+				wrongCount("one number");
+		}
 		else if (type == "roughness")
-			roughPath = pathToTextures + path;
+		{
+			if (!allNumbers)
+				roughPath = pathToTextures + path;
+			else if (numbers.size() == 1)
+				constantMOR.z = numbers[0];
+			else
+				wrongCount("one number");
+		}
 		else if (type == "occlusion")
-			aoPath = pathToTextures + path;
+		{
+			if (!allNumbers)
+				aoPath = pathToTextures + path;
+			else if (numbers.size() == 1)
+				constantMOR.y = numbers[0];
+			else
+				wrongCount("one number");
+		}
 		else
 		{
 			error("Invalid material texture type: " + type + " file: " + filePath);
@@ -237,6 +335,10 @@ void Material::use(std::shared_ptr<ShaderManager> shaders) const
 	shaders->basicUniforms.useMetalness =	useMetalness;
 	shaders->basicUniforms.useRoughness =	useRoughness;
 	shaders->basicUniforms.useAO =			useOcclusion;
+
+	//Used for whichever of them useAlbedo and the rest say there's no texture for
+	shaders->basicUniforms.ConstantAlbedo =	constantAlbedo;
+	shaders->basicUniforms.ConstantMOR =	glm::vec4(constantMOR, 0);
 
 	shaders->updateBasicUBO();
 

@@ -6,7 +6,9 @@
 /*
 	Model matrix and material data for non-instanced rendering for a uniform buffer object
 	Padding exists to conform to an std140 layout used by OpenGL
-	OpenGL Size: 240 bytes
+	OpenGL Size: 272 bytes. Every shader that declares the BasicUniforms block has to list the same
+	members in the same order, and both glBufferData calls for it have to use that size, or programs
+	silently read the wrong offsets
 */
 struct BasicUniforms					
 {														//base			aligned
@@ -28,6 +30,15 @@ struct BasicUniforms
 
 	//Texture coordinates of a decal's top left and bottom right corners on the mesh being drawn, see Mesh::decalArea
 	glm::vec4 DecalArea = glm::vec4(0, 0, 1, 1);		//16			224
+
+	/*
+		What a material without a texture for one of these is drawn with, from a plain number in its
+		descriptor instead of a file name, see Material. The defaults are what the shaders used to
+		hard code, so a material that names no constants looks exactly as it did
+	*/
+	glm::vec4 ConstantAlbedo = glm::vec4(1, 1, 1, 1);	//16			240
+	//Metalness, occlusion, roughness, in the order the MOHR layer packs them. The fourth is unused
+	glm::vec4 ConstantMOR = glm::vec4(0, 1, 0.5, 0);	//16			256
 };
 
 /*

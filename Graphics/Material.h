@@ -51,6 +51,18 @@ class Material
 
 	public:
 
+	/*
+		What this material is drawn with wherever it has no texture, from plain numbers in its descriptor
+		instead of file names. The defaults are what the shaders used to hard code, so a material that
+		names none of them looks exactly as it did
+
+		A flat colour belongs here rather than in a one pixel image: every layer of the PBR array has to
+		be the same size, so a 1x1 metalness next to a real roughness map would be refused
+	*/
+	glm::vec4 constantAlbedo = glm::vec4(1, 1, 1, 1);
+	//Metalness, occlusion, roughness, in the order the MOHR layer packs them
+	glm::vec3 constantMOR = glm::vec3(0, 1, 0.5);
+
 	std::string getName() const { return name; }
 
 	bool isValid() const { return valid; }

@@ -549,6 +549,16 @@ class Model
 	//Client only: the node named Head, which turns to show where a player is looking, -1 without one
 	int getHeadNodeIdx() const { return headNodeIdx; }
 
+	/*
+		Where the node with that name sits in the model's own space, baseScale applied, with nothing
+		animating and no whole model transform, so it's the rest pose spot the file was exported with.
+		Case doesn't matter. False, leaving position alone, if the model has no node by that name
+
+		A Blockland .dts names the spots an add-on cares about, so this is how a script finds them:
+		a jeep's wheels hang from hub0 to hub3 and its riders sit on Mount0 and up, see Lua's getTypeNodePosition
+	*/
+	bool getNodePosition(const std::string& name, glm::vec3& position) const;
+
 	//Same, for names that might not have kept their case, like ones read back from settings
 	int getMeshIdxIgnoringCase(const std::string& name) const;
 
@@ -617,6 +627,9 @@ class Model
 
 	//Calculates collisionHalfExtents and collisionOffset, called in constructor
 	void calculateCollisionBox(const aiScene* scene);
+
+	//See getNodePosition, above is the transform every node over this one adds up to
+	static bool findNodePosition(Node const * const node, const std::string& lowerName, const glm::mat4& above, glm::vec3& position);
 
 	//Fills every mesh's boundsLow/boundsHigh, called in both constructors
 	void calculateMeshBounds(const aiScene* scene);

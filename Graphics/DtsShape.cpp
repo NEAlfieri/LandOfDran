@@ -831,6 +831,11 @@ namespace
 		}
 	}
 
+	glm::vec3 toGlm(const aiVector3D& in)
+	{
+		return glm::vec3(in.x, in.y, in.z);
+	}
+
 	aiString toAiString(const std::string& in)
 	{
 		aiString ret;
@@ -989,6 +994,95 @@ aiScene * loadDtsScene(const std::string &filePath, std::vector<DtsSequence> * s
 					unsigned int index = indices[b * 3 + c];
 					face.mIndices[c] = index < numVerts ? index : 0;
 				}
+			}
+
+			/*
+				Tangents, which the shape doesn't carry and which a normal map can't be drawn without. Assimp
+				works them out for an FBX whose descriptor asks for CalcTangentSpace, but this scene never
+				goes through Assimp's post processing, so they're worked out here the same way: from which
+				way the texture coordinates run across each triangle, summed over the triangles at a vertex
+				and then squared up to its normal.
+
+				A triangle whose texture coordinates cover no area says nothing about direction and is left
+				out, and a flat coloured Blockland shape is full of those since every corner of a panel can
+				sit on the same texel. A vertex only such triangles touch gets any direction square to its
+				normal: a normal map sampled at a single point is flat there anyway, so the direction it's
+				read along makes no visible difference
+			*/
+			if (out->mTextureCoords[0])
+			{
+				std::vector<glm::vec3> tangentSum(numVerts, glm::vec3(0));
+				std::vector<glm::vec3> bitangentSum(numVerts, glm::vec3(0));
+				//Every mesh split off an object carries the object's whole vertex list, so only count the ones this one draws
+				std::vector<bool> used(numVerts, false);
+
+				for (unsigned int b = 0; b < out->mNumFaces; b++)
+				{
+					const unsigned int* corner = out->mFaces[b].mIndices;
+					for (unsigned int c = 0; c < 3; c++)
+						used[corner[c]] = true;
+
+					glm::vec3 p0 = toGlm(out->mVertices[corner[0]]);
+					glm::vec3 p1 = toGlm(out->mVertices[corner[1]]);
+					glm::vec3 p2 = toGlm(out->mVertices[corner[2]]);
+					glm::vec2 w0(out->mTextureCoords[0][corner[0]].x, out->mTextureCoords[0][corner[0]].y);
+					glm::vec2 w1(out->mTextureCoords[0][corner[1]].x, out->mTextureCoords[0][corner[1]].y);
+					glm::vec2 w2(out->mTextureCoords[0][corner[2]].x, out->mTextureCoords[0][corner[2]].y);
+
+					glm::vec3 e1 = p1 - p0, e2 = p2 - p0;
+					glm::vec2 d1 = w1 - w0, d2 = w2 - w0;
+					float area = d1.x * d2.y - d2.x * d1.y;
+					if (std::abs(area) < 1e-12f)
+						continue;
+
+					float r = 1.0f / area;
+					glm::vec3 tangent = (e1 * d2.y - e2 * d1.y) * r;
+					glm::vec3 bitangent = (e2 * d1.x - e1 * d2.x) * r;
+					for (unsigned int c = 0; c < 3; c++)
+					{
+						tangentSum[corner[c]] += tangent;
+						bitangentSum[corner[c]] += bitangent;
+					}
+				}
+
+				out->mTangents = new aiVector3D[numVerts];
+				out->mBitangents = new aiVector3D[numVerts];
+				unsigned int guessed = 0, drawn = 0;
+
+				for (unsigned int b = 0; b < numVerts; b++)
+				{
+					glm::vec3 normal = toGlm(out->mNormals[b]);
+					if (glm::length2(normal) < 1e-12f)
+						normal = glm::vec3(0, 0, 1);
+					normal = glm::normalize(normal);
+
+					//Gram-Schmidt, so the tangent lies in the surface even where the summed triangles disagree
+					glm::vec3 tangent = tangentSum[b] - normal * glm::dot(normal, tangentSum[b]);
+					if (glm::length2(tangent) < 1e-12f)
+					{
+						//Any direction square to the normal, crossing it with whichever axis it leans away from most
+						glm::vec3 axis = std::abs(normal.x) < std::abs(normal.y)
+							? (std::abs(normal.x) < std::abs(normal.z) ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1))
+							: (std::abs(normal.y) < std::abs(normal.z) ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1));
+						tangent = glm::cross(normal, axis);
+						if (used[b])
+							guessed++;
+					}
+					if (used[b])
+						drawn++;
+					tangent = glm::normalize(tangent);
+
+					//Handedness from the triangles, so a mirrored texture layout reads its map the right way round
+					glm::vec3 bitangent = glm::cross(normal, tangent);
+					if (glm::dot(bitangent, bitangentSum[b]) < 0.0f)
+						bitangent = -bitangent;
+
+					out->mTangents[b] = aiVector3D(tangent.x, tangent.y, tangent.z);
+					out->mBitangents[b] = aiVector3D(bitangent.x, bitangent.y, bitangent.z);
+				}
+
+				if (guessed > 0)
+					debug(name + ": " + std::to_string(guessed) + " of " + std::to_string(drawn) + " vertices had no texture coordinate area to take a tangent from");
 			}
 
 			if (object.node >= 0 && object.node < (int)shape.nodes.size())

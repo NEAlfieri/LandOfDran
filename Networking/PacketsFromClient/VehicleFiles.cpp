@@ -44,6 +44,13 @@ void vehicleSaveRequest(JoinedClient* source, Server const* const server, ENetPa
 		return;
 	}
 
+	//A vehicle save is a save of bricks, and a model vehicle has none, so there would be nothing in the file
+	if (vehicle->isModelVehicle())
+	{
+		source->sendCenterPrint("That vehicle is a model, not bricks, so it can't be saved.", 3000, 1.0f, 0.4f, 0.4f);
+		return;
+	}
+
 	unsigned int now = SDL_GetTicks();
 	if (now - client->lastVehicleSaveMS < saveCooldownMS)
 		return;

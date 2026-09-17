@@ -214,9 +214,9 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					std::shared_ptr<Vehicle> vehicle = simulation.vehicles->create();
 					vehicle->readCreation(packet->data + byteIterator);
 
-					//Its bricks come in VehicleBricks packets after this
+					//Its bricks come in VehicleBricks packets after this, a model vehicle has none to wait for
 					if (vehicle->hasAllBricks())
-						vehicle->finishClient(&pd.brickTypes, pd.brickRenderer, pd.tireModel);
+						vehicle->finishClient(&pd.brickTypes, pd.brickRenderer, pd.tireModel, simulation.dynamicTypes);
 				}
 
 				byteIterator += bytes;

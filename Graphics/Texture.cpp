@@ -530,6 +530,84 @@ void TextureManager::finishLayer(Texture * target)
 	}
 }
 
+bool TextureManager::flatColor(const std::string& filePath, bool flattenAlphaOntoWhite, glm::vec4& color) const
+{
+	int width, height, channels;
+	stbi_uc* data = stbi_load(filePath.c_str(), &width, &height, &channels, 4);
+
+	if (!data)
+		return false;
+
+	bool flat = true;
+	for (int pixel = 1; pixel < width * height && flat; pixel++)
+	{
+		for (int channel = 0; channel < 4; channel++)
+			flat = flat && data[pixel * 4 + channel] == data[channel];
+	}
+
+	if (flat)
+	{
+		color = glm::vec4(data[0], data[1], data[2], data[3]) / 255.0f;
+
+		//The same mix addLayer does, see its flattenAlphaOntoWhite
+		if (flattenAlphaOntoWhite)
+		{
+			color = glm::vec4(glm::vec3(color) * color.a + glm::vec3(1.0f - color.a), 1.0f);
+		}
+	}
+
+	stbi_image_free(data);
+	return flat;
+}
+
+bool TextureManager::sizeFromFile(Texture* target, const std::string& filePath, int channels)
+{
+	scope("TextureManager::sizeFromFile");
+
+	if (!target)
+	{
+		error("No texture specified");
+		return false;
+	}
+
+	if (target->channels != 0 || target->currentLayer != 0 || target->currentChannel != 0)
+	{
+		error("Can only take the size of " + target->name + " before anything is added to it");
+		return false;
+	}
+
+	if (channels < 1 || channels > 4)
+	{
+		error("A texture can't have " + std::to_string(channels) + " channels");
+		return false;
+	}
+
+	int readWidth, readHeight, readChannels;
+	stbi_info(filePath.c_str(), &readWidth, &readHeight, &readChannels);
+
+	if (readWidth < 1 || readHeight < 1 || readChannels < 1)
+	{
+		error("Could not load texture " + filePath);
+		return false;
+	}
+
+	target->width = readWidth;
+	target->height = readHeight;
+	target->channels = channels;
+
+	allocateTexture(target);
+
+	//The same room addComponent makes for itself the first time it's called
+	if (lowDynamicRangeScratchpadSize < (unsigned int)(target->width * target->height * target->channels))
+	{
+		delete[] lowDynamicRangeTextureScratchpad;
+		lowDynamicRangeScratchpadSize = target->width * target->height * target->channels;
+		lowDynamicRangeTextureScratchpad = new unsigned char[lowDynamicRangeScratchpadSize];
+	}
+
+	return true;
+}
+
 void TextureManager::addEmptyComponent(Texture* target)
 {
 	scope("TextureManager::addEmptyComponent");

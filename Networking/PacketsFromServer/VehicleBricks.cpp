@@ -54,7 +54,7 @@ bool VehicleBricksPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 	}
 
 	if (vehicle->hasAllBricks())
-		vehicle->finishClient(&pd.brickTypes, pd.brickRenderer, pd.tireModel);
+		vehicle->finishClient(&pd.brickTypes, pd.brickRenderer, pd.tireModel, simulation.dynamicTypes);
 
 	return true;
 }

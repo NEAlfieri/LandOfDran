@@ -16,8 +16,9 @@ static constexpr float maxSuspensionForce = 10000000.0f;
 //The old game popped new cars upward so bricks sitting on the ground don't start stuck in it
 static constexpr float spawnUpwardSpeed = 20.0f;
 
-//Net ID, position, rotation, brick offset, forward, seat, exit height, brick count, driver, dirt emitter type, wheel count
-static constexpr unsigned int creationHeaderBytes = sizeof(netIDType) + PositionBytes + QuaternionBytes + sizeof(float) * 10 + sizeof(uint16_t) + sizeof(netIDType) + sizeof(uint16_t) + 1;
+//Net ID, position, rotation, brick offset, forward, seat, exit height, brick count, driver, dirt emitter type,
+//body and wheel type, body box, wheel count
+static constexpr unsigned int creationHeaderBytes = sizeof(netIDType) + PositionBytes + QuaternionBytes + sizeof(float) * 10 + sizeof(uint16_t) + sizeof(netIDType) + sizeof(uint16_t) + sizeof(netIDType) * 2 + sizeof(float) * 6 + 1;
 
 //Milliseconds since the last update, position, rotation, velocity as full floats since cars go faster than dynamics' quantized velocity reaches
 static constexpr unsigned int updateHeaderBytes = 1 + PositionBytes + QuaternionBytes + sizeof(float) * 3;
@@ -90,6 +91,19 @@ Vehicle::Vehicle()
 bool Vehicle::buildShape(const BrickTypes* types)
 {
 	shape = new btCompoundShape();
+
+	//A model vehicle is one box around its model instead, which is the whole of its collision
+	if (isModelVehicle())
+	{
+		btBoxShape* box = new btBoxShape(g2b3(glm::max(bodyHalfExtents, glm::vec3(0.01f))));
+		ownedShapes.push_back(box);
+
+		btTransform child = btTransform::getIdentity();
+		child.setOrigin(g2b3(bodyOffset));
+		shape->addChildShape(child, box);
+		return true;
+	}
+
 	std::unordered_map<unsigned int, btBoxShape*> boxes;
 
 	for (const Brick& brick : bricks)
@@ -137,12 +151,23 @@ bool Vehicle::buildServer(const BrickTypes* types, const btVector3& origin)
 
 	//Like the old game, the body weighs one per brick while each brick adds its steering mass setting to how hard it is to turn
 	int children = shape->getNumChildShapes();
-	std::vector<btScalar> masses(children, steering.mass);
-	btTransform principal;
+	btScalar mass = (btScalar)children;
 	btVector3 inertia;
-	shape->calculatePrincipalAxisTransform(masses.data(), principal, inertia);
 
-	btRigidBody::btRigidBodyConstructionInfo info((btScalar)children, nullptr, shape, inertia);
+	if (isModelVehicle())
+	{
+		//One box, so there is nothing to spread a per brick weight over
+		mass = std::max(bodyMass, 0.01f);
+		shape->calculateLocalInertia(mass, inertia);
+	}
+	else
+	{
+		std::vector<btScalar> masses(children, steering.mass);
+		btTransform principal;
+		shape->calculatePrincipalAxisTransform(masses.data(), principal, inertia);
+	}
+
+	btRigidBody::btRigidBodyConstructionInfo info(mass, nullptr, shape, inertia);
 	info.m_startWorldTransform.setIdentity();
 	info.m_startWorldTransform.setOrigin(origin);
 	info.m_friction = 0.9f;
@@ -187,7 +212,10 @@ bool Vehicle::buildServer(const BrickTypes* types, const btVector3& origin)
 	wheelInWater.assign(wheels.size(), false);
 	lastSplashMS.assign(wheels.size(), 0);
 
-	body->setLinearVelocity(btVector3(0, spawnUpwardSpeed, 0));
+	//A model vehicle is put exactly where a script asked for, so there is nothing for it to start stuck in
+	if (!isModelVehicle())
+		body->setLinearVelocity(btVector3(0, spawnUpwardSpeed, 0));
+
 	return true;
 }
 
@@ -198,7 +226,6 @@ bool Vehicle::drive(bool forwardHeld, bool backwardHeld, bool leftHeld, bool rig
 
 	throwsDirt = brakeHeld || leftHeld || rightHeld;
 
-	//Bullet turns wheels toward the right for positive steering, with our axles and a vehicle's up
 	float steer = leftHeld ? -1.0f : (rightHeld ? 1.0f : 0.0f);
 	float engine = forwardHeld ? 1.0f : (backwardHeld ? -1.0f : 0.0f);
 	bool speeding = body->getLinearVelocity().length() > maxDriveSpeed;
@@ -207,7 +234,15 @@ bool Vehicle::drive(bool forwardHeld, bool backwardHeld, bool leftHeld, bool rig
 	{
 		const WheelSettings& settings = wheels[a].settings;
 		raycastVehicle->setBrake(brakeHeld ? settings.brakeForce : 0.0f, a);
-		raycastVehicle->setSteeringValue(steer * settings.steerAngle, a);
+
+		/*
+			Negated because a positive steering value turns a wheel toward the negative side of its axle,
+			and our axles point the other way: down crossed with the way it drives. Measured the same for
+			a vehicle driving along +x, -x, +z, or -z, so it isn't about which way one faces. Without this
+			a wheel set to the dialog's default steering turns left when its driver holds right, which is
+			why vehicles saved before this had to be given a negative steering angle to drive properly
+		*/
+		raycastVehicle->setSteeringValue(-steer * settings.steerAngle, a);
 		raycastVehicle->applyEngineForce(speeding ? 0.0f : settings.engineForce * engine, a);
 	}
 
@@ -378,10 +413,24 @@ int Vehicle::findFreeSeat(const glm::vec3& targetPos) const
 	return best;
 }
 
-void Vehicle::finishClient(const BrickTypes* types, InstancedBrickRenderer* _renderer, Model* tireModel)
+void Vehicle::finishClient(const BrickTypes* types, InstancedBrickRenderer* _renderer, Model* tireModel, const std::vector<std::shared_ptr<DynamicType>>& dynamicTypes)
 {
-	if (brickGroup != -1 || body)
+	if (brickGroup != -1 || body || bodyInstance)
 		return;
+
+	//Whichever of the types this vehicle asked for the server has actually sent us
+	auto modelOfType = [&dynamicTypes](netIDType typeID) -> Model*
+	{
+		if (typeID == NO_ID)
+			return nullptr;
+
+		for (const std::shared_ptr<DynamicType>& type : dynamicTypes)
+		{
+			if (type->getID() == typeID)
+				return type->getModel().get();
+		}
+		return nullptr;
+	};
 
 	if (buildShape(types))
 	{
@@ -398,19 +447,36 @@ void Vehicle::finishClient(const BrickTypes* types, InstancedBrickRenderer* _ren
 		world->addBody(body);
 	}
 
-	renderer = _renderer;
-	if (renderer)
-		brickGroup = renderer->addBrickGroup(bricks);
+	if (isModelVehicle())
+	{
+		if (Model* bodyModel = modelOfType(bodyTypeID))
+			bodyInstance = new ModelInstance(bodyModel);
+	}
+	else
+	{
+		renderer = _renderer;
+		if (renderer)
+			brickGroup = renderer->addBrickGroup(bricks);
+	}
+
+	//A vehicle that names its own wheel type uses that, everything else the one tire model the client loaded
+	wheelModel = modelOfType(wheelTypeID);
+	if (!wheelModel)
+		wheelModel = tireModel;
 
 	for (VehicleWheel& wheel : wheels)
 	{
-		if (tireModel && !wheel.tire)
-			wheel.tire = new ModelInstance(tireModel);
+		if (wheelModel && !wheel.tire)
+			wheel.tire = new ModelInstance(wheelModel);
 	}
 }
 
 void Vehicle::removeBricks(std::vector<uint16_t> indices, const BrickTypes* types)
 {
+	//A model vehicle's body is its model, there are no bricks of it to take out
+	if (isModelVehicle())
+		return;
+
 	//Back to front, so taking one out doesn't move the ones still to go
 	std::sort(indices.begin(), indices.end(), [](uint16_t a, uint16_t b) { return a > b; });
 	indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
@@ -629,6 +695,10 @@ void Vehicle::readCreation(const enet_uint8* src)
 
 	take(&driverID, sizeof(netIDType));
 	take(&dirtEmitterType, sizeof(uint16_t));
+	take(&bodyTypeID, sizeof(netIDType));
+	take(&wheelTypeID, sizeof(netIDType));
+	take(&bodyHalfExtents[0], sizeof(float) * 3);
+	take(&bodyOffset[0], sizeof(float) * 3);
 
 	wheels.resize(src[at]);
 	at++;
@@ -771,6 +841,10 @@ void Vehicle::addToCreationPacket(enet_uint8* dest) const
 	put(&brickCount, sizeof(uint16_t));
 	put(&driverID, sizeof(netIDType));
 	put(&dirtEmitterType, sizeof(uint16_t));
+	put(&bodyTypeID, sizeof(netIDType));
+	put(&wheelTypeID, sizeof(netIDType));
+	put(&bodyHalfExtents[0], sizeof(float) * 3);
+	put(&bodyOffset[0], sizeof(float) * 3);
 
 	dest[at++] = (enet_uint8)wheels.size();
 
@@ -825,6 +899,8 @@ Vehicle::~Vehicle()
 {
 	if (renderer && brickGroup != -1)
 		renderer->removeBrickGroup(brickGroup);
+
+	delete bodyInstance;
 
 	for (VehicleWheel& wheel : wheels)
 		delete wheel.tire;

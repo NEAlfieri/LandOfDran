@@ -57,6 +57,10 @@ struct PassengerSeat
 	The server simulates it with Bullet's raycast vehicle, a player who right clicks it drives it from behind its steering wheel,
 	and clients draw its bricks where the server says it is, with a body that follows along for bumping into and clicking
 	Its bricks go out in VehicleBricks packets after its creation packet, see makeBrickPackets
+
+	A vehicle can be one model instead, see Lua's spawnModelVehicle and isModelVehicle: it has no bricks at all, its
+	body is a single box, and clients draw a dynamic type's model in place of the bricks. Everything else about it -
+	the raycast vehicle, driving, seats, getting in and out, the wrench dialog - is the same either way
 */
 class Vehicle : public SimObject
 {
@@ -80,7 +84,7 @@ class Vehicle : public SimObject
 	InstancedBrickRenderer* renderer = nullptr;
 	int brickGroup = -1;
 
-	//Makes shape from its colliding bricks, false if none of them collide
+	//Makes shape out of its colliding bricks, or one box for a model vehicle, false if it comes out with nothing in it
 	bool buildShape(const BrickTypes* types);
 
 	//Where its body is, from the physics on the server or where it's drawn on a client
@@ -141,6 +145,29 @@ class Vehicle : public SimObject
 
 	std::vector<VehicleWheel> wheels;
 
+	/*
+		The dynamic type whose model is this vehicle's body, drawn where a brick vehicle's bricks would be,
+		NO_ID for a vehicle sliced out of bricks. Its model's own origin is this vehicle's body origin, so
+		everything below in the body's space is also in the model's space, see Lua's spawnModelVehicle
+	*/
+	netIDType bodyTypeID = NO_ID;
+
+	//The dynamic type its wheels are drawn with, NO_ID for whatever tire model the client has
+	netIDType wheelTypeID = NO_ID;
+
+	//A model vehicle's one collision box, half its size and where its middle sits in the body's space, world units
+	glm::vec3 bodyHalfExtents = glm::vec3(1);
+	glm::vec3 bodyOffset = glm::vec3(0);
+
+	//Server: what a model vehicle weighs, the way a brick vehicle weighs one per colliding brick
+	float bodyMass = 40.0f;
+
+	//Whether it's a model rather than bricks
+	bool isModelVehicle() const { return bodyTypeID != NO_ID; }
+
+	//Client: the model drawn as a model vehicle's body, moved to getDrawnTransform every frame
+	ModelInstance* bodyInstance = nullptr;
+
 	//One per seat brick, in the order they were found
 	std::vector<PassengerSeat> passengerSeats;
 
@@ -194,6 +221,9 @@ class Vehicle : public SimObject
 	//Client: the dynamic standing in its seat as of the last LoopClient::placeVehicleDrivers
 	std::weak_ptr<Dynamic> seated;
 
+	//Client: the model every one of its wheels has an instance of, from finishClient, nullptr without one
+	Model* wheelModel = nullptr;
+
 	//Server: makes its body and wheels with its body at origin. bricks, wheels, forward, seat, and steering have to be set first. False if none of its bricks collide
 	bool buildServer(const BrickTypes* types, const btVector3& origin);
 
@@ -228,13 +258,20 @@ class Vehicle : public SimObject
 	//Server: the free passenger seat nearest a world position, -1 if they're all taken or it has none
 	int findFreeSeat(const glm::vec3& targetPos) const;
 
-	//Client: once every brick has arrived, makes its body, has renderer draw its bricks, and gives each wheel an instance of tireModel (which can be nullptr)
-	void finishClient(const BrickTypes* types, InstancedBrickRenderer* _renderer, Model* tireModel);
+	/*
+		Client: once every brick has arrived, makes its body and has renderer draw its bricks, or for a model vehicle
+		makes an instance of its body's model out of dynamicTypes. Each wheel gets an instance of its wheel type's model,
+		or of tireModel, either of which can be missing, leaving it without one
+	*/
+	void finishClient(const BrickTypes* types, InstancedBrickRenderer* _renderer, Model* tireModel, const std::vector<std::shared_ptr<DynamicType>>& dynamicTypes);
 	bool hasAllBricks() const { return bricks.size() >= expectedBricks; }
+
+	//The model one of its wheels is drawn with, nullptr without one, see finishClient
+	Model* getWheelModel() const { return wheelModel; }
 
 	/*
 		Takes some of its bricks out by index (in any order, repeats and ones past the end ignored), rebuilding its body's shape around the rest and on the server its weight,
-		and on a client drawing what's left. Its body keeps its old shape if none of the rest collide
+		and on a client drawing what's left. Its body keeps its old shape if none of the rest collide. A model vehicle has no bricks to take out
 	*/
 	void removeBricks(std::vector<uint16_t> indices, const BrickTypes* types);
 	int getBrickGroup() const { return brickGroup; }

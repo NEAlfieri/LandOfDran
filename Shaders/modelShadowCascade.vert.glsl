@@ -25,6 +25,10 @@ layout (std140) uniform BasicUniforms
 	bool cameraSpacePosition;
 
 	vec4 DecalArea;
+
+	//What a material with no texture for them is drawn with, see Material's constant values
+	vec4 ConstantAlbedo;
+	vec4 ConstantMOR;
 };
 
 uniform mat4 lightSpaceMatrix;
