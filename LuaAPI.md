@@ -950,11 +950,12 @@ and `ClickRotate` when the ghost brick moves or turns, `Jump` when their player 
 `BrickBreak` where a removed brick pops loose. `serverstart.lua` registers these along with
 `ClickPlant`, `PlayerConnect`, `PlayerLeave`, `Admin` (played to a client who logs into the eval
 console), and `BrickClear` (played to everyone when someone types `/clearbricks` or `/clearvehicles` in chat to remove
-all of their own bricks or vehicles). It also registers `Splash` and `ExitWater`, which the server plays by
+all of their own bricks or vehicles, or an admin types `/clearAllBricks` or `/clearAllVehicles`). It also registers `Splash` and `ExitWater`, which the server plays by
 name where dynamics hit or leave the water, louder the faster they're moving and lower pitched
 the bigger they are, and `LightOn` and `LightOff`, which the server plays from a player whose
 flashlight turns on or off. `Inventory.lua` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops
-`SprayLoop` from a spraying paint can, and plays `Launch` from a firing launcher. `Honk` is what drivers play with left click.
+`SprayLoop` from a spraying paint can, and plays `Launch` from a firing launcher. `Honk` is the horn a new vehicle honks with left click,
+unless it's wrenched to another sound, see [Vehicles](#vehicles), and `LightOn` and `LightOff` also play from a vehicle whose headlight is switched.
 
 In the functions below, `pitch` is a playback speed multiplier (default `1`, clamped to 0.05-10)
 and `volume` is 0-1 (default `1`). They can only be given together.

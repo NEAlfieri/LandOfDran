@@ -517,6 +517,23 @@ function chatCommands(client, message)
 		return client, ""
 	end
 
+	--The command word and its arguments, the server already lowercased the word
+	local words = {}
+	for word in string.gmatch(text, "%S+") do
+		table.insert(words, word)
+	end
+	local command = words[1]
+	if adminCommands[command] then
+		if not client:isAdmin() then
+			client:message("You need to be an admin to use " .. command .. ".")
+		else
+			--Arguments as typed, in case a name or number has spaces or capitals in it
+			local argText = string.match(text, "^%S+%s+(.-)%s*$") or ""
+			adminCommands[command](client, argText, words)
+		end
+		return client, ""
+	end
+
 	return client, message
 end
 registerEventListener("ClientChat","chatCommands")
@@ -524,6 +541,209 @@ registerEventListener("ClientChat","chatCommands")
 registerChatSuggestion("clearbricks", "/clearbricks - remove every brick you planted")
 registerChatSuggestion("clearvehicles", "/clearvehicles - remove every vehicle you made")
 registerChatSuggestion("sit", "/sit - sit down, or stand back up")
+
+--Finds a connected client by name, ignoring case. An exact match wins, then the only one whose name starts with it.
+--Returns the client, or nil and a message saying why not
+function findClientByName(name)
+	if name == "" then
+		return nil, "Give a player's name."
+	end
+	local lowered = string.lower(name)
+	local partial = nil
+	local partialCount = 0
+	for i = 0, getNumClients() - 1 do
+		local other = getClientIdx(i)
+		local otherName = string.lower(other:getName())
+		if otherName == lowered then
+			return other
+		end
+		if string.sub(otherName, 1, string.len(lowered)) == lowered then
+			partial = other
+			partialCount = partialCount + 1
+		end
+	end
+	if partialCount == 1 then
+		return partial
+	elseif partialCount > 1 then
+		return nil, "More than one player's name starts with " .. name .. "."
+	end
+	return nil, "No player named " .. name .. " is here."
+end
+
+--Where a client is, for /find and /fetch: their vehicle if they're in one, else their player
+function clientPosition(client)
+	local vehicle = client:getVehicle()
+	if vehicle then
+		return vehicle:getPosition()
+	end
+	if client:getNumControlled() > 0 then
+		return client:getControlledIdx(0):getPosition()
+	end
+	return nil
+end
+
+--Puts a client's player next to a position, first getting them out of any vehicle. False if they have no player
+function teleportClient(client, x, y, z)
+	if client:getNumControlled() == 0 then
+		return false
+	end
+	if client:getVehicle() then
+		client:exitVehicle()
+	end
+	--A little up so they don't land inside whoever they're put next to
+	client:getControlledIdx(0):setPosition(x, y + 3, z)
+	return true
+end
+
+--Commands only admins (single player's host, or anyone who logged into the eval console) can use, by their lowercased name.
+--Each gets the client, the arguments as one string, and the message split into words (the command first)
+adminCommands = {}
+
+adminCommands["/clearallvehicles"] = function(client)
+	local count = getNumVehicles()
+	if count == 0 then
+		client:message("There are no vehicles to clear.")
+		return
+	end
+	for i = count - 1, 0, -1 do
+		getVehicleIdx(i):remove()
+	end
+	messageAll(client:getName() .. " cleared all " .. count .. (count == 1 and " vehicle." or " vehicles."))
+	playSound("BrickClear")
+end
+
+adminCommands["/clearallbricks"] = function(client)
+	local count = getNumBricks()
+	if count == 0 then
+		client:message("There are no bricks to clear.")
+		return
+	end
+	clearAllBricks()
+	messageAll(client:getName() .. " cleared all " .. count .. (count == 1 and " brick." or " bricks."))
+	playSound("BrickClear")
+end
+
+adminCommands["/kick"] = function(client, name)
+	local target, why = findClientByName(name)
+	if not target then
+		client:message(why)
+		return
+	end
+	if target:getID() == client:getID() then
+		client:message("You can't kick yourself.")
+		return
+	end
+	messageAll(target:getName() .. " was kicked by " .. client:getName() .. ".")
+	target:kick()
+end
+
+adminCommands["/rain"] = function(client)
+	if getRain() > 0 then
+		setRain(0)
+		messageAll(client:getName() .. " stopped the rain.")
+	else
+		setRain(1)
+		messageAll(client:getName() .. " made it rain.")
+	end
+end
+
+adminCommands["/settimescale"] = function(client, argText)
+	local scale = tonumber(argText)
+	if not scale then
+		client:message("Usage: /setTimeScale <in-game seconds per real second>, 1 is normal and 0 freezes time.")
+		return
+	end
+	setTimeScale(scale)
+	messageAll(client:getName() .. " set the time scale to " .. scale .. ".")
+end
+
+adminCommands["/settimeofday"] = function(client, argText)
+	local fraction = tonumber(argText)
+	if not fraction then
+		client:message("Usage: /setTimeOfDay <0-1>, 0 is midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.")
+		return
+	end
+	setTimeOfDay(fraction)
+	messageAll(client:getName() .. " set the time of day to " .. fraction .. ".")
+end
+
+adminCommands["/setwaterlevel"] = function(client, argText)
+	if argText == "" or string.lower(argText) == "off" or string.lower(argText) == "none" then
+		setWaterLevel()
+		messageAll(client:getName() .. " removed the water.")
+		return
+	end
+	local level = tonumber(argText)
+	if not level then
+		client:message("Usage: /setWaterLevel <height>, or /setWaterLevel off to remove the water.")
+		return
+	end
+	setWaterLevel(level)
+	messageAll(client:getName() .. " set the water level to " .. level .. ".")
+end
+
+--Brings a player to the admin
+adminCommands["/fetch"] = function(client, name)
+	local target, why = findClientByName(name)
+	if not target then
+		client:message(why)
+		return
+	end
+	if target:getID() == client:getID() then
+		client:message("You're already here.")
+		return
+	end
+	--Their camera if it's off flying, so a fetched player lands where the admin is looking from
+	local x, y, z
+	if client:getFreeCamera() then
+		x, y, z = client:getCameraPosition()
+	else
+		x, y, z = clientPosition(client)
+	end
+	if not x then
+		client:message("You don't have a player to fetch them to.")
+		return
+	end
+	if not teleportClient(target, x, y, z) then
+		client:message(target:getName() .. " doesn't have a player to fetch.")
+		return
+	end
+	target:message(client:getName() .. " fetched you.")
+	client:message("Fetched " .. target:getName() .. ".")
+end
+
+--Takes the admin to a player
+adminCommands["/find"] = function(client, name)
+	local target, why = findClientByName(name)
+	if not target then
+		client:message(why)
+		return
+	end
+	if target:getID() == client:getID() then
+		client:message("You found yourself.")
+		return
+	end
+	local x, y, z = clientPosition(target)
+	if not x then
+		client:message(target:getName() .. " doesn't have a player to find.")
+		return
+	end
+	if not teleportClient(client, x, y, z) then
+		client:message("You don't have a player to go there with.")
+		return
+	end
+	client:message("Found " .. target:getName() .. ".")
+end
+
+registerChatSuggestion("clearallvehicles", "/clearAllVehicles - admins: remove every vehicle")
+registerChatSuggestion("clearallbricks", "/clearAllBricks - admins: remove every brick")
+registerChatSuggestion("kick", "/kick <player> - admins: disconnect a player")
+registerChatSuggestion("rain", "/rain - admins: start or stop the rain")
+registerChatSuggestion("settimescale", "/setTimeScale <scale> - admins: 1 is normal, 0 freezes time")
+registerChatSuggestion("settimeofday", "/setTimeOfDay <0-1> - admins: 0 midnight, 0.5 noon")
+registerChatSuggestion("setwaterlevel", "/setWaterLevel <height|off> - admins: put water at that height")
+registerChatSuggestion("fetch", "/fetch <player> - admins: bring a player to you")
+registerChatSuggestion("find", "/find <player> - admins: go to a player")
 
 --Who's sitting down by /sit, by client ID. Riders of a model vehicle sit on their own, see LuaAPI.md's Model vehicles
 sittingClients = {}
