@@ -1027,6 +1027,33 @@ static int LUA_clientOpenWrenchDialog(lua_State* L)
 	return 0;
 }
 
+static int LUA_clientOpenPrintMenu(lua_State* L)
+{
+	scope("(LUA) client:openPrintMenu");
+
+	if (lua_gettop(L) != 2)
+	{
+		error("Expected 2 arguments client:openPrintMenu(brick)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	//Pops the brick off the top, leaving the client
+	Brick* brick = LUA_pd->bricks->popLua(L);
+	if (!brick)
+	{
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::shared_ptr<ClientData> client = popClientData(L, 1, "client:openPrintMenu(brick)");
+	if (!client)
+		return 0;
+
+	openPrintMenu(*client, brick);
+	return 0;
+}
+
 //Shared by getPaintColor and getPaintMaterial, logs an error with usage for anything that isn't a client
 static std::shared_ptr<ClientData> popPaintingClient(lua_State* L, const std::string& usage)
 {
@@ -1106,6 +1133,7 @@ void registerClientFunctions(lua_State* L)
 		{ "getFlashlightEnabled", LUA_clientGetFlashlightEnabled },
 		{ "applyAppearance", LUA_clientApplyAppearance },
 		{ "openWrenchDialog", LUA_clientOpenWrenchDialog },
+		{ "openPrintMenu", LUA_clientOpenPrintMenu },
 		{ "getPaintColor", LUA_clientGetPaintColor },
 		{ "getPaintMaterial", LUA_clientGetPaintMaterial },
 		{ NULL, NULL }

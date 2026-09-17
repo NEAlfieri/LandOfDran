@@ -19,6 +19,7 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 
 	pd.chatWindow->close();
 	pd.wrenchDialog->close();
+	pd.printMenu->close();
 	pd.vehicleLoader->close();
 	pd.vehicleGhost.cancel();
 
@@ -1015,9 +1016,14 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		if (wrenchSubmission.vehicleID != NO_ID)
 			client->send(makeVehicleWrenchSubmitPacket(wrenchSubmission.vehicleID, wrenchSubmission.attachments), OtherReliable);
 		else
-			client->send(makeWrenchSubmitPacket(wrenchSubmission.brickID, wrenchSubmission.collides, wrenchSubmission.name, wrenchSubmission.attachments,
-				wrenchSubmission.printName), OtherReliable);
+			client->send(makeWrenchSubmitPacket(wrenchSubmission.brickID, wrenchSubmission.collides, wrenchSubmission.name, wrenchSubmission.attachments), OtherReliable);
 	}
+
+	//Picking a print in the print menu puts it on the brick it was opened for, there's nothing else in there to apply
+	netIDType printBrickID;
+	std::string pickedPrint;
+	if (pd.printMenu->takeSubmission(printBrickID, pickedPrint) && client)
+		client->send(makePrintSubmitPacket(printBrickID, pickedPrint), OtherReliable);
 
 	//The server sends the vehicle's bricks back for VehicleSaveDataPacket to write
 	netIDType saveVehicleID;
@@ -1060,6 +1066,10 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	if (wrenchDialogWasOpen && !pd.wrenchDialog->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
 		pd.context->setMouseLock(true);
 	wrenchDialogWasOpen = pd.wrenchDialog->isOpen();
+
+	if (printMenuWasOpen && !pd.printMenu->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
+		pd.context->setMouseLock(true);
+	printMenuWasOpen = pd.printMenu->isOpen();
 
 	if (colorPickerWasOpen && !pd.paintMenu->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
 		pd.context->setMouseLock(true);
@@ -3148,6 +3158,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 		pd.itemIcons = std::make_shared<ItemIconRenderer>(pd.textures);
 	pd.appearanceEditor = pd.gui->createWindow<AppearanceEditor>(settings, pd.textures, &pd.faceNames, &pd.shirtNames);
 	pd.wrenchDialog = pd.gui->createWindow<WrenchDialog>();
+	pd.printMenu = pd.gui->createWindow<PrintMenu>(pd.textures, &pd.prints);
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
 	//Builds from before the state file kept the hot bar in settings.txt
 	std::shared_ptr<SettingManager> hotbarSource = pd.state;

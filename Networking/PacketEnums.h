@@ -88,6 +88,7 @@ enum FromClientPacketType : unsigned char
 	VehicleUpload = 23,		//Part of a vehicle save from the client's computer, with where they placed its ghost
 	VehicleRemoveRequest = 24,	//Remove the vehicle in the wrench dialog the server last sent them
 	PaintCanRequest = 25,	//Whether the client's paint palette wants a paint can in their hand, see Networking/PacketsFromClient/Inventory.cpp
+	PrintSubmit = 26,		//The print the client picked in the print menu the server last sent them, see Networking/PacketsFromClient/Print.cpp
 };
 
 //Flags byte after the mask of a ClickDetails packet
@@ -188,6 +189,7 @@ enum FromServerPacketType : unsigned char
 	NameTag = 39,			//Text drawn floating over a dynamic, like a player's name, see Dynamic::makeNameTagPacket
 	BrickPrintTypes = 40,	//The server's print IDs and names as a client joins, so it can match them to its own, see BrickPrintTypesPacket
 	SetClickAction = 41,	//What the client should play the moment they click with an item, before hearing back, see Networking/ClickAction.h
+	OpenPrintMenu = 42,		//Open the print menu for a brick, so the print gun can put a print on it, see Interface/PrintMenu.h
 };
 
 //Flags byte of a PlayerAbilities packet

@@ -230,6 +230,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new OpenWrenchDialogPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case OpenPrintMenu:
+					packets.push_back(new OpenPrintMenuPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case SkyboxPaths:
 					packets.push_back(new SkyboxPathsPacket(packetHoldTime, event.packet));
 					return NotKicked;

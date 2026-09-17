@@ -278,13 +278,10 @@ inline ENetPacket* makeWrenchRequestPacket(glm::vec3 position, glm::vec3 directi
 	1 byte		-	name length
 	0-255 bytes	-	name
 	Then		-	BrickAttachments::write
-	1 byte		-	print name length
-	0-255 bytes	-	print name, "" for no print
 */
-inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, const std::string& name, const BrickAttachments& attachments, const std::string& printName)
+inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, const std::string& name, const BrickAttachments& attachments)
 {
 	std::string shortName = name.substr(0, 255);
-	std::string shortPrint = printName.substr(0, 255);
 
 	std::vector<unsigned char> bytes;
 	bytes.push_back((unsigned char)WrenchSubmit);
@@ -294,6 +291,24 @@ inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, cons
 	bytes.push_back((unsigned char)shortName.length());
 	bytes.insert(bytes.end(), shortName.begin(), shortName.end());
 	attachments.write(bytes);
+
+	return enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable));
+}
+
+/*
+	1 byte		-	packet type
+	4 bytes		-	brick net ID, from the OpenPrintMenu packet
+	1 byte		-	print name length
+	0-255 bytes	-	print name, "" for no print
+*/
+inline ENetPacket* makePrintSubmitPacket(netIDType brickID, const std::string& printName)
+{
+	std::string shortPrint = printName.substr(0, 255);
+
+	std::vector<unsigned char> bytes;
+	bytes.push_back((unsigned char)PrintSubmit);
+	bytes.resize(1 + sizeof(netIDType));
+	memcpy(bytes.data() + 1, &brickID, sizeof(netIDType));
 	bytes.push_back((unsigned char)shortPrint.length());
 	bytes.insert(bytes.end(), shortPrint.begin(), shortPrint.end());
 

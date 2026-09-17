@@ -1,0 +1,3 @@
+#The print gun has no textures of its own, so the whole model is one light grey metal material
+file	printGun.dts
+singlematerial	Assets/tools/printGunMaterial.txt

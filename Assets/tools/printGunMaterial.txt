@@ -1,0 +1,3 @@
+albedo	printGunAlbedo.png
+roughness	printGunRoughness.png
+metalness	printGunMetalness.png

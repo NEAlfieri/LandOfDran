@@ -18,6 +18,10 @@ struct PrintType
 	//The image or .webm itself, only the client loads it
 	std::string filePath = "";
 
+	//The smaller picture of it in the add-on's icons folder next to its prints one, for the print menu's buttons
+	//"" for one with no icon, like a video, see Interface/PrintMenu.h
+	std::string iconPath = "";
+
 	//Whether it's a .webm that plays rather than a still image, see Graphics/PrintVideos.h
 	bool video = false;
 
@@ -27,7 +31,7 @@ struct PrintType
 
 /*
 	Every print loaded from a folder like Assets/brick/prints
-	The server keeps the names to offer in the wrench dialog, the client also loads each one as a decal to draw with
+	The server keeps the names to offer in the print menu, the client also loads each one as a decal to draw with
 */
 class PrintTypes
 {
@@ -49,10 +53,13 @@ class PrintTypes
 	//Index of a print by name, case-insensitive, -1 if there isn't one
 	int find(const std::string& name) const;
 
+	//Client only: the icon of a print by name, "" for one we don't have or one with no icon, see PrintType::iconPath
+	std::string getIconPath(const std::string& name) const { const PrintType* print = get(find(name)); return print ? print->iconPath : ""; }
+
 	//Name of a print by index, "" for -1 or an index we don't have
 	std::string getName(int index) const { const PrintType* print = get(index); return print ? print->name : ""; }
 
-	//Every print's name, in order, for the wrench dialog's dropdown
+	//Every print's name, in order, for the print menu's buttons
 	std::vector<std::string> getNames() const;
 
 	//Client only, see PrintType::decalLayer

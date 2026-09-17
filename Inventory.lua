@@ -1,7 +1,7 @@
 --[[
 	Inventory
 
-	Everyone starts with a hammer, a wrench, and a launcher, and can carry up to 5 items. Q slides their items out on the
+	Everyone starts with a hammer, a wrench, a print gun, and a launcher, and can carry up to 5 items. Q slides their items out on the
 	right of the screen and puts the picked one in their hand, the mouse wheel picks another while they're out, and Ctrl+W
 	throws the one in their hand. Left clicking an item on the ground picks it up.
 
@@ -19,6 +19,10 @@
 	Left clicking with the launcher in hand fires a shell toward the crosshair, at most once per LAUNCHER_RELOAD_MS. The shell
 	falls in an arc and bursts on the first thing it touches, the ground included, pushing everything around it away with
 	radiusImpulse.
+
+	Left clicking with the print gun in hand shoots a laser at the crosshair and plays PrintFire. A shot that lands on a brick
+	with printed faces opens that brick's print menu, where picking a print puts it straight on. Anything else it hits, or
+	nothing at all, just makes the noise.
 
 	Run from serverstart.lua with dofile("Inventory.lua"), after the item types are added.
 ]]
@@ -70,9 +74,13 @@ local SHELL_FOG_MS = 1000
 --The tag launcher shells get from addProjectile, so ProjectileHit listeners can tell them from other projectiles
 local SHELL_TAG = "launcherShell"
 
+--How far the print gun shoots, and how long its laser keeps coming out of the barrel in milliseconds
+local PRINT_RANGE = 60
+local PRINT_LASER_MS = 150
+
 --Item types from serverstart.lua everyone gets as they join, filling their slots in this order
 --The paint can isn't one of them, the paint palette hands it out, see paintCanChanged
-local STARTING_ITEMS = {"hammer", "wrench", "dranLauncher"}
+local STARTING_ITEMS = {"hammer", "wrench", "printGun", "dranLauncher"}
 
 --Net IDs of items giveStartingItems handed out and nobody has thrown yet
 --These are removed instead of dropped when their player leaves, so people coming and going don't leave piles of tools behind
@@ -414,6 +422,31 @@ function toolTick(client)
 	swing.tick = schedule(TOOL_REPEAT_MS, "toolTick", client)
 end
 
+function removePrintLaser(laser)
+	laser:destroy()
+end
+
+--A laser out of the barrel toward the crosshair, and the print menu of a printed brick it lands on
+local function firePrintGun(client, gun)
+	gun:playSound("PrintFire")
+
+	local laser = addEmitter("LaserEmitterA")
+	local player = playerOf(client)
+	if laser ~= nil then
+		laser:attachToDynamic(gun)
+		if player ~= nil then
+			laser:aimWith(player, PRINT_RANGE)
+		end
+		schedule(PRINT_LASER_MS, "removePrintLaser", laser)
+	end
+
+	--Anything that isn't a brick with printed faces just gets shot at
+	local hit = client:getCursorItem(PRINT_RANGE)
+	if hit ~= nil and hit.type == BRICK_TYPE_ID and hit:canPrint() then
+		client:openPrintMenu(hit)
+	end
+end
+
 --Client net IDs whose launcher fired too recently to fire again
 launcherReloading = {}
 
@@ -546,6 +579,11 @@ function inventoryClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 
 	if tool == "dranLauncher" then
 		fireLauncher(client, held)
+		return client, posX, posY, posZ, dirX, dirY, dirZ, mask
+	end
+
+	if tool == "printGun" then
+		firePrintGun(client, held)
 		return client, posX, posY, posZ, dirX, dirY, dirZ, mask
 	end
 

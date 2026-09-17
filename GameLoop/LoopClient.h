@@ -54,6 +54,9 @@ class LoopClient
 	//The mouse goes back to playing the frame the wrench dialog closes
 	bool wrenchDialogWasOpen = false;
 
+	//Same for the print menu the print gun opens
+	bool printMenuWasOpen = false;
+
 	//Same for the custom paint color picker
 	bool colorPickerWasOpen = false;
 
