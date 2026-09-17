@@ -18,10 +18,12 @@
 #include "../Graphics/Skybox.h"
 #include "../Graphics/InstancedBrickRenderer.h"
 #include "../Graphics/PointLights.h"
+#include "ClickActionPlayer.h"
 #include "../Graphics/WaterRipples.h"
 #include "../Graphics/ParticleSystem.h"
 #include "../Graphics/Rain.h"
 #include "../Graphics/GpuProfiler.h"
+#include "../Graphics/ItemIconRenderer.h"
 #include "../Bricks/GhostBrick.h"
 #include "../Bricks/SelectionBox.h"
 #include "../Bricks/VehicleGhost.h"
@@ -111,6 +113,15 @@ struct ClientProgramData
 	std::shared_ptr<PaintMenu> paintMenu = nullptr;
 	std::shared_ptr<ItemHotbar> itemHotbar = nullptr;
 
+	//Draws the model of each item you're carrying for the item bar to show, nullptr while graphics/itemicons3d is off
+	std::shared_ptr<ItemIconRenderer> itemIcons = nullptr;
+
+	//graphics/itemicons3d as of launch or the last settings save
+	bool itemIcons3d = true;
+
+	//Plays what the server said the next click with the held item does, without waiting for it, see Networking/ClickAction.h
+	std::shared_ptr<ClickActionPlayer> clickActions = std::make_shared<ClickActionPlayer>();
+
 	/*
 		Things the game remembers between launches rather than settings the player picks: last server and name,
 		window size, hot bar. Kept out of Config/settings.txt so they can be written often without rewriting that
@@ -166,6 +177,19 @@ struct ClientProgramData
 
 	//Times each render pass while the debug menu asks for it, otherwise costs nothing, see LoopClient::renderEverything
 	GpuProfiler profiler;
+
+	/*
+		God rays: where the sky still shows around the sun, at half the width and height of the screen,
+		nullptr while graphics/godrayquality is None. See LoopClient::renderGodRays
+	*/
+	std::shared_ptr<RenderTarget> godRayMask = nullptr;
+
+	//graphics/godrayquality as of launch or the last settings save, as places looked at along each ray, 0 for off
+	int godRaySamples = 0;
+
+	GLint godRaySunScreenUniform = -1;
+	GLint godRaySampleCountUniform = -1;
+	GLint godRayStrengthUniform = -1;
 
 	//Copy of the finished scene that underwater.frag draws back warped, made the first time the camera goes under the water
 	std::shared_ptr<RenderTarget> underwaterScene = nullptr;

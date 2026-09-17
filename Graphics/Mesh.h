@@ -208,6 +208,10 @@ class ModelInstance
 	//World space middle of one of its meshes as of the last calculateMeshTransforms and setModelTransform, see Mesh::center
 	glm::vec3 getMeshCenter(int meshIdx) const;
 
+	//Where one of its meshes sits inside the model, baseScale and any playing animation applied, but not
+	//setModelTransform's whole model transform. What a draw that puts the model somewhere of its own needs, see Mesh::renderOnce
+	const glm::mat4& getMeshTransform(int meshIdx) const { return MeshTransforms[meshIdx]; }
+
 	//World space rotation of one of its meshes, with any scale taken out, as of the same updates as getMeshCenter
 	glm::quat getMeshRotation(int meshIdx) const;
 
@@ -388,6 +392,13 @@ class Mesh
 
 	//Render all instances of this particular mesh
 	void render(std::shared_ptr<ShaderManager> graphics, bool useMaterials = true) const;
+
+	/*
+		Draws one copy of the mesh with no instance of the model behind it, from the model matrix in
+		BasicUniforms instead, which the caller sets along with BasicUniforms::nonInstanced.
+		Used for drawing a model somewhere that isn't the world, like an item's picture in the item bar
+	*/
+	void renderOnce(std::shared_ptr<ShaderManager> graphics) const;
 
 	//Renders exactly one instance of this mesh (by its buffer offset) using the outline shader, assumed already
 	//in use. Used for the highlight/outline X-ray effect, one ModelInstance at a time - see ModelInstance::renderSelfOutline
@@ -574,6 +585,15 @@ class Model
 
 	//Calls render on just one of its meshes
 	void renderMesh(std::shared_ptr<ShaderManager> graphics, int meshIdx) const;
+
+	//Calls renderOnce on just one of its meshes, see Mesh::renderOnce
+	void renderMeshOnce(std::shared_ptr<ShaderManager> graphics, int meshIdx) const;
+
+	/*
+		The box its drawn meshes fill, baseScale applied, in the model's own space. False for a model with
+		nothing drawn in it. Taken from the pose it was loaded in, so an animation having moved a limb since isn't counted
+	*/
+	bool getDrawnBounds(glm::vec3& low, glm::vec3& high) const;
 
 	//Calls renderSingleInstance(bufferOffset) on each mesh, assumes the outline shader is already bound.
 	//Used for the highlight/outline X-ray effect - see ModelInstance::renderSelfOutline

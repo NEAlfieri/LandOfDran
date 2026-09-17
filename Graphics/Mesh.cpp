@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include "DtsShape.h"
 
 #include <tuple>
 
@@ -975,6 +976,25 @@ void Mesh::render(std::shared_ptr<ShaderManager> graphics, bool useMaterials) co
 	glBindVertexArray(0);
 }
 
+void Mesh::renderOnce(std::shared_ptr<ShaderManager> graphics) const
+{
+	if (nonRenderingMesh || !valid)
+		return;
+
+	if (graphics->basicUniforms.DecalArea != decalArea)
+	{
+		graphics->basicUniforms.DecalArea = decalArea;
+		graphics->updateBasicUBO();
+	}
+
+	if (material)
+		material->use(graphics);
+
+	glBindVertexArray(vao);
+	glDrawElements(GL_TRIANGLES, vertexCount, GL_UNSIGNED_SHORT, (void*)0);
+	glBindVertexArray(0);
+}
+
 void Mesh::renderSingleInstance(unsigned int bufferOffset) const
 {
 	if (nonRenderingMesh)
@@ -1321,9 +1341,21 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	debug("Loading model descriptor file: " + filePath);
 
-	std::ifstream descriptorFile(filePath.c_str());
+	/*
+		Blockland add-ons ship their models as .dts files, which say everything about themselves a
+		descriptor file would, so one can be handed straight to newDynamicType or newItemType on its own.
+		Reading it as a descriptor that only points at itself keeps the rest of this the same, and
+		still lets a .txt point its file line at a .dts when it does want decalarea or material lines.
+	*/
+	std::istringstream selfDescriptor("file\t" + getFileFromPath(filePath) + "\n");
 
-	if (!descriptorFile.is_open())
+	std::ifstream descriptorFile;
+	if (!isDtsPath(filePath))
+		descriptorFile.open(filePath.c_str());
+
+	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
+
+	if (!isDtsPath(filePath) && !descriptorFile.is_open())
 	{
 		error("Could not open file " + filePath);
 		return;
@@ -1336,9 +1368,9 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	std::string modelPath = "";
 
 	std::string line = "";
-	while (!descriptorFile.eof())
+	while (!descriptor.eof())
 	{
-		getline(descriptorFile, line);
+		getline(descriptor, line);
 
 		//Every line is just two arguments separated by a tab
 
@@ -1411,12 +1443,28 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	debug("Loading model " + filePath + " with flags " + std::to_string(desiredImporterFlags));
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(modelPath, desiredImporterFlags);
+	const aiScene* scene = nullptr;
+
+	/*
+		A DTS shape is read by us rather than by Assimp, but comes out of it looking like anything
+		else Assimp would have handed back, so everything below here treats the two the same
+	*/
+	std::unique_ptr<aiScene> dtsScene;
+	std::vector<DtsSequence> dtsSequences;
+
+	if (isDtsPath(modelPath))
+	{
+		dtsScene.reset(loadDtsScene(modelPath, &dtsSequences));
+		scene = dtsScene.get();
+	}
+	else
+		scene = importer.ReadFile(modelPath, desiredImporterFlags);
 
 	if (!scene)
 	{
 		error("Problem loaded model file " + modelPath);
-		error(importer.GetErrorString());
+		if (!isDtsPath(modelPath))
+			error(importer.GetErrorString());
 		return;
 	}
 
@@ -1432,6 +1480,21 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
+
+	/*
+		A DTS shape brings its animations along with it, under whatever names the add-on gave them,
+		so nothing has to add them by hand the way an addAnimation line does for an FBX model. Both
+		sides load the same file in the same order, so the IDs they hand out line up.
+	*/
+	for (const DtsSequence& sequence : dtsSequences)
+	{
+		Animation animation;
+		animation.name = sequence.name;
+		animation.startTime = sequence.startTime;
+		animation.endTime = sequence.endTime;
+		animation.defaultSpeed = sequence.defaultSpeed;
+		addAnimation(animation);
+	}
 }
 
 //Full constructor for client-side loading, includes materials and animations
@@ -1443,9 +1506,16 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	debug("Loading model descriptor file: " + filePath);
 
-	std::ifstream descriptorFile(filePath.c_str());
+	//A .dts is its own descriptor, see the note on this in the server-side constructor above
+	std::istringstream selfDescriptor("file\t" + getFileFromPath(filePath) + "\n");
 
-	if (!descriptorFile.is_open())
+	std::ifstream descriptorFile;
+	if (!isDtsPath(filePath))
+		descriptorFile.open(filePath.c_str());
+
+	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
+
+	if (!isDtsPath(filePath) && !descriptorFile.is_open())
 	{
 		error("Could not open file " + filePath);
 		return;
@@ -1471,9 +1541,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	std::map<std::string, glm::vec4> decalAreas;
 
 	std::string line = "";
-	while (!descriptorFile.eof())
+	while (!descriptor.eof())
 	{
-		getline(descriptorFile, line);
+		getline(descriptor, line);
 
 		//Every line is just two arguments separated by a tab
 
@@ -1571,12 +1641,25 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	debug("Loading model " + filePath + " with flags " + std::to_string(desiredImporterFlags));
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(modelPath, desiredImporterFlags);
+	const aiScene* scene = nullptr;
+
+	//A DTS shape is read by us rather than by Assimp, see the same branch in the constructor above
+	std::unique_ptr<aiScene> dtsScene;
+	std::vector<DtsSequence> dtsSequences;
+
+	if (isDtsPath(modelPath))
+	{
+		dtsScene.reset(loadDtsScene(modelPath, &dtsSequences));
+		scene = dtsScene.get();
+	}
+	else
+		scene = importer.ReadFile(modelPath, desiredImporterFlags);
 
 	if (!scene)
 	{
 		error("Problem loaded model file " + modelPath);
-		error(importer.GetErrorString());
+		if (!isDtsPath(modelPath))
+			error(importer.GetErrorString());
 		return;
 	}
 
@@ -1665,7 +1748,23 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 			}
 
 			debug("Loading material " + std::string(src->GetName().C_Str()));
-			Material* tmp = new Material(std::string(src->GetName().C_Str()),albedoPath,normalPath,roughPath,metalPath, "",textures);
+
+			/*
+				Materials are kept by name, and a DTS one is named by the add-on that wrote it, which
+				means names as common as "black" or "white". Putting its folder in front keeps two
+				add-ons that both have a "black" from being handed each other's texture. The override
+				lookup above still goes by the plain name the shape uses.
+			*/
+			std::string materialName = isDtsPath(modelPath)
+				? folder + std::string(src->GetName().C_Str())
+				: std::string(src->GetName().C_Str());
+
+			/*
+				A DTS material is only a name with a flat texture under it, and the ones add-ons use for
+				shades of grey are all pure black differing only in how see-through they are, so its
+				alpha has to be read rather than dropped, see Texture::addLayer
+			*/
+			Material* tmp = new Material(materialName,albedoPath,normalPath,roughPath,metalPath, "",textures, isDtsPath(modelPath));
 			allMaterials.push_back(tmp);
 
 			if (!tmp->isValid())
@@ -1790,6 +1889,21 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
 
+	/*
+		A DTS shape brings its animations along with it, under whatever names the add-on gave them,
+		so nothing has to add them by hand the way an addAnimation line does for an FBX model. Both
+		sides load the same file in the same order, so the IDs they hand out line up.
+	*/
+	for (const DtsSequence& sequence : dtsSequences)
+	{
+		Animation animation;
+		animation.name = sequence.name;
+		animation.startTime = sequence.startTime;
+		animation.endTime = sequence.endTime;
+		animation.defaultSpeed = sequence.defaultSpeed;
+		addAnimation(animation);
+	}
+
 	valid = true;
 }
 
@@ -1891,6 +2005,37 @@ void Model::renderMesh(std::shared_ptr<ShaderManager> graphics, int meshIdx) con
 		allMeshes[meshIdx]->render(graphics);
 }
 
+void Model::renderMeshOnce(std::shared_ptr<ShaderManager> graphics, int meshIdx) const
+{
+	if (meshIdx >= 0 && meshIdx < (int)allMeshes.size())
+		allMeshes[meshIdx]->renderOnce(graphics);
+}
+
+bool Model::getDrawnBounds(glm::vec3& low, glm::vec3& high) const
+{
+	bool any = false;
+
+	for (unsigned int a = 0; a < allMeshes.size(); a++)
+	{
+		if (allMeshes[a]->nonRenderingMesh || !allMeshes[a]->hasBounds())
+			continue;
+
+		low = any ? glm::min(low, allMeshes[a]->boundsLow) : allMeshes[a]->boundsLow;
+		high = any ? glm::max(high, allMeshes[a]->boundsHigh) : allMeshes[a]->boundsHigh;
+		any = true;
+	}
+
+	if (!any)
+		return false;
+
+	//A negative scale on an axis would turn that side of the box inside out
+	glm::vec3 scaledLow = low * baseScale;
+	glm::vec3 scaledHigh = high * baseScale;
+	low = glm::min(scaledLow, scaledHigh);
+	high = glm::max(scaledLow, scaledHigh);
+	return true;
+}
+
 void Model::renderSingleInstance(unsigned int bufferOffset) const
 {
 	for (unsigned int a = 0; a < allMeshes.size(); a++)
@@ -1928,6 +2073,18 @@ Node::Node(aiNode const* const src, Model * parent)
 
 	//What is this node's default state before any animations
 	CopyaiMat(src->mTransformation, defaultTransform);
+
+	/*
+		The same thing split into a position and a rotation, which is what ModelInstance::calculateNodeTransform
+		rebuilds a node from once it has any animation keys at all. Without this they stay at zero and identity,
+		so any node an animation touches snaps to its parent's origin the moment one plays, or as one fades.
+
+		It goes unnoticed on models whose animated nodes sit at the origin anyway, which is how the FBX ones
+		here are built, but a DTS shape bakes each part's rest position into its node, so its slides and bolts
+		would jump into the middle of the gun. setDefaultFrame overwrites both of these when it's used.
+	*/
+	defaultPos = getTransformFromMatrix(defaultTransform);
+	defaultRot = getRotationFromMatrix(defaultTransform);
 
 	//Assimp gives us meshes as indicies to an array of meshes loaded earlier
 	for (unsigned int a = 0; a < src->mNumMeshes; a++)

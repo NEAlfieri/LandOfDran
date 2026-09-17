@@ -114,6 +114,9 @@ class Dynamic : public SimObject
 	//Client: draws it here rather than where physics or the interpolator have it, like an item in someone's hand, for everything that follows where it's drawn too
 	void setDrawnTransform(const glm::vec3& position, const glm::quat& rotation);
 
+	//Client: what holds its meshes' transforms and per instance render data, nullptr server side
+	ModelInstance* getModelInstance() const { return modelInstance; }
+
 	void play(int id, bool loop) { if (!modelInstance) return; modelInstance->playAnimation(id, loop); }
 
 	void stop(int id) { if (!modelInstance) return;  modelInstance->stopAnimation(id); }

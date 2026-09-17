@@ -168,9 +168,9 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `getDynamicId(netId)` | net ID | Dynamic | Looks up a dynamic by its net ID. Errors if it doesn't exist. |
 | `getDynamicIdx(index)` | 0-based index | Dynamic | Looks up a dynamic by its position in the internal list (see `getNumDynamics`). |
 | `getNumDynamics()` | none | count | How many dynamics currently exist. |
-| `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. |
+| `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. `modelFilePath` is normally a `.txt` descriptor, but a `.dts` (the shapes Blockland add-ons ship their models in) can be given straight to it with no descriptor next to it, see [DTS models](#dts-models). |
 | `getDynamicType(scriptName)` | string | typeID | Looks up a previously-registered type's ID by its script name. |
-| `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone. While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. |
+| `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone. While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. A `.dts` model needs none of these lines: it registers every sequence it came with under its own name, see [DTS models](#dts-models). |
 | `raycast(startX, startY, startZ, endX, endY, endZ[, dynamicToIgnore])` | ray start/end points; optionally a Dynamic to exclude from the hit test | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Casts a ray through the physics world. Returns the Dynamic, Static, or Brick it hit first, then the world position of the hit, the normal of the surface it hit (pointing out of it), and the distance from the start point. If it hit the ground, which has no object, the hit object is `nil` and the rest still follow. Returns just `nil` if it hit nothing. `local hit = raycast(...)` still works if you only need the object. |
 | `addProjectile(typeID, x, y, z, velX, velY, velZ[, tag[, shooter]])` | dynamic type ID; position; velocity in studs per second; any string, `""` by default, or `nil`; a Dynamic, or `nil` | Dynamic | Fires a dynamic that falls with gravity and is turned every tick so its model's +Y points the way it's going (while faster than 8 studs a second). It never falls asleep, and is swept along each physics step so it doesn't skip through thin bricks. It passes through `shooter`, usually the player who fired it. Clients only draw it where the server has it, it never bumps into their own player. The first time it touches anything that collides, the ground included, `ProjectileHit` fires with `tag` and it's removed. Bricks and statics with collision off don't count. |
 
@@ -217,6 +217,27 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getBuoyancy()` | none | number | Current buoyancy. |
 | `dynamic:isItem()` | none | bool | Whether it's an item, which has the `item:` methods below too. |
 | `dynamic:isProjectile()` | none | bool | Whether `addProjectile` made it. |
+
+---
+
+## DTS models
+
+Anywhere a model file path is taken (`newDynamicType` and `newItemType`, which statics and vehicles reuse) the path can point at a `.dts` instead of a `.txt` descriptor. DTS is the shape format Torque and Blockland use, so the models an add-on folder ships can be used as they are:
+
+```lua
+--A Blockland unit is two studs, and a stud is one world unit, so 2 is a DTS model's true size
+pistol = newItemType("pistol","Add-ons/Weapon_Package_Tier1/PISTOL_.dts",2,2,2,"Pistol","")
+```
+
+What to expect from one:
+
+- **No descriptor file is needed.** A `.txt` descriptor can still point its `file` line at a `.dts` when it wants `decalarea` or `material` lines. Assimp's import flags do nothing for a `.dts`, which is read directly.
+- **Scale 2 is true to size**, since a Blockland unit is two studs and a stud is one world unit.
+- **Materials are the image files sitting next to the shape.** A DTS material is only a name, so a material called `black50` looks for `black50.png` (or `.jpg`, `.jpeg`, `.bmp`) in the same folder, ignoring case. They are flat colour textures with no normal or roughness map, which the shaders draw with default values. A material with no image next to it logs an error and draws untextured.
+- **A see-through texture is read as a shade, not as transparency.** Add-ons make their greys out of black at part opacity, so `black25`, `black50` and `black75` are all pure black and differ only in their alpha. Nothing here blends, so each pixel is mixed toward white by how transparent it is and left opaque, which is how they look in Blockland: `black25` comes out light grey, `black75` dark grey, and `blank` (fully transparent white, usually a barrel) comes out white. Greyscale textures are widened to full colour first, so a grey-plus-alpha one like `whiteCheck` doesn't come back as red and green.
+- **Animations come with the model.** Every sequence the shape was exported with is registered under its own name, at the speed it was exported to run at, so `addAnimation` lines aren't needed: `item:playAnimation("fire")` works on a shape that has a `fire` sequence. Both sides load the same file, so the IDs line up.
+- **Only the most detailed detail level is loaded**, and its meshes are named after the objects holding them, which is what `getMeshIdx` and painting see. A mesh whose faces use several materials is split into one mesh per material, named `object_material`.
+- **Only version 24 shapes** are read, which is what Blockland's exporter writes. Anything else logs an error and loads nothing. Vertex animation, sorted meshes, and a shape's bone weights are ignored.
 
 ---
 
@@ -269,7 +290,7 @@ Ctrl+W throws the item in hand the way the player looks.
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
-| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ, uiName, iconPath)` | same as `newDynamicType`; the name shown in the item bar; an image for its slot, relative to the game folder, or `""` for none, which shows the name instead | typeID | Registers a kind of item. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. |
+| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ, uiName, iconPath)` | same as `newDynamicType`; the name shown in the item bar; an image for its slot, relative to the game folder, or `""` for none, which shows the name instead | typeID | Registers a kind of item. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. A `.dts` model works here too, see [DTS models](#dts-models). |
 | `setItemHand(typeID, gripX, gripY, gripZ, pitch, yaw, roll)` | item type ID; the point on the model that goes in the hand, in world units after scaling; degrees around the x, y, and z axes | none | How items of a type sit in a hand. Unturned, the model's +Y points up out of the hand and its -Z the way its holder faces, and a negative pitch leans its top forward. Call it at startup, before anyone joins. By default the model's origin is in the hand, unturned. |
 | `createItem(typeID, x, y, z)` | item type ID from `newItemType`; position | Item | Spawns an item on the ground. Logs an error for a type that isn't an item type. |
 | `getNumItems()` | none | count | How many items exist, carried or not. |
@@ -289,6 +310,68 @@ Along with every `dynamic:` method.
 | `item:stopAnimation([name])` | animation name, or nothing | none | Stops the looping animation if it's the one named, or whatever loops without a name. A swing finishes the one it's partway through. |
 | `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`. |
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
+
+---
+
+## Click prediction
+
+A click normally has to reach the server before anything happens, so a shot is heard and seen a
+round trip after the button goes down. `client:setClickAction` gets ahead of that: it tells one
+client's game what their *next* click with an item will look like, and their game plays it the
+moment they click.
+
+Only the look of it is predicted. The shot, what it hits, and the ammo are all still worked out by
+the server, so the worst a wrong guess can do is show a flash that shouldn't have happened.
+
+Because the server says what the **next** click does, the client never needs to know any rules: an
+empty gun is simply sent the dry click track instead of the firing one.
+
+| Function | Arguments | Returns | Description |
+|---|---|---|---|
+| `client:setClickAction(item, action)` | the item it applies to; a table, see below | none | What that client's game plays the instant they click while holding that item. Replaces whatever was set before. |
+| `client:setClickAction()` | none | none | Stop predicting anything, for a client holding something that isn't a weapon. |
+
+The action table:
+
+| Field | Default | Description |
+|---|---|---|
+| `steps` | required | The things that happen, in a list. |
+| `repeatMS` | `0` | While the button stays down, the track may play again this often without asking the server, for an automatic weapon. `0` plays once per click. |
+| `repeatLimit` | `0` | How many more times the track may play before you send another, which is what keeps a client from showing more shots than the magazine holds. It covers an automatic weapon carrying on while held **and** someone clicking faster than the round trip. Send a fresh action after every shot; the client subtracts the plays it has made that you haven't answered for yet, so a refresh never hands back rounds already spent. |
+
+Each step happens `at` milliseconds after the click, and is one of a sound, an animation, an
+emitter, or a light, by which of those fields it has:
+
+| Field | Description |
+|---|---|
+| `at` | Milliseconds after the click, `0` for right away. |
+| `sound` | A sound type name, with optional `pitch` and `volume`. It follows the item. |
+| `animation` | The name of one of the item model's animations, played once. |
+| `emitter` | An emitter type name. Ejects for `forMS`. |
+| `light` | `{r, g, b}`, with `brightness`, `coronaWidth` and `forMS`. Lights and casts shadows like any other light. |
+| `forMS` | How long an emitter or light lasts. |
+| `offset` | Where an emitter or light sits in the item's **own** space, so it stays on the end of the barrel as the item moves. This is the model's own muzzle point, not an offset from the player. |
+
+```lua
+client:setClickAction(pistol, {
+	repeatMS = 96, repeatLimit = 34,
+	steps = {
+		{ at = 0,   sound = "PistolFire" },
+		{ at = 0,   animation = "fire" },
+		{ at = 0,   emitter = "MuzzleFlash", forMS = 60, offset = {0, 0.6, -2.2} },
+		{ at = 0,   light = {1, 0.9, 0.5}, brightness = 35, coronaWidth = 0.35, forMS = 60, offset = {0, 0.6, -2.2} },
+		{ at = 115, sound = "PistolClick" }
+	}
+})
+```
+
+Anything the server plays itself when the shot happens is seen by the shooter **as well as** their
+predicted copy, so a sound is best sent to everyone else with `client:playSound` rather than from
+the item, and a light the server makes is worth turning down. There's no way yet to broadcast an
+emitter or an animation to everyone *except* one client.
+
+The client is only told about the item it's holding, so a predicted action stops mattering as soon
+as they put it away. An action is dropped if the item it names isn't what they click with.
 
 ---
 

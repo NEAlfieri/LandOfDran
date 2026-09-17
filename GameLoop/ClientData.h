@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Networking/JoinedClient.h"
+#include "../Networking/ClickAction.h"
 #include "../SimObjects/Dynamic.h"
 #include "../SimObjects/Light.h"
 #include "../SimObjects/Item.h"
@@ -120,6 +121,16 @@ struct ClientData
 
 	//Tells their game which items are in which of their slots
 	void sendInventory() const;
+
+	/*
+		Tells their game what to play the moment they click with an item, before it hears back about
+		the click at all, see Networking/ClickAction.h. Only the look of it: the shot itself is still
+		worked out here. Send one with no item to stop predicting anything
+	*/
+	void sendClickAction(const ClickAction& action) const;
+
+	//Goes up with every click action sent, so their game can tell a replaced one from the one running
+	mutable uint32_t clickActionGeneration = 0;
 
 	//Turns their flashlight on in color (or just recolors it), or off, playing LightOn or LightOff from their player for anyone nearby
 	//Won't turn it on while flashlightEnabled is off, or without a player from setDefaultController to hold it

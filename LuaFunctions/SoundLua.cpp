@@ -118,7 +118,7 @@ void sendSoundState(const ServerProgramData* pd, JoinedClient* client)
 }
 
 //-1 if there isn't one
-static int findSoundType(const std::string& name)
+int findSoundType(const std::string& name)
 {
 	for (size_t a = 0; a < LUA_pd->soundTypes.size(); a++)
 		if (LUA_pd->soundTypes[a].name == name)

@@ -891,11 +891,12 @@ void InstancedBrickRenderer::drawChunkShadow(const Chunk* chunk, bool opaque, bo
 	glBindVertexArray(0);
 }
 
-void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatrix, bool opaque, bool transparent, bool tintProgram, const std::vector<GroupDraw>* draws, const glm::vec3* skipPoint) const
+void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatrix, bool opaque, bool transparent, bool tintProgram, const std::vector<GroupDraw>* draws, const glm::vec3* skipPoint, bool cullNear) const
 {
 	std::array<glm::vec4, 6> planes = frustumPlanes(lightSpaceMatrix);
 	//Chunks between the light and the cascade still shadow it, GL_DEPTH_CLAMP flattens them onto its near plane
-	planes[4] = glm::vec4(0, 0, 0, 1);
+	if (!cullNear)
+		planes[4] = glm::vec4(0, 0, 0, 1);
 
 	GLint specialUniform = tintProgram ? tintSpecialMeshUniform : shadowSpecialMeshUniform;
 	GLint transformUniform = tintProgram ? tintTransformUniform : shadowTransformUniform;

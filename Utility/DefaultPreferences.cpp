@@ -82,7 +82,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("graphics/pointshadows",	"How many of the lights nearest the camera cast shadows, each costs up to six extra shadow passes a frame");
 	settings->addEnum("graphics/pointshadowquality",	2,				"Point Shadow Quality",	{"Low","Medium","High"});
 	settings->setTooltip("graphics/pointshadowquality", "How sharp those lights' shadows are. Each step doubles the size of every cube face, so at 8 shadowed lights High takes about 200 MB of video memory where Low takes 13");
-	settings->addEnum("graphics/godrayquality",		1, 	 			"God ray samples", 	{"None","32 samples","64 samples","96 samples","128 samples"});
+	settings->addEnum("graphics/godrayquality",		0, 	 			"God ray samples", 	{"None","32 samples","64 samples","96 samples","128 samples"});
+	settings->setTooltip("graphics/godrayquality",	"Sunlight streaming past whatever is between you and the sun. Costs an extra pass over everything in view, plus more work per pixel the more samples you ask for, and nothing at all at night or with your back to the sun");
 	settings->addEnum("graphics/spritedensity",		1, 				"Sprite density",	{"Low","Medium","High","Very High"});
 	settings->addFloat("graphics/brickdebrisseconds",	3.6f, false,	"Brick Debris Seconds",0,15);
 	settings->setTooltip("graphics/brickdebrisseconds", "How long removed bricks stay as debris, 0 for none");
@@ -90,6 +91,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("graphics/maxparticles",	"Emitters stop making particles while this many are alive, 0 for no particles");
 	settings->addInt("graphics/maxvideoprints",		4, false,		"Video Prints Playing", 0, 32);
 	settings->setTooltip("graphics/maxvideoprints",	"How many .webm prints play at once, the rest hold a frame. Each one decodes video every frame it's in the world");
+	settings->addBool("graphics/itemicons3d",		true, false,	"3D Item Icons");
+	settings->setTooltip("graphics/itemicons3d",	"The item bar shows a little drawing of each item you're carrying instead of its flat icon, and turns the one you have picked. Off uses whatever icon the server gave the item");
 	settings->addEnum("graphics/rainquality",		2,				"Rain Quality",		{"Sound Only","Low","Medium","High"});
 	settings->setTooltip("graphics/rainquality",		"Falling drops, splashes, and wet surfaces when a server makes it rain. Costs nothing while it isn't raining");
 

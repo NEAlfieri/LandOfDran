@@ -31,3 +31,7 @@ rain	vert	rain.vert.glsl
 rain	frag	rain.frag.glsl
 rainSplash	vert	rainSplash.vert.glsl
 rainSplash	frag	rainSplash.frag.glsl
+godRayMask	vert	sky.vert.glsl
+godRayMask	frag	godRayMask.frag.glsl
+godRay	vert	underwater.vert.glsl
+godRay	frag	godRay.frag.glsl

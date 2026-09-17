@@ -158,6 +158,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new CenterPrintPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case SetClickAction:
+					packets.push_back(new SetClickActionPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case HighlightAppearance:
 					packets.push_back(new HighlightAppearancePacket(packetHoldTime, event.packet));
 					return NotKicked;

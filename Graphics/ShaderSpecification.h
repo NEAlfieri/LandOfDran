@@ -194,6 +194,10 @@ class ShaderManager
 	Program* rainShader = new Program();
 	Program* rainSplashShader = new Program();
 
+	//Programs for the sun disc the god rays come from and for the rays themselves, see LoopClient::renderGodRays
+	Program* godRayMaskShader = new Program();
+	Program* godRayShader = new Program();
+
 	/*
 		Reads a text file to see where we should find the shader files for the above programs
 		Returns true if there was an error with at least one shader compilation

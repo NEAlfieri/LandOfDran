@@ -95,7 +95,13 @@ class LoopClient
 	//Fills the item bar's slots from the items the server says we carry
 	void updateItemHotbar();
 
+	//Draws the model of each item we carry into its own little texture for the item bar to show, see ItemIconRenderer
+	void renderItemIcons();
+
 	//Moves item swings along and draws carried items in their holders' hands, or hides them, after the camera moves for the frame
+	//The item our own item bar has picked, which is what a click acts with
+	std::shared_ptr<Item> getOwnEquippedItem() const;
+
 	void placeHeldItems(float deltaT);
 
 	//Puts every dynamic with a name tag (players' names, see serverstart.lua) on screen over its head, for the GUI to draw
@@ -145,6 +151,15 @@ class LoopClient
 
 	//Picks up graphics/shadowsoftness, and (re)creates the shadow cascades if graphics/shadowresolution changed
 	void createShadowTarget(std::shared_ptr<SettingManager> settings);
+
+	//How bright a pixel with nothing but open sky the whole way to the sun comes out, before sunset and camera fades
+	static constexpr float godRayStrength = 0.35f;
+
+	//Picks up graphics/godrayquality, and (re)creates the god ray mask for the window size, or frees it when they're off
+	void createGodRayTarget(std::shared_ptr<SettingManager> settings);
+
+	//Rays of sunlight past whatever is between the camera and the sun, blended onto the finished scene
+	void renderGodRays();
 
 	//Sky, models, grass, and bricks from the currently uploaded camera into the currently bound frame buffer
 	void renderScene(bool clipAtWater);

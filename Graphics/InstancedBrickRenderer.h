@@ -253,9 +253,12 @@ class InstancedBrickRenderer
 		Expects shaders->brickShadowCascadeShader, or brickShadowTintShader with tintProgram set, to be in use
 		Draws the chunks that can cast into one shadow cascade, then any brick groups in draws
 		A point light's pass passes where it is as skipPoint, which each group gets in its own space
+		cullNear is for a pass drawn from the camera rather than from a light, see LoopClient::renderGodRays:
+		a shadow pass wants what's behind its near plane, since that still casts into the cascade, but a
+		camera pass would only be submitting chunks behind the viewer for the clipper to throw away
 	*/
 	void renderShadowCascade(const glm::mat4& lightSpaceMatrix, bool opaque, bool transparent, bool tintProgram = false,
-		const std::vector<GroupDraw>* draws = nullptr, const glm::vec3* skipPoint = nullptr) const;
+		const std::vector<GroupDraw>* draws = nullptr, const glm::vec3* skipPoint = nullptr, bool cullNear = false) const;
 
 	bool hasTransparentBricks() const;
 

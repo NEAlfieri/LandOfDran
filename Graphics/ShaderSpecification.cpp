@@ -96,6 +96,10 @@ bool ShaderManager::readShaderList(const std::string &filePath)
 				rainShader = lastProgram;
 			else if (programName == "rainSplash")
 				rainSplashShader = lastProgram;
+			else if (programName == "godRayMask")
+				godRayMaskShader = lastProgram;
+			else if (programName == "godRay")
+				godRayShader = lastProgram;
 			else
 				error("Invalid program name " + programName);
 		}

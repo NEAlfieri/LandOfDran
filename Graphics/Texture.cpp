@@ -302,7 +302,13 @@ Texture *TextureManager::createTexture(unsigned int desiredLayers, std::string n
 
 	//Texture cannot be used until you load desiredLayers layers with addLayer
 	Texture* ret = new Texture();
-	ret->textureType = (desiredLayers == 1) ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY;
+	/*
+		Even a one layer texture is an array texture. The only thing that asks for one of these is a
+		material, whose layers the shaders always sample as an array, and a material with nothing but
+		an albedo (like the flat textures a DTS shape names) would otherwise come out as a plain 2D
+		texture that Texture::addLayer refuses to fill.
+	*/
+	ret->textureType = GL_TEXTURE_2D_ARRAY;
 	ret->layers = desiredLayers;
 	ret->name = name;
 	ret->hasMipmaps = makeMipmaps;
@@ -313,7 +319,7 @@ Texture *TextureManager::createTexture(unsigned int desiredLayers, std::string n
 	return ret;
 }
 
-void Texture::addLayer(std::string filePath)
+void Texture::addLayer(std::string filePath, bool flattenAlphaOntoWhite)
 {
 	scope("Texture::addLayer");
 
@@ -369,6 +375,15 @@ void Texture::addLayer(std::string filePath)
 		channels = readChannels;
 		isHDR = readHDR;
 
+		/*
+			The flat textures a DTS shape names come in whatever shape the add-on saved them, including
+			greyscale ones with an alpha channel. Those would go up as a two channel texture and be read
+			back as red and green, turning a white detail orange, so everything here is widened to full
+			colour and the alpha is then flattened out below.
+		*/
+		if (flattenAlphaOntoWhite && !isHDR)
+			channels = 4;
+
 		//Allocate all the space for all the layers of the texture 
 		glBindTexture(textureType, handle);
 		glTexImage3D(
@@ -401,6 +416,26 @@ void Texture::addLayer(std::string filePath)
 	{
 		error("Error processing image " + filePath);
 		return;
+	}
+
+	/*
+		Mix every pixel toward white by how transparent it is, then leave it opaque, for the flat
+		textures a DTS shape names. Nothing here blends, so without this their alpha is thrown away
+		and every shade of grey an add-on made out of see-through black comes out the same black.
+	*/
+	if (flattenAlphaOntoWhite && !isHDR && channels == 4)
+	{
+		unsigned char* pixels = (unsigned char*)data;
+		for (int pixel = 0; pixel < width * height; pixel++)
+		{
+			unsigned char* at = pixels + pixel * 4;
+			float opacity = at[3] / 255.0f;
+
+			for (int channel = 0; channel < 3; channel++)
+				at[channel] = (unsigned char)(at[channel] * opacity + 255.0f * (1.0f - opacity) + 0.5f);
+
+			at[3] = 255;
+		}
 	}
 
 	//Actually pass pixel data to OpenGL / graphics card

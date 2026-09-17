@@ -16,6 +16,7 @@
 #include "PacketsFromServer/MeshAppearance.h"
 #include "PacketsFromServer/ServerPerformanceDetails.h"
 #include "PacketsFromServer/CenterPrint.h"
+#include "PacketsFromServer/SetClickAction.h"
 #include "PacketsFromServer/HighlightAppearance.h"
 #include "PacketsFromServer/NameTag.h"
 #include "PacketsFromServer/WorldStateUpdate.h"

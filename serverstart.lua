@@ -28,6 +28,9 @@ setItemHand(dranLauncherItem,0,0.2,0.1,0,0,0)
 addAnimation(dranLauncherItem,"fire",0,25,0.04,0,0)
 launcherShell = newDynamicType("launcherShell","Assets/dranlauncher/shell.txt",0.01,0.01,0.01)
 
+--The Tier+Tactical Tier 1 add-on: its models, its weapons, and dropWeaponPackage
+dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
+
 --Sounds, with the old game's names and file names. Clients play ClickMove, ClickRotate, Jump, and BrickBreak on their own
 --when the server has sounds by those names. A file that isn't in Assets/sound/ logs an error and is skipped
 newSoundType("ClickMove","Assets/sound/clickMove.wav")

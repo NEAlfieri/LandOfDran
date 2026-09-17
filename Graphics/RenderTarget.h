@@ -31,7 +31,14 @@ class RenderTarget
 		bool depthCompare = false;
 		//Without a depth result there's still a depth render buffer to depth test against, unless this is off
 		bool useDepthBuffer = true;
+		//How the color result reads outside itself. GL_CLAMP_TO_BORDER reads black, which a pass sampling
+		//past the edge of the screen wants, see the god ray mask in LoopClient::renderGodRays
+		GLenum colorWrap = GL_REPEAT;
 	} settings;
+
+	//What was drawn into it, to show somewhere that takes a plain texture, like an ImGui image. Its rows run
+	//bottom to top the way OpenGL fills them, so anything expecting the top row first has to flip its V coordinate
+	Texture* getColorResult() const { return colorResult; }
 
 	void bindDepthResult(TextureLocations loc) const { if (!depthResult) return; depthResult->bind(loc); }
 	void bindColorResult(TextureLocations loc) const { if (!colorResult) return; colorResult->bind(loc); }

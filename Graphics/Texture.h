@@ -123,8 +123,15 @@ class Texture
 	//For handing to ImGui::Image
 	GLuint getHandle() const { return handle; }
 
-	//Loads one layer of a 2D texture array from a file
-	void addLayer(std::string filePath);
+	/*
+		Loads one layer of a 2D texture array from a file
+
+		flattenAlphaOntoWhite mixes each pixel toward white by how transparent it is, and leaves it
+		opaque. It's how the flat textures a DTS shape names are meant to be read: the ones Blockland
+		add-ons use for shades of grey are all pure black and differ only in their alpha, so taken at
+		face value a whole model comes out black. See the DTS models section of LuaAPI.md.
+	*/
+	void addLayer(std::string filePath, bool flattenAlphaOntoWhite = false);
 };
 
 /*

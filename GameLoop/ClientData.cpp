@@ -216,6 +216,18 @@ void ClientData::dropAllItems(const ServerProgramData* pd)
 	1 byte					-	packet type
 	4 bytes per slot		-	net ID of the item in each slot, NO_ID for an empty one
 */
+void ClientData::sendClickAction(const ClickAction& action) const
+{
+	if (!client)
+		return;
+
+	ENetPacket* packet = enet_packet_create(NULL, 1 + action.packedSize(), getFlagsFromChannel(OtherReliable));
+	packet->data[0] = (unsigned char)SetClickAction;
+	action.writeTo(packet->data + 1);
+
+	client->send(packet, OtherReliable);
+}
+
 void ClientData::sendInventory() const
 {
 	if (!client)

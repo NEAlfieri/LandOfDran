@@ -389,8 +389,43 @@ void LoopClient::updateItemHotbar()
 		}
 
 		const std::shared_ptr<DynamicType>& type = dynamic->getType();
-		pd.itemHotbar->setSlot(slot, true, type->itemName, findItemIcon(type->itemIconPath));
+
+		//The item's own model drawn a moment ago by renderItemIcons, or the flat icon its type came with
+		if (Texture* drawn = pd.itemIcons ? pd.itemIcons->getIcon(slot) : nullptr)
+			pd.itemHotbar->setSlot(slot, true, type->itemName, drawn, true);
+		else
+			pd.itemHotbar->setSlot(slot, true, type->itemName, findItemIcon(type->itemIconPath));
 	}
+}
+
+//How long the picked item takes to turn all the way around in the item bar, milliseconds
+static constexpr double itemIconSpinMS = 6000.0;
+
+//How far the items we aren't holding are turned, radians, so they're seen from a corner rather than straight on
+static constexpr float itemIconRestAngle = 0.6f;
+
+void LoopClient::renderItemIcons()
+{
+	//Nothing to draw into, or the bar is away and whatever was drawn last is still what it would show
+	if (!pd.itemIcons || !pd.itemHotbar || !pd.itemHotbar->isUp() || !simulation.dynamics)
+		return;
+
+	std::vector<ItemIconRenderer::Request> requests(inventorySize);
+	float spin = (float)fmod(getTicksMS() / itemIconSpinMS, 1.0) * 6.2831853f;
+
+	for (int slot = 0; slot < inventorySize; slot++)
+	{
+		std::shared_ptr<Dynamic> dynamic = simulation.inventory[slot] != NO_ID ? simulation.dynamics->find(simulation.inventory[slot]) : nullptr;
+		if (!dynamic || dynamic->getKind() != DynamicKind_Item)
+			continue;
+
+		requests[slot].model = dynamic->getType()->getModel().get();
+		requests[slot].instance = dynamic->getModelInstance();
+		requests[slot].angle = slot == pd.itemHotbar->getSelected() ? spin : itemIconRestAngle;
+	}
+
+	GpuZone zone(pd.profiler, "Item icons");
+	pd.itemIcons->render(pd.shaders, requests, (int)pd.context->getResolution().x, (int)pd.context->getResolution().y);
 }
 
 //How far away a name tag still shows, and where it starts fading out, world units
@@ -459,6 +494,27 @@ void LoopClient::updateNameTags()
 
 		pd.gui->nameTags.push_back(tag);
 	}
+}
+
+/*
+	The item in the slot our own item bar has picked, which is what a click acts with. Picked from our
+	inventory rather than Item::equipped so it changes the moment we choose a slot, the same way
+	placeHeldItems draws it, instead of once the server hears about it
+*/
+std::shared_ptr<Item> LoopClient::getOwnEquippedItem() const
+{
+	if (!simulation.dynamics || !pd.itemHotbar || !pd.itemHotbar->isUp())
+		return nullptr;
+
+	int slot = pd.itemHotbar->getSelected();
+	if (slot < 0 || slot >= inventorySize || simulation.inventory[slot] == NO_ID)
+		return nullptr;
+
+	std::shared_ptr<Dynamic> dynamic = simulation.dynamics->find(simulation.inventory[slot]);
+	if (!dynamic || dynamic->getKind() != DynamicKind_Item)
+		return nullptr;
+
+	return std::static_pointer_cast<Item>(dynamic);
 }
 
 void LoopClient::placeHeldItems(float deltaT)
@@ -738,6 +794,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 				pd.context->setSize(e.window.data1, e.window.data2);
 				simulation.camera->setAspectRatio(pd.context->getResolution().x / pd.context->getResolution().y);
 				createWaterTargets(settings);
+				createGodRayTarget(settings);
 			}
 		}
 		else if (e.type == SDL_MOUSEMOTION && pd.context->getMouseLocked())
@@ -831,6 +888,20 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			glm::vec3 worldPos = simulation.camera->mouseCoordsToWorldSpace(glm::vec2(x, y));
 			glm::vec3 dir = simulation.camera->getDirection();
 
+			/*
+				A click with a weapon plays what the server already said it would, right now, rather than
+				once the shot comes back. Purely what it looks and sounds like, see Networking/ClickAction.h
+			*/
+			if (e.button.button == SDL_BUTTON_LEFT && pd.context->getMouseLocked())
+			{
+				std::shared_ptr<Item> equipped = getOwnEquippedItem();
+				if (equipped)
+				{
+					pd.clickActions->onClick(equipped->getID(),
+						pd.particles ? pd.particles->getNowMS() : (double)SDL_GetTicks(), pd.audio.get(), equipped);
+				}
+			}
+
 			//Our player reaches out on every left click while playing, whether or not it hits anything, and the server shows everyone else
 			if (e.button.button == SDL_BUTTON_LEFT && pd.context->getMouseLocked() && !simulation.controllers.empty())
 			{
@@ -860,7 +931,11 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		else if (e.type == SDL_MOUSEBUTTONUP && simulation.camera && client && cmdArgs.gameState == InGame)
 		{
 			if (e.button.button == SDL_BUTTON_LEFT)
+			{
 				pd.selectionBox.release();
+				//Nothing repeats once the trigger is let go
+				pd.clickActions->onRelease();
+			}
 			if (e.button.button == SDL_BUTTON_RIGHT)
 				jetSuppressed = false;
 
@@ -897,6 +972,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		simulation.idealBufferSize = settings->getInt("network/snapshotbuffer");
 		createWaterTargets(settings);
 		createShadowTarget(settings);
+		createGodRayTarget(settings);
 		pd.audio->setVolumes(settings->getFloat("audio/mastervolume"), settings->getFloat("audio/musicvolume"));
 		pd.audio->setEnvironmentOptions(settings->getInt("audio/reverbquality"), settings->getInt("audio/occlusionquality"));
 		pd.acousticProbe.setQuality(settings->getInt("audio/reverbquality"), settings->getInt("audio/occlusionquality"));
@@ -909,6 +985,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
 		pd.depthPrePass = settings->getBool("graphics/depthprepass");
 		pd.rain.setQuality(settings->getInt("graphics/rainquality"), pd.textures);
+
+		pd.itemIcons3d = settings->getBool("graphics/itemicons3d");
+		if (!pd.itemIcons3d)
+			pd.itemIcons.reset();
+		else if (!pd.itemIcons)
+			pd.itemIcons = std::make_shared<ItemIconRenderer>(pd.textures);
 	}
 
 	if (pd.debugMenu->passwordSubmitted())
@@ -1487,6 +1569,142 @@ void LoopClient::createShadowTarget(std::shared_ptr<SettingManager> settings)
 	pd.shadowTint = std::make_shared<RenderTarget>(tintSettings, pd.textures);
 }
 
+void LoopClient::createGodRayTarget(std::shared_ptr<SettingManager> settings)
+{
+	//0 = off, then 32 samples per step, see SettingGodRay
+	int quality = std::min(std::max(settings->getInt("graphics/godrayquality"), 0), 4);
+	pd.godRaySamples = quality * 32;
+
+	pd.godRayMask.reset();
+	if (pd.godRaySamples < 1)
+		return;
+
+	/*
+		Half the width and height of the screen. Nothing shades into it, so what it costs is almost all
+		drawing the occluders' shapes, and the rays that come out of it are soft enough that a sharper
+		mask wouldn't show. Anything thinner than a couple of pixels does drop out of it, but a wire
+		that thin doesn't throw a visible ray either
+	*/
+	RenderTarget::RenderTargetSettings maskSettings;
+	maskSettings.width = std::max(1, (int)pd.context->getResolution().x / 2);
+	maskSettings.height = std::max(1, (int)pd.context->getResolution().y / 2);
+	//Only how much sun is at each pixel, and no depth to read back, just one to test against
+	maskSettings.channels = 1;
+	maskSettings.useDepth = false;
+	maskSettings.useDepthBuffer = true;
+	//A sun just off the edge of the screen still throws rays in, and the march after it has to read
+	//black out there rather than smearing the edge of the mask across the sky
+	maskSettings.colorWrap = GL_CLAMP_TO_BORDER;
+
+	pd.godRayMask = std::make_shared<RenderTarget>(maskSettings, pd.textures);
+	if (!pd.godRayMask->isValid())
+	{
+		error("Couldn't make the god ray mask, there won't be any god rays");
+		pd.godRayMask.reset();
+		pd.godRaySamples = 0;
+	}
+}
+
+/*
+	God rays, the light that streams out past the edges of whatever is between the camera and the sun.
+
+	Same two steps the old game used: everything solid is drawn flat black into a small target with the sun
+	disc painted into whatever sky it left showing, then every pixel of the screen marches across that mask
+	toward the sun and takes light from however much open sky it crossed. A pixel whose line to the sun runs
+	along the edge of a roof crosses sky the whole way and comes out bright; one just inside the shadow that
+	roof throws out from the sun crosses none and stays dark. It's the difference between neighbours like
+	those that reads as a ray.
+
+	It's an extra pass over the bricks and models in view, so it's off unless the player asks for it
+*/
+void LoopClient::renderGodRays()
+{
+	if (pd.godRaySamples < 1 || !pd.godRayMask || !simulation.camera)
+		return;
+
+	//Only the sun's own disc throws rays, and a .hdr sky has its sun painted into the image with no disc drawn
+	if (pd.shaders->skyUniforms.DaySkybox == SkyboxHDR)
+		return;
+
+	//Goes to 0 as the sun reaches the horizon and the night sky fades in over it, see Environment::skyboxBlend
+	float daylight = 1.0f - pd.environment.skyboxBlend;
+	if (daylight <= 0.01f)
+		return;
+
+	glm::vec3 sunDirection = glm::normalize(pd.environment.sunDirection);
+
+	/*
+		Where the sun is on screen. It's infinitely far away, so only its direction matters, and CameraAngle is
+		the view matrix without the camera's position in it. Behind the camera the projection turns that around
+		into a mirror image on the wrong side of the screen, so the rays fade out well before the sun gets there
+	*/
+	glm::vec4 clip = pd.shaders->cameraUniforms.CameraProjection * pd.shaders->cameraUniforms.CameraAngle * glm::vec4(sunDirection, 0.0f);
+	float facing = glm::smoothstep(0.0f, 0.25f, glm::dot(glm::normalize(simulation.camera->getDirection()), sunDirection));
+	if (clip.w <= 0.0001f || facing <= 0.0f)
+		return;
+
+	float strength = facing * daylight * godRayStrength;
+	glm::vec2 sunScreen = glm::vec2(clip.x, clip.y) / clip.w * 0.5f + 0.5f;
+
+	GpuZone zone(pd.profiler, "God rays");
+
+	//The mask: everything solid in flat black, from exactly the camera the scene was just drawn from
+	glm::mat4 cameraMatrix = pd.shaders->cameraUniforms.CameraProjection * pd.shaders->cameraUniforms.CameraView;
+	pd.godRayMask->use();
+
+	//renderScene left these set for the grass, and modelShadowCascade.vert reads nonInstanced to decide
+	//whether a mesh is placed by the model matrix or by its own instance transform
+	pd.shaders->basicUniforms.nonInstanced = 0;
+	pd.shaders->basicUniforms.cameraSpacePosition = 0;
+	pd.shaders->updateBasicUBO();
+
+	//Models aren't guaranteed to be closed meshes, so both sides block the sun
+	glDisable(GL_CULL_FACE);
+	pd.shaders->modelShadowCascadeShader->use();
+	glUniformMatrix4fv(pd.shadowCascadeMatrixUniformModel, 1, GL_FALSE, &cameraMatrix[0][0]);
+	for (unsigned int a = 0; a < simulation.dynamicTypes.size(); a++)
+		simulation.dynamicTypes[a]->render(pd.shaders, false);
+	if (pd.tireModel)
+		pd.tireModel->render(pd.shaders, false);
+	glEnable(GL_CULL_FACE);
+
+	//Opaque bricks only: light comes through a transparent one, so it shouldn't cut a ray off
+	pd.shaders->brickShadowCascadeShader->use();
+	glUniformMatrix4fv(pd.shadowCascadeMatrixUniformBrick, 1, GL_FALSE, &cameraMatrix[0][0]);
+	glUniform1f(pd.shadowCascadeMinOpacityUniform, 0.5f);
+	glUniform1i(pd.shadowCascadeSkipContainingUniform, 0);
+	pd.brickRenderer->renderShadowCascade(cameraMatrix, true, false, false, &vehicleDraws, nullptr, true);
+
+	//The sun disc, which only reaches the pixels none of that covered. Same far plane trick renderScene's sky uses
+	pd.shaders->godRayMaskShader->use();
+	glDepthFunc(GL_LEQUAL);
+	glDepthMask(GL_FALSE);
+	glBindVertexArray(pd.skyVao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	//The rays themselves, added onto the scene: light reaching the camera through the air, never blocked by it
+	pd.context->select();
+	pd.shaders->godRayShader->use();
+	pd.godRayMask->bindColorResult(GodRayMask);
+	glUniform2f(pd.godRaySunScreenUniform, sunScreen.x, sunScreen.y);
+	glUniform1i(pd.godRaySampleCountUniform, pd.godRaySamples);
+	glUniform1f(pd.godRayStrengthUniform, strength);
+
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glBindVertexArray(pd.skyVao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0);
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+}
+
 void LoopClient::renderScene(bool clipAtWater)
 {
 	//The water's reflection and refraction draw the scene again, which would just overwrite these,
@@ -1980,7 +2198,20 @@ void LoopClient::renderEverything(float deltaT)
 	simulation.camera->render(pd.shaders, deltaT, pd.physicsWorld);
 
 	placeHeldItems(deltaT);
-	updateItemHotbar();
+
+	/*
+		Anything a predicted click started keeps going here: its later sounds, and its muzzle flash and
+		light, which sit on the item wherever placeHeldItems just drew it, see Networking/ClickAction.h
+	*/
+	{
+		std::shared_ptr<Item> equipped = getOwnEquippedItem();
+		bool drawn = equipped && equipped->renderedTransformInitialized && !equipped->getHidden();
+
+		pd.clickActions->update(pd.particles ? pd.particles->getNowMS() : (double)SDL_GetTicks(),
+			pd.audio.get(), pd.particles, equipped,
+			drawn ? equipped->renderedPosition : glm::vec3(0),
+			drawn ? equipped->renderedRotation : glm::quat(1, 0, 0, 0), drawn);
+	}
 
 	vehicleDraws.clear();
 	if (simulation.vehicles)
@@ -2149,6 +2380,10 @@ void LoopClient::renderEverything(float deltaT)
 	glDisable(GL_DEPTH_CLAMP);
 
 	std::vector<PointLightSource> lightSources;
+
+	//Lights a predicted click is shining, which are ours alone and aren't objects the server knows about
+	pd.clickActions->addLights(lightSources);
+
 	if (simulation.lights)
 	{
 		Uint32 now = SDL_GetTicks();
@@ -2362,6 +2597,11 @@ void LoopClient::renderEverything(float deltaT)
 		pd.rain.render(pd.shaders, pd.skyVao, pd.context->getResolution().y);
 	}
 
+	//Sunlight streaming past whatever is between the camera and the sun. Under the water there's no sun disc
+	//drawn to come from, the surface overhead is in the way of it
+	if (!(simulation.waterEnabled && cameraUnderwater))
+		renderGodRays();
+
 	//Outlines/highlights: a selection-style indicator that should show through everything in the scene except
 	//its own source object (so it doesn't just paint a solid blob over the object it's highlighting) and other
 	//highlights (so overlapping highlights never fight over which one is "in front"). Scene depth is ignored
@@ -2458,6 +2698,10 @@ void LoopClient::renderEverything(float deltaT)
 	//Covers the scene while picking how our player looks
 	if (pd.appearanceEditor->isOpen())
 		pd.appearanceEditor->renderPreview(pd.shaders, (int)pd.context->getResolution().x, (int)pd.context->getResolution().y, deltaT);
+
+	//After everything drawn into the scene, which these have nothing to do with, and before the bar that shows them
+	renderItemIcons();
+	updateItemHotbar();
 
 	//GUI
 	updateNameTags();
@@ -2899,6 +3143,9 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.brickHotbar = pd.gui->createWindow<BrickHotbar>();
 	pd.paintMenu = pd.gui->createWindow<PaintMenu>(pd.input);
 	pd.itemHotbar = pd.gui->createWindow<ItemHotbar>();
+	pd.itemIcons3d = settings->getBool("graphics/itemicons3d");
+	if (pd.itemIcons3d)
+		pd.itemIcons = std::make_shared<ItemIconRenderer>(pd.textures);
 	pd.appearanceEditor = pd.gui->createWindow<AppearanceEditor>(settings, pd.textures, &pd.faceNames, &pd.shirtNames);
 	pd.wrenchDialog = pd.gui->createWindow<WrenchDialog>();
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
@@ -3024,6 +3271,9 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.shadowTintMinOpacityUniform = pd.shaders->brickShadowTintShader->getUniformLocation("minOpacity");
 	pd.shadowCascadeSkipContainingUniform = pd.shaders->brickShadowCascadeShader->getUniformLocation("skipContaining");
 	pd.shadowCascadeSkipPointUniform = pd.shaders->brickShadowCascadeShader->getUniformLocation("skipPoint");
+	pd.godRaySunScreenUniform = pd.shaders->godRayShader->getUniformLocation("sunScreenPosition");
+	pd.godRaySampleCountUniform = pd.shaders->godRayShader->getUniformLocation("sampleCount");
+	pd.godRayStrengthUniform = pd.shaders->godRayShader->getUniformLocation("strength");
 	pd.shadowTintSkipContainingUniform = pd.shaders->brickShadowTintShader->getUniformLocation("skipContaining");
 	pd.shadowTintSkipPointUniform = pd.shaders->brickShadowTintShader->getUniformLocation("skipPoint");
 
@@ -3072,6 +3322,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	glBindVertexArray(0);
 
 	createWaterTargets(settings);
+	createGodRayTarget(settings);
 
 	info("Start up complete");
 
