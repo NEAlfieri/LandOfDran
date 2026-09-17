@@ -965,6 +965,49 @@ static int LUA_dynamicSetMeshColor(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicGetMeshAt(lua_State* L)
+{
+	scope("(LUA) dynamic:getMeshAt");
+
+	if (lua_gettop(L) != 4)
+	{
+		error("Expected 4 arguments dynamic:getMeshAt(x,y,z)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	float z = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float y = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float x = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//The point in the model's own space: undo where the dynamic is and which way it's turned, then its type's scale
+	const btTransform& transform = dynamic->body->getWorldTransform();
+	const btQuaternion& rotation = transform.getRotation();
+	glm::vec3 offset = b2g3(transform.getOrigin());
+	glm::quat turn(rotation.w(), rotation.x(), rotation.y(), rotation.z());
+
+	std::shared_ptr<Model> model = dynamic->getType()->getModel();
+	glm::vec3 point = (glm::inverse(turn) * (glm::vec3(x, y, z) - offset)) / model->baseScale;
+
+	int meshIdx = model->getMeshAtPoint(point);
+	if (meshIdx == -1)
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, model->getMeshName(meshIdx).c_str());
+	return 1;
+}
+
 static int LUA_dynamicSetMeshDecal(lua_State* L)
 {
 	scope("(LUA) dynamic:setMeshDecal");
@@ -1084,6 +1127,50 @@ static int LUA_dynamicClearHighlight(lua_State* L)
 
 	ENetPacket* packet = dynamic->makeHighlightPacket(color, 0.0f);
 	LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
+static int LUA_dynamicSetNameTag(lua_State* L)
+{
+	scope("(LUA) dynamic:setNameTag");
+
+	int args = lua_gettop(L);
+
+	if (args != 5)
+	{
+		error("Expected 5 arguments dynamic:setNameTag(text,r,g,b)");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	float b = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float g = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float r = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	const char* text = lua_tostring(L, -1);
+	std::string tag = text ? std::string(text) : "";
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	dynamic->setNameTag(tag, glm::vec3(r, g, b));
+
+	LUA_server->broadcast(dynamic->makeNameTagPacket(), OtherReliable);
 
 	return 0;
 }
@@ -1813,7 +1900,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[37];
+	luaL_Reg* regs = new luaL_Reg[39];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1837,9 +1924,11 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "getMass",    LUA_dynamicGetMass };
 	regs[iter++] = { "setMassProps",    LUA_dynamicSetMassProps };
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
+	regs[iter++] = { "getMeshAt",    LUA_dynamicGetMeshAt };
 	regs[iter++] = { "setMeshDecal",    LUA_dynamicSetMeshDecal };
 	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
 	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };
+	regs[iter++] = { "setNameTag",    LUA_dynamicSetNameTag };
 	regs[iter++] = { "getNumControllers", LUA_dynamicGetNumControllers };
 	regs[iter++] = { "getControllerIdx", LUA_dynamicGetControllerIdx };
 	regs[iter++] = { "snapToCursor", LUA_dynamicSnapToCursor };

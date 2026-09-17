@@ -48,6 +48,17 @@ ExecutableArguments::ExecutableArguments(int argc, char** argv)
 			autoSinglePlayer = true;
 			continue;
 		}
+
+		if (strcmp(argv[a], "profile") == 0)
+		{
+			profileRendering = true;
+			continue;
+		}
+		if (strcmp(argv[a], "-profile") == 0)
+		{
+			profileRendering = true;
+			continue;
+		}
 	}
 }
 

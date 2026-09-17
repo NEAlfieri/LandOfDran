@@ -47,7 +47,7 @@ class Material
 	bool valid = false;
 
 	//Second half of both constructors
-	void finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager> textures);
+	void finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager> textures, bool flattenAlbedoAlpha = false);
 
 	public:
 
@@ -70,8 +70,12 @@ class Material
 	/*
 		Pass the paths for the 5 possible channels directly to make a material
 		Any you don't want to use can be left as empty strings: ""
+
+		flattenAlbedoAlpha reads a see-through albedo as a shade of what's left over white rather than
+		throwing its alpha away, which is what the flat textures a DTS shape names expect, see
+		Texture::addLayer
 	*/
-	Material(const std::string &_name,const std::string &albedo,const std::string &normal,const std::string &roughness,const std::string &metalness,const std::string &occlusion, std::shared_ptr<TextureManager> textures);
+	Material(const std::string &_name,const std::string &albedo,const std::string &normal,const std::string &roughness,const std::string &metalness,const std::string &occlusion, std::shared_ptr<TextureManager> textures, bool flattenAlbedoAlpha = false);
 
 	~Material();
 };

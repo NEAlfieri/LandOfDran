@@ -2,6 +2,7 @@
 #
 # Packages a release binary along with the files it needs at runtime
 # (Assets, Shaders, serverstart.lua, and Saves if present) into a single tar.gz archive.
+# Assets are taken from the working tree, so the gitignored ones (music, .webm prints) go in too.
 #
 # By default the binary is built inside a Docker container pinned to an
 # older Ubuntu baseline (see docker/release.Dockerfile), so its glibc and
@@ -67,7 +68,8 @@ else
     docker rm "$CONTAINER_ID" >/dev/null
 fi
 
-# From the local copy rather than git, so gitignored assets like Assets/music are packaged too
+# From the local copy rather than git, so gitignored assets are packaged too: Assets/music and the
+# .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
 cp -r Assets "$PKG_DIR/"
 cp -r Shaders "$PKG_DIR/"
 cp serverstart.lua "$PKG_DIR/"

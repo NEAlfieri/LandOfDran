@@ -10,6 +10,17 @@
 
 class UserInterface;
 
+//Text drawn over the world where something is, like a player's name over their head, see UserInterface::nameTags
+struct WorldNameTag
+{
+	std::string text;
+	//Screen pixels the middle of the text goes over
+	ImVec2 position = ImVec2(0, 0);
+	ImU32 color = IM_COL32_WHITE;
+	//How far from the camera it is, so nearer tags are drawn over farther ones
+	float distance = 0;
+};
+
 //A temporary message shown centered on screen, see UserInterface::addCenterPrint
 struct CenterPrintMessage
 {
@@ -86,6 +97,22 @@ class UserInterface
 	//Currently showing center-of-screen messages, see addCenterPrint. Pruned (expired ones removed) in render()
 	std::vector<CenterPrintMessage> centerPrints;
 
+	//The frame rate counter in the top left corner, see gui/showfps
+	bool showFps = true;
+	//How long frames are counted for before the numbers change, so they can actually be read
+	static constexpr float fpsAverageOverMS = 500.0f;
+	//Frames since then, how long they took altogether, and the slowest single one, all in seconds
+	int fpsFrames = 0;
+	float fpsTotalSeconds = 0;
+	float fpsWorstSeconds = 0;
+	float fpsSinceShownMS = 0;
+	//What the counter shows: the average over the last window and its slowest frame, which is what a stutter looks like
+	float shownAverageFps = 0;
+	float shownWorstFps = 0;
+
+	//Counts this frame and draws the counter, returning the y the next thing in that corner starts at
+	float renderFpsCounter(float deltaSeconds, float top);
+
 	public:
 
 	//Queue a temporary message shown centered on screen for durationMS, in the given color (0-1 range each)
@@ -96,6 +123,9 @@ class UserInterface
 	//Building mode toggle indicators in the corner of the HUD: -1 hidden, 0 off, 1 on
 	int superShiftIndicator = -1;
 	int resizeIndicator = -1;
+
+	//Name tags over the world for this frame, filled in by LoopClient::updateNameTags before render
+	std::vector<WorldNameTag> nameTags;
 
 	//Voice chat, in the same corner: -1 hidden, 0 muted by the server, 1 talking. And the names of who else can be heard talking
 	int voiceIndicator = -1;

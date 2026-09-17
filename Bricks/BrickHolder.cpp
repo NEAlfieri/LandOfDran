@@ -38,6 +38,7 @@ void BrickHolder::writeRecord(const Brick* brick, enet_uint8* data)
 	//Collision in the low bit, material in the 4 above it
 	data[18] = (brick->collides ? 1 : 0) | ((brick->material & 15) << 1);
 	memcpy(data + 19, &brick->typeID, sizeof(uint16_t));
+	memcpy(data + 21, &brick->printID, sizeof(uint16_t));
 }
 
 Brick BrickHolder::readRecord(const enet_uint8* data)
@@ -65,6 +66,7 @@ Brick BrickHolder::readRecord(const enet_uint8* data)
 	if (brick.material >= BrickMaterialCount)
 		brick.material = BrickMaterial_None;
 	memcpy(&brick.typeID, data + 19, sizeof(uint16_t));
+	memcpy(&brick.printID, data + 21, sizeof(uint16_t));
 	return brick;
 }
 
@@ -98,6 +100,21 @@ Brick* BrickHolder::find(netIDType netId) const
 {
 	auto it = byId.find(netId);
 	return it == byId.end() ? nullptr : it->second;
+}
+
+size_t BrickHolder::numNamed(const std::string& name) const
+{
+	auto found = byName.find(name);
+	return found == byName.end() ? 0 : found->second.size();
+}
+
+Brick* BrickHolder::getNamed(const std::string& name, size_t index) const
+{
+	auto found = byName.find(name);
+	if (found == byName.end() || index >= found->second.size())
+		return nullptr;
+
+	return found->second[index];
 }
 
 Brick* BrickHolder::add(const Brick& requested)
@@ -158,6 +175,7 @@ Brick* BrickHolder::addFromServer(const Brick& desc)
 	{
 		existing->color = desc.color;
 		existing->material = desc.material;
+		existing->printID = desc.printID;
 		setColliding(existing, desc.collides);
 		if (renderer)
 			renderer->updateBrick(existing);
@@ -182,6 +200,7 @@ void BrickHolder::insert(Brick* brick)
 	brick->holderIndex = bricks.size();
 	bricks.push_back(brick);
 	byId[brick->netId] = brick;
+	addName(brick);
 
 	int min[3], max[3];
 	getBounds(brick, min, max);
@@ -191,6 +210,36 @@ void BrickHolder::insert(Brick* brick)
 
 	if (renderer)
 		renderer->addBrick(brick);
+}
+
+void BrickHolder::addName(Brick* brick)
+{
+	if (brick->name.empty())
+		return;
+
+	byName[brick->name].push_back(brick);
+}
+
+void BrickHolder::removeName(Brick* brick)
+{
+	if (brick->name.empty())
+		return;
+
+	auto found = byName.find(brick->name);
+	if (found == byName.end())
+		return;
+
+	std::vector<Brick*>& named = found->second;
+	auto at = std::find(named.begin(), named.end(), brick);
+	if (at != named.end())
+	{
+		*at = named.back();
+		named.pop_back();
+	}
+
+	//So a name nothing has any more doesn't sit in the map forever
+	if (named.empty())
+		byName.erase(found);
 }
 
 void BrickHolder::remove(Brick* brick, bool showEffect)
@@ -209,6 +258,7 @@ void BrickHolder::remove(Brick* brick, bool showEffect)
 	tree.Remove(min, max, brick);
 
 	byId.erase(brick->netId);
+	removeName(brick);
 	destroyBody(brick);
 
 	if (renderer)
@@ -251,6 +301,7 @@ void BrickHolder::clear()
 
 	bricks.clear();
 	byId.clear();
+	byName.clear();
 	tree.RemoveAll();
 }
 
@@ -326,6 +377,27 @@ void BrickHolder::setColor(Brick* brick, const glm::u8vec4& color)
 
 	if (renderer)
 		renderer->updateBrick(brick);
+}
+
+void BrickHolder::setPrint(Brick* brick, uint16_t printID)
+{
+	brick->printID = printID;
+
+	if (server)
+		pendingSends.insert(brick->netId);
+
+	if (renderer)
+		renderer->updateBrick(brick);
+}
+
+void BrickHolder::setName(Brick* brick, const std::string& name)
+{
+	if (brick->name == name)
+		return;
+
+	removeName(brick);
+	brick->name = name;
+	addName(brick);
 }
 
 void BrickHolder::setMaterial(Brick* brick, unsigned char material)

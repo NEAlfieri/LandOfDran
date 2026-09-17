@@ -2,6 +2,7 @@
 
 #include "BrickHolder.h"
 #include "BrickTypes.h"
+#include "PrintTypes.h"
 
 /*
 	Save files live directly in the Saves folder
@@ -16,10 +17,10 @@ std::string getSavePath(const std::string& fileName);
 std::string getVehicleSavePath(const std::string& name);
 
 /*
-	Writes bricks in our binary save format, see saveLodBuild, types gives special bricks' names
+	Writes bricks in our binary save format, see saveLodBuild, types gives special bricks' names and prints their prints'
 	Returns false if the stream failed
 */
-bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks, const BrickTypes* types, bool omitOwnership);
+bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks, const BrickTypes* types, const PrintTypes* prints, bool omitOwnership);
 
 //How readLodBricks went
 struct LodReadResult
@@ -31,6 +32,8 @@ struct LodReadResult
 	//Special bricks of types we don't have, by name
 	int skippedSpecial = 0;
 	std::map<std::string, int> missingTypes;
+	//Prints we don't have, by name, whose bricks are loaded plain
+	std::map<std::string, int> missingPrints;
 	//Bricks with invalid sizes, rotations, or positions
 	int invalid = 0;
 };
@@ -39,21 +42,22 @@ struct LodReadResult
 	Reads either version of the old binary format or our own newer one from a stream, calling found with each brick's description
 	Bricks of special types we don't have or with invalid values are skipped and counted instead
 */
-LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const std::function<void(Brick&)>& found);
+LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const PrintTypes* prints, const std::function<void(Brick&)>& found);
 
 /*
 	Old Land of Dran binary save format, written like OldServer/lua/miscFunctions.h's saveBuild except that each brick's
 	music, light, and emitter are written as BrickAttachments under a newer version number the old game can't read
 	Returns false if the file couldn't be written
 */
-bool saveLodBuild(const BrickHolder& bricks, const std::string& path, bool omitOwnership);
+bool saveLodBuild(const BrickHolder& bricks, const PrintTypes* prints, const std::string& path, bool omitOwnership);
 
 /*
 	Loads either version of the old binary format or our own newer one, offset by whole studs/plates
-	Special bricks of types we don't have, and the old game's lights, music, and prints, are skipped
+	Special bricks of types we don't have are skipped, and so are the old game's lights and music
+	A brick's print is taken by name, from the old game's saves too, and dropped if we don't have that print
 	Returns how many bricks were added, or -1 if the file couldn't be read
 */
-int loadLodBuild(BrickHolder& bricks, const std::string& path, int offsetX, int offsetY, int offsetZ);
+int loadLodBuild(BrickHolder& bricks, const PrintTypes* prints, const std::string& path, int offsetX, int offsetY, int offsetZ);
 
 /*
 	How a Blockland import finds our versions of what a .bls save put on its bricks, by the uiName the save uses
@@ -73,4 +77,4 @@ struct BlocklandAttachmentLookup
 	Brick lights, emitters, and music go through lookup, and any we don't have are skipped and logged by name
 	Returns how many bricks were added, or -1 if the file couldn't be read
 */
-int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const std::string& path, const BlocklandAttachmentLookup& lookup);
+int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const PrintTypes* prints, const std::string& path, const BlocklandAttachmentLookup& lookup);

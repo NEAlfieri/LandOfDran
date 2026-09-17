@@ -76,6 +76,20 @@ inline ENetPacket* makePaintChoicePacket(glm::u8vec4 color, unsigned char materi
 
 /*
 	1 byte		-	packet type
+	1 byte		-	1 while the paint palette wants a paint can in our hand
+
+	Sent as the palette comes out and again once the item bar or the brick bar takes the can away
+*/
+inline ENetPacket* makePaintCanPacket(bool out)
+{
+	ENetPacket* ret = enet_packet_create(NULL, 2, getFlagsFromChannel(OtherReliable));
+	ret->data[0] = (unsigned char)PaintCanRequest;
+	ret->data[1] = out ? 1 : 0;
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
 	1 byte		-	client game version
 	1 byte		-	name length, max 255
 	1-255 bytes	-	name
@@ -263,11 +277,14 @@ inline ENetPacket* makeWrenchRequestPacket(glm::vec3 position, glm::vec3 directi
 	1 byte		-	1 if it collides
 	1 byte		-	name length
 	0-255 bytes	-	name
-	The rest	-	BrickAttachments::write
+	Then		-	BrickAttachments::write
+	1 byte		-	print name length
+	0-255 bytes	-	print name, "" for no print
 */
-inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, const std::string& name, const BrickAttachments& attachments)
+inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, const std::string& name, const BrickAttachments& attachments, const std::string& printName)
 {
 	std::string shortName = name.substr(0, 255);
+	std::string shortPrint = printName.substr(0, 255);
 
 	std::vector<unsigned char> bytes;
 	bytes.push_back((unsigned char)WrenchSubmit);
@@ -277,6 +294,8 @@ inline ENetPacket* makeWrenchSubmitPacket(netIDType brickID, bool collides, cons
 	bytes.push_back((unsigned char)shortName.length());
 	bytes.insert(bytes.end(), shortName.begin(), shortName.end());
 	attachments.write(bytes);
+	bytes.push_back((unsigned char)shortPrint.length());
+	bytes.insert(bytes.end(), shortPrint.begin(), shortPrint.end());
 
 	return enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable));
 }

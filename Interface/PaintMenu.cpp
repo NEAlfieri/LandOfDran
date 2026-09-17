@@ -119,6 +119,16 @@ void PaintMenu::updatePaintKey(bool pressed)
 	scrolledWhileHeld = false;
 }
 
+void PaintMenu::putAway()
+{
+	shown = false;
+
+	//A palette key still held shouldn't move a column or bring it back when it comes up
+	keyHeld = false;
+	advanceOnRelease = false;
+	scrolledWhileHeld = false;
+}
+
 bool PaintMenu::scroll(int amount)
 {
 	//Holding the palette's key, the wheel goes through materials without touching the color

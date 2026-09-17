@@ -2,6 +2,7 @@
 
 #include "Brick.h"
 #include "BrickTypes.h"
+#include "PrintTypes.h"
 
 class PhysicsWorld;
 class btRigidBody;
@@ -36,7 +37,7 @@ class VehicleGhost
 	static constexpr size_t maxBricks = 10024;
 
 	//Starts placing a save, false with why if it isn't one or has no bricks of types this game has
-	bool start(const std::string& saveName, const std::string& bytes, bool placeAsVehicle, const BrickTypes& types, std::string& failure);
+	bool start(const std::string& saveName, const std::string& bytes, bool placeAsVehicle, const BrickTypes& types, const PrintTypes& prints, std::string& failure);
 
 	void cancel();
 

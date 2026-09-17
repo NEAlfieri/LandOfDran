@@ -28,6 +28,9 @@ setItemHand(dranLauncherItem,0,0.2,0.1,0,0,0)
 addAnimation(dranLauncherItem,"fire",0,25,0.04,0,0)
 launcherShell = newDynamicType("launcherShell","Assets/dranlauncher/shell.txt",0.01,0.01,0.01)
 
+--The Tier+Tactical Tier 1 add-on: its models, its weapons, and dropWeaponPackage
+dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
+
 --Sounds, with the old game's names and file names. Clients play ClickMove, ClickRotate, Jump, and BrickBreak on their own
 --when the server has sounds by those names. A file that isn't in Assets/sound/ logs an error and is skipped
 newSoundType("ClickMove","Assets/sound/clickMove.wav")
@@ -50,6 +53,9 @@ newSoundType("HammerHit","Assets/sound/hammerHit.WAV")
 newSoundType("WrenchHit","Assets/sound/wrenchHit.wav")
 newSoundType("WrenchMiss","Assets/sound/wrenchMiss.wav")
 newSoundType("SprayLoop","Assets/sound/sprayLoop.wav")
+--Games play SprayActivate themselves as their paint palette comes out, see LoopClient::handleInput
+newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
+newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
 --And Launch from a firing launcher
 newSoundType("Launch","Assets/sound/launch.wav")
 --Drivers left click to honk
@@ -171,6 +177,11 @@ local STATIC_TYPE_ID = 2
 
 function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 
+	--Every button matched below belongs to the falling tiles, which may never have been created
+	if not fallingTilesCreated then
+		return client,posX,posY,posZ,dirX,dirY,dirZ,mask
+	end
+
 	ignore = nil
 	if client:getNumControlled() > 0 then
 		ignore = client:getControlledIdx(0)
@@ -224,10 +235,16 @@ function click(client,posX,posY,posZ,dirX,dirY,dirZ,mask)
 end
 registerEventListener("ClientClick","click")
 
+--A demo of statics: rows of colored plates that dissapear when their button is clicked
+--Nothing creates these on its own, call createFallingTiles() to put them in the world
 --z > 0 left
 --z < 0 right
-function setUpLevel()
-	levelSetUp = true
+fallingTilesCreated = false
+function createFallingTiles()
+	if fallingTilesCreated then
+		return
+	end
+	fallingTilesCreated = true
 	
 	gravityButton = createStatic(button,40,42,5)
 	gravityButton:setMeshColor("Button",1,1,0,1)
@@ -368,10 +385,6 @@ function setUpLevel()
 	table.insert(rights,last)
 end
 
-if levelSetUp == nil then
-	setUpLevel()
-end
-
 --Client confirms finishes loading SimObject types
 function join(client)	
 
@@ -392,6 +405,9 @@ function join(client)
 
 	--The colors, face, and shirt they picked in their appearance editor
 	client:applyAppearance(dynamic)
+
+	--Their name floats over their head for everyone else
+	dynamic:setNameTag(client:getName(),1,1,1)
 
 	playSound("PlayerConnect")
 
@@ -490,7 +506,7 @@ function resetCubePositions()
 	end
 end
 
-function spawnNewCubes(numCubes, spread)
+function spawnNewCubes(numCubes, spread, rest)
 	numCubes = numCubes or 20
 	spread = spread or 0
 
@@ -509,7 +525,8 @@ function spawnNewCubes(numCubes, spread)
 			x = (math.random() - 0.5) * spread
 			z = (math.random() - 0.5) * spread
 		end
-		createDynamic(getDynamicType("small"),x,50,z)
+		d = createDynamic(getDynamicType("small"),x,50,z)
+		d:setRestitution(rest)
 	end
 end
 

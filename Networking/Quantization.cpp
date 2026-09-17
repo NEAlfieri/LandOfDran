@@ -1,98 +1,6 @@
 #include "Quantization.h"
 
 
-// Function to encode a float into 16 bits
-uint16_t encodeFloat(float value) {
-	uint16_t result = 0;
-
-	// Handle the sign (1 bit)
-	bool sign = (value < 0);
-	if (sign) {
-		value = -value;  // Make the value positive for further processing
-	}
-
-	// Handle the integer part (9 bits)
-	uint16_t integerPart = static_cast<uint16_t>(value);
-	if (integerPart > 511) {
-		integerPart = 511;  // Clamp the integer part to 9 bits
-	}
-
-	// Handle the fractional part (6 bits)
-	float fractionalPart = value - integerPart;
-	uint16_t fractionalBits = static_cast<uint16_t>(fractionalPart * 64);  // Convert to 6-bit precision
-
-	// Assemble the result
-	result |= (sign << 15);                  // 1 bit for sign
-	result |= ((integerPart & 0x1FF) << 6);  // 9 bits for integer part
-	result |= (fractionalBits & 0x3F);       // 6 bits for fractional part
-
-	return result;
-}
-
-// Function to encode three floats into 6 bytes
-void encodeThreeFloats(float f1, float f2, float f3, uint8_t* buffer) {
-	uint16_t encodedF1 = encodeFloat(f1);
-	uint16_t encodedF2 = encodeFloat(f2);
-	uint16_t encodedF3 = encodeFloat(f3);
-
-	// Place encoded floats into the 6-byte buffer
-	buffer[0] = encodedF1 >> 8;
-	buffer[1] = encodedF1 & 0xFF;
-
-	buffer[2] = encodedF2 >> 8;
-	buffer[3] = encodedF2 & 0xFF;
-
-	buffer[4] = encodedF3 >> 8;
-	buffer[5] = encodedF3 & 0xFF;
-}
-
-// Helper function to print the buffer in binary form
-void printBuffer(const uint8_t* buffer, size_t length) {
-	for (size_t i = 0; i < length; ++i) {
-		std::bitset<8> bits(buffer[i]);
-		std::cout << bits << " ";
-	}
-	std::cout << std::endl;
-}
-
-
-// Function to decode 16 bits into a float
-float decodeFloat(uint16_t encodedValue) {
-	// Extract the sign bit (1 bit)
-	bool sign = (encodedValue >> 15) & 1;
-
-	// Extract the integer part (9 bits)
-	uint16_t integerPart = (encodedValue >> 6) & 0x1FF;
-
-	// Extract the fractional part (6 bits)
-	uint16_t fractionalBits = encodedValue & 0x3F;
-	float fractionalPart = static_cast<float>(fractionalBits) / 64.0f;  // Convert 6 bits back to fractional part
-
-	// Combine integer and fractional parts
-	float value = integerPart + fractionalPart;
-
-	// Apply the sign
-	if (sign) {
-		value = -value;
-	}
-
-	return value;
-}
-
-// Function to decode 6 bytes into three floats
-void decodeThreeFloats(const uint8_t* buffer, float& f1, float& f2, float& f3) {
-	// Read 16 bits for each float
-	uint16_t encodedF1 = (buffer[0] << 8) | buffer[1];
-	uint16_t encodedF2 = (buffer[2] << 8) | buffer[3];
-	uint16_t encodedF3 = (buffer[4] << 8) | buffer[5];
-
-	// Decode each 16-bit value into a float
-	f1 = decodeFloat(encodedF1);
-	f2 = decodeFloat(encodedF2);
-	f3 = decodeFloat(encodedF3);
-}
-
-
 //The three smallest components of a quaternion can never be larger than sqrt(2)/2 so we multiply by this to normalize to 0.0-1.0 before turning into an integer
 const float quatCompMulti = 1.414f;
 
@@ -256,49 +164,151 @@ void getQuaternion(enet_uint8 const* src, glm::quat& quat)
 	}
 }
 
+/*
+	Each component is a 21 bit unsigned step count off of -PositionMaxCoordinate, PositionStepsPerStud steps to a stud,
+	so -16384 to +16384 studs in every axis at 1/64th of a stud a step
+	The three of them pack into 8 bytes big endian with the top bit of dest[0] left clear for whatever wants it later
+
+	The old encoding spent 16 bits a component on a sign, 9 integer bits and 6 fraction bits, which walled objects in at
+	+/-511.98 studs - well inside the +/-32767 studs a brick can be placed at, see BrickHolder::writeRecord
+*/
+#define PositionComponentBits 21
+static const uint32_t positionMaxStep = (1u << PositionComponentBits) - 1;
+
+//Coordinates past the edge of the world clamp rather than wrap, so a runaway object parks at the border instead of teleporting across it
+static uint32_t quantizePosition(float value)
+{
+	float steps = (value + PositionMaxCoordinate) * PositionStepsPerStud;
+
+	//Written so a NaN, which compares false against everything, lands on 0 instead of an unspecified lround
+	if (!(steps > 0.0f))
+		return 0;
+	if (steps >= (float)positionMaxStep)
+		return positionMaxStep;
+
+	return (uint32_t)std::lround(steps);
+}
+
+static float dequantizePosition(uint32_t steps)
+{
+	return (float)steps / PositionStepsPerStud - PositionMaxCoordinate;
+}
+
 void addPosition(enet_uint8* dest, const glm::vec3& pos)
 {
-	encodeThreeFloats(pos.x, pos.y, pos.z, dest);
+	uint64_t packed = ((uint64_t)quantizePosition(pos.x) << (PositionComponentBits * 2))
+					| ((uint64_t)quantizePosition(pos.y) << PositionComponentBits)
+					|  (uint64_t)quantizePosition(pos.z);
 
-	//TODO: Compression? Positions could be plausabily bounded between -/+2048 with 1/32s precision for 16 bits per component instead of 32
-	//Bit less of a good trade than the quat compression though...
-	/*memcpy(dest + sizeof(float) * 0, &pos.x, sizeof(float));
-	memcpy(dest + sizeof(float) * 1, &pos.y, sizeof(float));
-	memcpy(dest + sizeof(float) * 2, &pos.z, sizeof(float));*/
+	for (int a = 0; a < PositionBytes; a++)
+		dest[a] = (enet_uint8)(packed >> ((PositionBytes - 1 - a) * 8));
 }
 
 void getPosition(enet_uint8 const* src, glm::vec3& pos)
 {
-	decodeThreeFloats(src, pos.x, pos.y, pos.z);
+	uint64_t packed = 0;
+	for (int a = 0; a < PositionBytes; a++)
+		packed = (packed << 8) | src[a];
 
-	/*memcpy(&pos.x, src + sizeof(float) * 0, sizeof(float));
-	memcpy(&pos.y, src + sizeof(float) * 1, sizeof(float));
-	memcpy(&pos.z, src + sizeof(float) * 2, sizeof(float));*/
+	pos.x = dequantizePosition((uint32_t)((packed >> (PositionComponentBits * 2)) & positionMaxStep));
+	pos.y = dequantizePosition((uint32_t)((packed >> PositionComponentBits) & positionMaxStep));
+	pos.z = dequantizePosition((uint32_t)(packed & positionMaxStep));
+}
+
+/*
+	Most of the time an object has not gone far since the last full position we sent for it, so instead of 8 bytes off
+	the origin we can send 10 signed bits a component off of that last full position - a "keyframe" - for 4 bytes,
+	with the low 2 bits of dest[3] spare. Same 1/64th of a stud a step, so a delta costs no precision at all
+
+	Deltas are always measured from the keyframe and never from the previous delta, which is what makes them safe on an
+	unreliable channel: losing one costs that one snapshot and nothing after it. Losing the keyframe itself is the case
+	that matters, so the sender stamps a generation onto both (see DynamicExtra_PositionDelta) and the receiver drops
+	deltas belonging to a keyframe it never got, until the sender's next one
+*/
+static const int positionDeltaMinStep = -512;
+static const int positionDeltaMaxStep = 511;
+
+bool positionDeltaFits(const glm::vec3& delta)
+{
+	//A NaN fails every comparison and so lands on a keyframe, which is the safe answer
+	return std::fabs(delta.x) <= PositionDeltaMaxOffset
+		&& std::fabs(delta.y) <= PositionDeltaMaxOffset
+		&& std::fabs(delta.z) <= PositionDeltaMaxOffset;
+}
+
+static int quantizePositionDelta(float value)
+{
+	float steps = value * PositionStepsPerStud;
+
+	if (!(steps > (float)positionDeltaMinStep))
+		return positionDeltaMinStep;
+	if (steps > (float)positionDeltaMaxStep)
+		return positionDeltaMaxStep;
+
+	return (int)std::lround(steps);
+}
+
+static float dequantizePositionDelta(int steps)
+{
+	return (float)steps / PositionStepsPerStud;
+}
+
+void addPositionDelta(enet_uint8* dest, const glm::vec3& delta)
+{
+	uint32_t packed = ((uint32_t)(quantizePositionDelta(delta.x) & 1023) << 22)
+					| ((uint32_t)(quantizePositionDelta(delta.y) & 1023) << 12)
+					| ((uint32_t)(quantizePositionDelta(delta.z) & 1023) << 2);
+
+	for (int a = 0; a < PositionDeltaBytes; a++)
+		dest[a] = (enet_uint8)(packed >> ((PositionDeltaBytes - 1 - a) * 8));
+}
+
+//Pulls one 10 bit component out and sign extends it, since it was stored as two's complement
+static float unpackPositionDelta(uint32_t packed, int shift)
+{
+	int steps = (int)((packed >> shift) & 1023);
+	if (steps & 512)
+		steps -= 1024;
+
+	return dequantizePositionDelta(steps);
+}
+
+void getPositionDelta(enet_uint8 const* src, glm::vec3& delta)
+{
+	uint32_t packed = 0;
+	for (int a = 0; a < PositionDeltaBytes; a++)
+		packed = (packed << 8) | src[a];
+
+	delta.x = unpackPositionDelta(packed, 22);
+	delta.y = unpackPositionDelta(packed, 12);
+	delta.z = unpackPositionDelta(packed, 2);
 }
 
 //Velocity is hereby bounded to -127 to 127 in each component with 1/255 precision
 //TODO: Maybe have more bits for magnitude and less for precision
 void addVelocity(enet_uint8* dest, const glm::vec3& vel)
 {
+	//std::fabs, not a bare abs: whether that picks up the float overload or the int one that throws the fraction
+	//away depends on which headers LandOfDran.h happened to drag in
 	//First byte stores sign in upper bit and left of the decimal value in lower 7 bits
 	//Second byte stores right of the decimal value in 8 bits
 	//Repeat for each component for 6 bytes
-	int xLeft = floor(abs(vel.x));
+	int xLeft = (int)std::floor(std::fabs(vel.x));
 	dest[0] = (vel.x < 0) ? 128 : 0;
 	dest[0] |= std::min(xLeft,127);
-	int xRight = (abs(vel.x) - xLeft) * 255;
+	int xRight = (std::fabs(vel.x) - xLeft) * 255;
 	dest[1] = xRight;
 
-	int yLeft = floor(abs(vel.y));
+	int yLeft = (int)std::floor(std::fabs(vel.y));
 	dest[2] = (vel.y < 0) ? 128 : 0;
 	dest[2] |= std::min(yLeft, 127);
-	int yRight = (abs(vel.y) - yLeft) * 255;
+	int yRight = (std::fabs(vel.y) - yLeft) * 255;
 	dest[3] = yRight;
 
-	int zLeft = floor(abs(vel.z));
+	int zLeft = (int)std::floor(std::fabs(vel.z));
 	dest[4] = (vel.z < 0) ? 128 : 0;
 	dest[4] |= std::min(zLeft, 127);
-	int zRight = (abs(vel.z) - zLeft) * 255;
+	int zRight = (std::fabs(vel.z) - zLeft) * 255;
 	dest[5] = zRight;
 }
 
@@ -320,49 +330,53 @@ void getVelocity(enet_uint8 const* src, glm::vec3& vel)
 	vel.z *= ((src[4] & 0b10000000) ? -1 : 1);
 }
 
-//Angular velocity is bounded to -63 to 63 in each component with 1/16 precision
-//The assumption is that precision here just isn't that important for visuals, since rotation is updated separately 
+/*
+	Three signed 10 bit components - a sign bit over a 9 bit magnitude - at AngularVelocityStepsPerRadian steps to a
+	radian a second, so -63.875 to 63.875 packed into 4 bytes with the low 2 bits of dest[3] spare
+
+	Precision here matters much less than it does for rotation itself, which is sent separately as a full quaternion,
+	and the resend threshold in Dynamic::requiresNetUpdate is ~0.6 radians a second anyway
+
+	The previous version spent 6 integer bits and 4 fraction bits a component and had nowhere left to put a sign, so
+	every spin arrived at the client positive - objects thrown with a counter-clockwise spin spun clockwise on the
+	client's own physics body until the next rotation snapshot yanked them back
+*/
+static const int angularVelocityMaxStep = 511;
+static const int angularVelocitySignBit = 512;
+
+static uint16_t quantizeAngularVelocity(float value)
+{
+	float magnitude = std::fabs(value) * AngularVelocityStepsPerRadian;
+
+	//As in quantizePosition, a NaN fails the comparison and clamps instead of reaching lround
+	int steps = magnitude < (float)angularVelocityMaxStep ? (int)std::lround(magnitude) : angularVelocityMaxStep;
+
+	return (uint16_t)(steps | (value < 0.0f ? angularVelocitySignBit : 0));
+}
+
+static float dequantizeAngularVelocity(uint16_t raw)
+{
+	float value = (float)(raw & angularVelocityMaxStep) / AngularVelocityStepsPerRadian;
+	return (raw & angularVelocitySignBit) ? -value : value;
+}
+
 void addAngularVelocity(enet_uint8* dest, const glm::vec3& vel)
 {
-	int xLeft = floor(abs(vel.x));
-	int xRight = (abs(vel.x) - xLeft) * 16;
-	xLeft = std::min(xLeft, 63);
+	uint32_t packed = ((uint32_t)quantizeAngularVelocity(vel.x) << 22)
+					| ((uint32_t)quantizeAngularVelocity(vel.y) << 12)
+					| ((uint32_t)quantizeAngularVelocity(vel.z) << 2);
 
-	int yLeft = floor(abs(vel.y));
-	int yRight = (abs(vel.y) - yLeft) * 16;
-	yLeft = std::min(yLeft, 63);
-
-	int zLeft = floor(abs(vel.z));
-	int zRight = (abs(vel.z) - zLeft) * 16;
-	zLeft = std::min(zLeft, 63);
-
-	dest[0] = xLeft << 2;			//6 bits
-	dest[0] |= (xRight >> 2);		//2 bits, 0 filled
-	dest[1] = (xRight & 0b11) << 6;	//2 bits
-	dest[1] |= yLeft;				//6 bits, 1 filled
-	dest[2] = yRight << 4;			//4 bits
-	dest[2] |= zLeft >> 2;			//4 bits, 2 filled
-	dest[3] = (zLeft & 0b11) << 6;	//2 bits
-	dest[3] |= zRight;				//6 bits, 3 filled
+	for (int a = 0; a < AngularVelocityBytes; a++)
+		dest[a] = (enet_uint8)(packed >> ((AngularVelocityBytes - 1 - a) * 8));
 }
 
 void getAngularVelocity(enet_uint8 const* src, glm::vec3& vel)
 {
-	int xLeft = src[0] >> 2;
-	int xRight = (src[0] & 0b11) << 2;
-	xRight |= src[1] >> 6;
+	uint32_t packed = 0;
+	for (int a = 0; a < AngularVelocityBytes; a++)
+		packed = (packed << 8) | src[a];
 
-	int yLeft = src[1] & 0b00111111;
-	int yRight = src[2] >> 4;
-
-	int zLeft = (src[2] & 0b00001111) << 2;
-	zLeft |= src[3] >> 6;
-	int zRight = src[3] & 0b00111111;
-
-	vel.x = xLeft + xRight / 16.0f;
-	vel.y = yLeft + yRight / 16.0f;
-	vel.z = zLeft + zRight / 16.0f;
+	vel.x = dequantizeAngularVelocity((uint16_t)((packed >> 22) & 1023));
+	vel.y = dequantizeAngularVelocity((uint16_t)((packed >> 12) & 1023));
+	vel.z = dequantizeAngularVelocity((uint16_t)((packed >> 2) & 1023));
 }
-
-
-

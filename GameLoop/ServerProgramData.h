@@ -13,6 +13,7 @@
 #include "../Physics/PhysicsWorld.h"
 #include "../Bricks/BrickHolder.h"
 #include "../Bricks/BrickTypes.h"
+#include "../Bricks/PrintTypes.h"
 #include "../Graphics/DayCycle.h"
 #include "ClientData.h"
 
@@ -126,6 +127,9 @@ struct ServerProgramData
 
 	//Named brick sizes, for loading Blockland saves
 	BrickTypes brickTypes;
+
+	//Print names from Assets/brick/prints, which clients pick from in the wrench dialog
+	PrintTypes prints;
 
 	//All clients:
 	std::vector<std::shared_ptr<ClientData>> clients;

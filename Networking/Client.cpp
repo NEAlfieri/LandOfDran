@@ -158,8 +158,16 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new CenterPrintPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case SetClickAction:
+					packets.push_back(new SetClickActionPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case HighlightAppearance:
 					packets.push_back(new HighlightAppearancePacket(packetHoldTime, event.packet));
+					return NotKicked;
+
+				case NameTag:
+					packets.push_back(new NameTagPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
 				case DynamicBuoyancy:
@@ -180,6 +188,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 
 				case SpecialBrickTypes:
 					packets.push_back(new SpecialBrickTypesPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
+				case BrickPrintTypes:
+					packets.push_back(new BrickPrintTypesPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
 				case AddSoundType:

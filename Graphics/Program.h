@@ -36,6 +36,8 @@ enum TextureLocations
 	SkyNight = 13,
 	//Depth from straight above the area around the camera, see Rain
 	RainMap = 14,
+	//Where the sky still shows around the sun, see LoopClient::renderGodRays
+	GodRayMask = 15,
 	//Add as needed:
 	/*BRDF = 2,
 	HeightMap = 3,

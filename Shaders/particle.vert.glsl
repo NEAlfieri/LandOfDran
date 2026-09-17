@@ -36,6 +36,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 //Lights placed by Lua, nearest the camera first, see PointLights::update and PointLightUniforms in ShaderSpecification.h

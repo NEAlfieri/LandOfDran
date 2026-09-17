@@ -1,5 +1,7 @@
 #include "ItemLua.h"
 #include "ClientLua.h"
+#include "SoundLua.h"
+#include "EmitterLua.h"
 #include "../Utility/FileFunctions.h"
 
 #include <cmath>
@@ -389,6 +391,262 @@ static int LUA_itemGetTypeName(lua_State* L)
 	return 1;
 }
 
+/*
+	client:setClickAction(item, action) says what that client's game should play the moment they
+	click while holding that item, without waiting to hear back about the click. Only what it looks
+	and sounds like; the shot is still worked out here. See Networking/ClickAction.h
+
+	client:setClickAction() with nothing stops predicting anything.
+
+		client:setClickAction(pistol, {
+			repeatMS = 96, repeatLimit = 34,
+			steps = {
+				{ at = 0,   sound = "PistolFire" },
+				{ at = 0,   animation = "fire" },
+				{ at = 0,   emitter = "MuzzleFlash", forMS = 60, offset = {0, 0.6, -2.2} },
+				{ at = 0,   light = {1, 0.9, 0.5}, brightness = 40, forMS = 50, offset = {0, 0.6, -2.2} },
+				{ at = 232, sound = "PistolClick" }
+			}
+		})
+*/
+
+//Reads {x, y, z} into out, false for anything that isn't three numbers
+static bool readClickOffset(lua_State* L, int index, glm::vec3& out, const std::string& usage)
+{
+	if (!lua_istable(L, index))
+	{
+		error(usage + " needs three numbers for an offset");
+		return false;
+	}
+
+	for (int a = 0; a < 3; a++)
+	{
+		lua_rawgeti(L, index, a + 1);
+		if (!lua_isnumber(L, -1))
+		{
+			lua_pop(L, 1);
+			error(usage + " needs three numbers for an offset");
+			return false;
+		}
+		out[a] = (float)lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	}
+
+	return true;
+}
+
+//A number field off the table at index, or fallback if it isn't there
+static float clickField(lua_State* L, int index, const char* name, float fallback)
+{
+	lua_getfield(L, index, name);
+	float value = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : fallback;
+	lua_pop(L, 1);
+	return value;
+}
+
+//Reads one step of a click action off the table on top of the stack
+static bool readClickStep(lua_State* L, int index, ClickActionStep& step, const std::shared_ptr<Item>& item, const std::string& usage)
+{
+	if (!lua_istable(L, index))
+	{
+		error(usage + " needs every step to be a table");
+		return false;
+	}
+
+	float at = clickField(L, index, "at", 0);
+	step.atMS = (uint16_t)std::max(0.0f, std::min(60000.0f, at));
+	step.forMS = (uint16_t)std::max(0.0f, std::min(60000.0f, clickField(L, index, "forMS", 100)));
+
+	lua_getfield(L, index, "offset");
+	if (lua_istable(L, -1))
+	{
+		if (!readClickOffset(L, lua_gettop(L), step.offset, usage))
+		{
+			lua_pop(L, 1);
+			return false;
+		}
+	}
+	lua_pop(L, 1);
+
+	//Which kind of step this is comes from which of these it names
+	lua_getfield(L, index, "sound");
+	if (lua_isstring(L, -1))
+	{
+		std::string name = lua_tostring(L, -1);
+		lua_pop(L, 1);
+
+		int soundID = findSoundType(name);
+		if (soundID < 0)
+		{
+			error(usage + " has a step with no sound type called " + name);
+			return false;
+		}
+
+		step.kind = ClickStep_Sound;
+		step.soundID = (uint16_t)soundID;
+		step.pitch = std::max(0.05f, std::min(10.0f, clickField(L, index, "pitch", 1)));
+		step.volume = std::max(0.0f, std::min(1.0f, clickField(L, index, "volume", 1)));
+		return true;
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, index, "animation");
+	if (lua_isstring(L, -1))
+	{
+		std::string name = lua_tostring(L, -1);
+		lua_pop(L, 1);
+
+		int animationID = item->getType()->getModel()->getAnimationID(name);
+		if (animationID < 0 || animationID > 255)
+		{
+			error(usage + " has a step with no animation called " + name + " on that item's model");
+			return false;
+		}
+
+		step.kind = ClickStep_Animation;
+		step.animationID = (uint8_t)animationID;
+		return true;
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, index, "emitter");
+	if (lua_isstring(L, -1))
+	{
+		std::string name = lua_tostring(L, -1);
+		lua_pop(L, 1);
+
+		int emitterID = findEmitterTypeIndex(name);
+		if (emitterID < 0)
+		{
+			error(usage + " has a step with no emitter type called " + name);
+			return false;
+		}
+
+		step.kind = ClickStep_Emitter;
+		step.emitterTypeID = (uint16_t)emitterID;
+		return true;
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, index, "light");
+	if (lua_istable(L, -1))
+	{
+		if (!readClickOffset(L, lua_gettop(L), step.color, usage))
+		{
+			lua_pop(L, 1);
+			return false;
+		}
+		lua_pop(L, 1);
+
+		step.kind = ClickStep_Light;
+		step.color = glm::clamp(step.color, glm::vec3(0), glm::vec3(1));
+		step.brightness = std::max(0.0f, clickField(L, index, "brightness", 0));
+		step.coronaWidth = std::max(0.0f, clickField(L, index, "coronaWidth", 0));
+		return true;
+	}
+	lua_pop(L, 1);
+
+	error(usage + " has a step that isn't a sound, animation, emitter, or light");
+	return false;
+}
+
+static int LUA_clientSetClickAction(lua_State* L)
+{
+	scope("(LUA) client:setClickAction");
+
+	const std::string usage = "client:setClickAction(item, action)";
+	int args = lua_gettop(L);
+
+	if (args != 1 && args != 3)
+	{
+		error("Expected " + usage + " or client:setClickAction() to stop predicting");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	//Nothing to predict any more
+	if (args == 1)
+	{
+		std::shared_ptr<ClientData> client = popClient(L, usage);
+		if (!client)
+			return 0;
+
+		ClickAction action;
+		action.itemID = NO_ID;
+		action.generation = ++client->clickActionGeneration;
+		client->sendClickAction(action);
+		return 0;
+	}
+
+	if (!lua_istable(L, 3))
+	{
+		error(usage + " needs a table saying what the click does");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	ClickAction action;
+	action.repeatMS = (uint16_t)std::max(0.0f, std::min(60000.0f, clickField(L, 3, "repeatMS", 0)));
+	action.repeatLimit = (uint8_t)std::max(0.0f, std::min(255.0f, clickField(L, 3, "repeatLimit", 0)));
+
+	//A copy of the item goes on top so popping it leaves the arguments where they are. The steps need
+	//it, since an animation is named per model
+	lua_pushvalue(L, 2);
+	std::shared_ptr<Item> item = popItem(L, usage);
+	if (!item)
+	{
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	action.itemID = item->getID();
+
+	lua_getfield(L, 3, "steps");
+	if (!lua_istable(L, -1))
+	{
+		lua_pop(L, 1);
+		error(usage + " needs a steps table");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	int stepsIndex = lua_gettop(L);
+
+	bool valid = true;
+	lua_Integer count = (lua_Integer)lua_rawlen(L, stepsIndex);
+
+	if (count > (lua_Integer)maxClickActionSteps)
+	{
+		error(usage + " has more than " + std::to_string(maxClickActionSteps) + " steps");
+		valid = false;
+	}
+
+	for (lua_Integer a = 1; a <= count && valid; a++)
+	{
+		lua_rawgeti(L, stepsIndex, a);
+
+		ClickActionStep step;
+		if (readClickStep(L, lua_gettop(L), step, item, usage))
+			action.steps.push_back(step);
+		else
+			valid = false;
+
+		lua_pop(L, 1);
+	}
+
+	//Back down to just the client for popClient
+	lua_settop(L, 1);
+
+	std::shared_ptr<ClientData> client = popClient(L, usage);
+	if (!client || !valid)
+		return 0;
+
+	action.generation = ++client->clickActionGeneration;
+	client->sendClickAction(action);
+
+	return 0;
+}
+
 static int LUA_clientAddItem(lua_State* L)
 {
 	scope("(LUA) client:addItem");
@@ -486,6 +744,68 @@ static int LUA_clientGetItem(lua_State* L)
 	return 1;
 }
 
+static int LUA_clientSetHandItem(lua_State* L)
+{
+	scope("(LUA) client:setHandItem");
+
+	int args = lua_gettop(L);
+	if (args != 1 && args != 2)
+	{
+		error("Expected client:setHandItem(item or nil)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = nullptr;
+	if (args == 2 && !lua_isnil(L, 2))
+	{
+		item = popItem(L, "client:setHandItem(item or nil)");
+		if (!item)
+			return 0;
+	}
+	lua_settop(L, 1);
+
+	std::shared_ptr<ClientData> client = popClient(L, "client:setHandItem(item or nil)");
+	if (!client)
+		return 0;
+
+	if (item && item->isHeld())
+	{
+		error("client:setHandItem was given an item that's already in someone's inventory, take it out with client:removeItem first");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	std::shared_ptr<Item> previous = client->setHandItem(LUA_pd, item);
+	if (previous && previous != item)
+		LUA_pd->dynamics->pushLua(L, previous);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+static int LUA_clientGetHandItem(lua_State* L)
+{
+	scope("(LUA) client:getHandItem");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument client:getHandItem()");
+		return 0;
+	}
+
+	std::shared_ptr<ClientData> client = popClient(L, "client:getHandItem()");
+	if (!client)
+		return 0;
+
+	std::shared_ptr<Item> item = client->handItem.lock();
+	if (item)
+		LUA_pd->dynamics->pushLua(L, item);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
 static int LUA_clientGetSelectedSlot(lua_State* L)
 {
 	scope("(LUA) client:getSelectedSlot");
@@ -519,7 +839,8 @@ static int LUA_clientGetHeldItem(lua_State* L)
 	if (!client)
 		return 0;
 
-	std::shared_ptr<Item> item = client->inventoryOpen ? client->inventory[client->selectedSlot].lock() : nullptr;
+	std::shared_ptr<Item> item = client->getHeldItem();
+
 	if (item)
 		LUA_pd->dynamics->pushLua(L, item);
 	else
@@ -618,10 +939,13 @@ void registerItemFunctions(lua_State* L)
 
 	luaL_Reg clientRegs[] = {
 		{ "addItem", LUA_clientAddItem },
+		{ "setClickAction", LUA_clientSetClickAction },
 		{ "removeItem", LUA_clientRemoveItem },
 		{ "getItem", LUA_clientGetItem },
 		{ "getSelectedSlot", LUA_clientGetSelectedSlot },
 		{ "getHeldItem", LUA_clientGetHeldItem },
+		{ "setHandItem", LUA_clientSetHandItem },
+		{ "getHandItem", LUA_clientGetHandItem },
 		{ "getCameraPosition", LUA_clientGetCameraPosition },
 		{ "getCameraDirection", LUA_clientGetCameraDirection },
 		{ NULL, NULL }

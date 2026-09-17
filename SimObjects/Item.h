@@ -45,6 +45,14 @@ class Item : public Dynamic
 	virtual unsigned int getKindCreationBytes() const override { return stateBytes; }
 	virtual void addKindCreationData(enet_uint8* dest) const override;
 
+	/*
+		Client: plays one of its animations right away, without the server having said to. Used by
+		ClickActionPlayer for the animation a predicted click starts, see Networking/ClickAction.h.
+		The server's own ItemState will play it again for everyone else a moment later, which lands
+		on the same animation and so just restarts the one already running
+	*/
+	void startPredictedAnimation(int id) { startClientAnimation(id, false); }
+
 	//Server: the client carrying it, empty while it's on the ground
 	std::weak_ptr<ClientData> owner;
 

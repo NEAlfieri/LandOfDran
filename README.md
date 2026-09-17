@@ -20,6 +20,7 @@ Land of Dran uses entirely free and open source cross platform libraries so gett
 * Lua      (Scripting language)
 * OpenAL   (Playing audio and recording voice chat, client only)
 * Opus     (Compressing voice chat, client only)
+* libvpx   (Decoding .webm video prints, client only, optional: without it .webm prints are skipped and everything else builds the same. Only the library is needed, its headers are in External/vpx)
 
 Eventually a few other libraries will be added:
 
@@ -48,7 +49,7 @@ If you'd rather not use the presets, pass `-DCMAKE_TOOLCHAIN_FILE=<path-to-vcpkg
 Getting this working on debian/ubuntu should be as easy as:
 
 (Have CMake and Make working beforehand, obviously)
-1. Run `sudo apt-get install liblua5.4-dev libglm-dev libenet-dev zlib1g-dev libbullet-dev libassimp-dev libsdl2-dev mesa-utils libglew-dev libopenal-dev libopus-dev` to get the required dependencies.
+1. Run `sudo apt-get install liblua5.4-dev libglm-dev libenet-dev zlib1g-dev libbullet-dev libassimp-dev libsdl2-dev mesa-utils libglew-dev libopenal-dev libopus-dev` to get the required dependencies. Most systems already have libvpx (a browser or media player pulls it in) and it's picked up automatically for video prints; `libvpx-dev` is not needed.
 2. Clone repo / unzip to folder
 3. Navigate to folder in terminal
 4. `cmake -B cmake-build-release -DCMAKE_BUILD_TYPE=Release`

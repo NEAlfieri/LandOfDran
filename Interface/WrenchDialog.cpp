@@ -57,12 +57,99 @@ static bool dangerButton(const char* label)
 	return clicked;
 }
 
-void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters)
+//A button that stays lit while whatever it turns on is on
+static bool toggleButton(const char* label, bool& on)
 {
+	bool wasOn = on;
+	if (wasOn)
+	{
+		const ImVec4& active = ImGui::GetStyle().Colors[ImGuiCol_ButtonActive];
+		ImGui::PushStyleColor(ImGuiCol_Button, active);
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, active);
+	}
+
+	bool clicked = ImGui::Button(label);
+
+	if (wasOn)
+		ImGui::PopStyleColor(2);
+
+	if (clicked)
+		on = !on;
+
+	return clicked;
+}
+
+void WrenchDialog::stashCopy()
+{
+	if (!wasOpen)
+		return;
+
+	wasOpen = false;
+
+	if (!copying)
+		return;
+
+	copied = editing;
+	copiedFromVehicle = editing.vehicleID != NO_ID;
+	hasCopy = true;
+}
+
+//A vehicle's dialog is only its music, and a wheel's settings mean nothing on a brick that isn't a wheel
+void WrenchDialog::applyCopy()
+{
+	const BrickAttachments& from = copied.attachments;
+	BrickAttachments& to = editing.attachments;
+
+	to.musicName = from.musicName;
+	to.musicVolume = from.musicVolume;
+	to.musicPitch = from.musicPitch;
+
+	if (editing.vehicleID != NO_ID || copiedFromVehicle)
+		return;
+
+	editing.collides = copied.collides;
+	editing.name = copied.name;
+
+	to.hasLight = from.hasLight;
+	to.lightColor = from.lightColor;
+	to.lightBrightness = from.lightBrightness;
+	to.lightFlicker = from.lightFlicker;
+	to.lightBlinkSpeed = from.lightBlinkSpeed;
+	to.lightBlinkStrength = from.lightBlinkStrength;
+	to.lightCoronaWidth = from.lightCoronaWidth;
+	to.lightConeAngle = from.lightConeAngle;
+	to.lightDirection = from.lightDirection;
+	to.lightSpin = from.lightSpin;
+	to.lightOffset = from.lightOffset;
+
+	to.emitterName = from.emitterName;
+
+	//Only a print brick has a print section to fill in
+	if (editing.canPrint)
+		editing.printName = copied.printName;
+
+	if (editing.part == VehiclePart_Wheel && from.hasWheel)
+		to.wheel = from.wheel;
+
+	if (editing.part == VehiclePart_Steering && from.hasSteering)
+		to.steering = from.steering;
+}
+
+void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters,
+	const std::vector<std::string>& prints)
+{
+	//Opening one dialog right on top of another still counts as closing the first
+	stashCopy();
+
 	editing = settings;
+
+	if (copying && hasCopy)
+		applyCopy();
+
 	brickLabel = label;
 	musicNames = music;
 	emitterNames = emitters;
+	printNames = prints;
 
 	//Applying a wheel or steering wheel's dialog keeps its settings, even the defaults it opened with
 	if (editing.part == VehiclePart_Wheel)
@@ -78,6 +165,9 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	const std::string& emitterName = editing.attachments.emitterName;
 	if (!emitterName.empty() && std::find(emitterNames.begin(), emitterNames.end(), emitterName) == emitterNames.end())
 		emitterNames.push_back(emitterName);
+
+	if (!editing.printName.empty() && std::find(printNames.begin(), printNames.end(), editing.printName) == printNames.end())
+		printNames.push_back(editing.printName);
 
 	const glm::vec3& direction = editing.attachments.lightDirection;
 	lightPitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
@@ -100,6 +190,7 @@ bool WrenchDialog::takeSubmission(WrenchSubmission& submission)
 	submitted = false;
 	submission = editing;
 	submission.name = submission.name.substr(0, 255);
+	submission.printName = submission.printName.substr(0, 255);
 	submission.attachments.clampValues();
 	return true;
 }
@@ -128,7 +219,12 @@ bool WrenchDialog::takeSaveRequest(netIDType& vehicleID, std::string& path)
 void WrenchDialog::render(ImGuiIO* io)
 {
 	if (!opened)
+	{
+		stashCopy();
 		return;
+	}
+
+	wasOpen = true;
 
 	if (framesToCenter > 0)
 	{
@@ -162,13 +258,20 @@ void WrenchDialog::render(ImGuiIO* io)
 	BrickAttachments& settings = editing.attachments;
 	bool forVehicle = editing.vehicleID != NO_ID;
 
+	//Turning it off drops what it was holding, so turning it back on starts from whatever window that is
+	if (toggleButton("Copy", copying) && !copying)
+		hasCopy = false;
+	tooltip("Keeps these settings when the window closes, and fills in the next brick you wrench with the ones that fit it");
+
+	ImGui::SameLine();
+	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted(brickLabel.c_str());
 	ImGui::Separator();
 
 	//The settings scroll once they'd be taller than most of the screen, which a light and large UI scaling easily make them, so Apply stays in view
 	float itemWidth = ImGui::GetFontSize() * 16.0f;
 	float bodyWidth = itemWidth + style.ItemInnerSpacing.x + ImGui::CalcTextSize("Compression damping").x + style.ScrollbarSize + ImGui::GetFontSize();
-	float chrome = ImGui::GetFrameHeight() + style.WindowPadding.y * 2.0f + ImGui::GetTextLineHeightWithSpacing() * 2.0f + ImGui::GetFrameHeightWithSpacing() + style.ItemSpacing.y * 2.0f;
+	float chrome = ImGui::GetFrameHeight() + style.WindowPadding.y * 2.0f + ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() + ImGui::GetFrameHeightWithSpacing() + style.ItemSpacing.y * 2.0f;
 	float maxBodyHeight = std::max(ImGui::GetFontSize() * 6.0f, viewport->WorkSize.y * 0.95f - chrome);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(bodyWidth, 0.0f), ImVec2(bodyWidth, maxBodyHeight));
 	ImGui::BeginChild("Settings", ImVec2(bodyWidth, 0.0f), ImGuiChildFlags_AutoResizeY);
@@ -302,6 +405,17 @@ void WrenchDialog::render(ImGuiIO* io)
 				ImGui::SliderFloat("Spin", &settings.lightSpin, -720.0f, 720.0f, "%.0f degrees/s");
 				tooltip("Turns the beam around the vertical like a lighthouse. Ctrl+click to type up to 3600");
 			}
+		}
+	}
+
+	if (!forVehicle && editing.canPrint && sectionHeader("Print"))
+	{
+		if (printNames.empty())
+			ImGui::TextDisabled("The server has no prints");
+		else
+		{
+			nameCombo("Image##Print", editing.printName, printNames);
+			tooltip("The picture on the printed face of the brick");
 		}
 	}
 

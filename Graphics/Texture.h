@@ -123,8 +123,15 @@ class Texture
 	//For handing to ImGui::Image
 	GLuint getHandle() const { return handle; }
 
-	//Loads one layer of a 2D texture array from a file
-	void addLayer(std::string filePath);
+	/*
+		Loads one layer of a 2D texture array from a file
+
+		flattenAlphaOntoWhite mixes each pixel toward white by how transparent it is, and leaves it
+		opaque. It's how the flat textures a DTS shape names are meant to be read: the ones Blockland
+		add-ons use for shades of grey are all pure black and differ only in their alpha, so taken at
+		face value a whole model comes out black. See the DTS models section of LuaAPI.md.
+	*/
+	void addLayer(std::string filePath, bool flattenAlphaOntoWhite = false);
 };
 
 /*
@@ -195,6 +202,9 @@ class TextureManager
 	*/
 	void allocateForDecals(unsigned int dimensions, unsigned int maxEntries = 256);
 
+	//Width and height of one decal, see allocateForDecals
+	unsigned int getDecalSize() const { return decals ? (unsigned int)decals->width : 0; }
+
 	/*
 		Should be called after all decals for a given server have been loaded
 		AND after all programs you're going to use decals in have been loaded
@@ -208,6 +218,15 @@ class TextureManager
 		Returns false if the image couldn't be loaded
 	*/
 	bool addDecal(const std::string &filePath,int id);
+
+	/*
+		Puts RGBA pixels of any size in a decal layer, resized to the decal size like addDecal
+		withMipmaps fills in that one layer's smaller levels as well, which a decal that changes after
+		finalizeDecals (a video print's frames, see Graphics/PrintVideos.h) needs, since glGenerateMipmap
+		would redo every layer for it
+		Returns false if the layer is out of range or there are no pixels
+	*/
+	bool setDecalPixels(const unsigned char* rgba, int width, int height, int id, bool withMipmaps);
 
 	/*
 		Creates a non-array texture from a single image file and returns it

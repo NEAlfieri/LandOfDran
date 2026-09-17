@@ -48,7 +48,7 @@ struct CameraUniforms
 /*
 	Time of day, lighting, fog, and water information for a uniform buffer object
 	Every vec3 is followed by a float so std140 needs no extra padding
-	Size: 144 bytes
+	Size: 160 bytes
 */
 struct EnvironmentUniforms
 {
@@ -76,6 +76,11 @@ struct EnvironmentUniforms
 	float RainMapBottom = 0;							//4				124
 	//xy the world x and z of the rain map's corner, z its width, w the world size of one of its texels
 	glm::vec4 RainMapArea = glm::vec4(0, 0, 1, 1);		//16			128
+	//World height the fog reaches up to, the sky fades into the fog color below it, see DayCycle::fogHeight
+	float FogHeight = 40;								//4				144
+	float padding1 = 0;									//4				148
+	float padding2 = 0;									//4				152
+	float padding3 = 0;									//4				156
 };
 
 /*
@@ -163,6 +168,9 @@ class ShaderManager
 	//Program for drawing bricks to screen
 	Program* brickShader = new Program();
 
+	//Program for the brick depth pre-pass, brick.vert with almost no fragment work, see graphics/depthprepass
+	Program* brickDepthShader = new Program();
+
 	//Programs for drawing shadows of normal meshes and bricks into one shadow cascade at a time
 	Program* modelShadowCascadeShader = new Program();
 	Program* brickShadowCascadeShader = new Program();
@@ -185,6 +193,10 @@ class ShaderManager
 	//Programs for drawing falling rain drops and their splashes, see Rain::render
 	Program* rainShader = new Program();
 	Program* rainSplashShader = new Program();
+
+	//Programs for the sun disc the god rays come from and for the rays themselves, see LoopClient::renderGodRays
+	Program* godRayMaskShader = new Program();
+	Program* godRayShader = new Program();
 
 	/*
 		Reads a text file to see where we should find the shader files for the above programs

@@ -18,13 +18,18 @@
 #include "../Graphics/Skybox.h"
 #include "../Graphics/InstancedBrickRenderer.h"
 #include "../Graphics/PointLights.h"
+#include "ClickActionPlayer.h"
 #include "../Graphics/WaterRipples.h"
 #include "../Graphics/ParticleSystem.h"
 #include "../Graphics/Rain.h"
+#include "../Graphics/GpuProfiler.h"
+#include "../Graphics/ItemIconRenderer.h"
 #include "../Bricks/GhostBrick.h"
 #include "../Bricks/SelectionBox.h"
 #include "../Bricks/VehicleGhost.h"
 #include "../Bricks/BrickTypes.h"
+#include "../Bricks/PrintTypes.h"
+#include "../Graphics/PrintVideos.h"
 #include "../Interface/BrickSelector.h"
 #include "../Interface/BrickHotbar.h"
 #include "../Interface/PaintMenu.h"
@@ -46,8 +51,21 @@ struct ClientProgramData
 	Material* grassMaterial = nullptr;
 	GLuint grassVao = 0;
 
-	//TODO: Move this to environment class and don't hardcode it to 3
+	/*
+		TODO: Move this to environment class and don't hardcode it to 3
+		These are the matrices the shadow maps were actually drawn with, which is not always this frame's:
+		the farther cascades are only redrawn every so often, see the shadow pass in LoopClient::renderEverything.
+		Everything that samples the maps has to use these, or it would look them up in the wrong place
+	*/
 	glm::mat4 lightSpaceMatricies[3];
+
+	//Where the camera was, and how wide the cascade was, when each one was last drawn
+	glm::vec3 cascadeDrawnFrom[3] = { glm::vec3(0), glm::vec3(0), glm::vec3(0) };
+	float cascadeRadius[3] = { 0, 0, 0 };
+	//Cleared when the shadow maps are (re)created, so the first frame after that draws all three
+	bool cascadeDrawn[3] = { false, false, false };
+	//Counts frames, so the cascades that don't redraw every frame can take it in turns
+	unsigned int cascadeFrame = 0;
 	GLuint lightSpaceMatriciesUniformModel = 0;
 	GLuint lightSpaceMatriciesUniformBrick = 0;
 	//The one cascade being drawn into, see the shadow pass in LoopClient::renderEverything
@@ -74,6 +92,12 @@ struct ClientProgramData
 	//Named brick sizes with icons, for the brick selector
 	BrickTypes brickTypes;
 
+	//Prints from Assets/brick/prints, each loaded into a layer of the decal array, see PrintType::decalLayer
+	PrintTypes prints;
+
+	//The .webm ones among them, playing into their layers, see Graphics/PrintVideos.h
+	PrintVideos printVideos;
+
 	//Lives for the whole program, every vehicle's wheels are instances of it, nullptr if it couldn't be loaded, see LoopClient::placeVehicleWheels
 	Model* tireModel = nullptr;
 
@@ -89,6 +113,15 @@ struct ClientProgramData
 	std::shared_ptr<PaintMenu> paintMenu = nullptr;
 	std::shared_ptr<ItemHotbar> itemHotbar = nullptr;
 
+	//Draws the model of each item you're carrying for the item bar to show, nullptr while graphics/itemicons3d is off
+	std::shared_ptr<ItemIconRenderer> itemIcons = nullptr;
+
+	//graphics/itemicons3d as of launch or the last settings save
+	bool itemIcons3d = true;
+
+	//Plays what the server said the next click with the held item does, without waiting for it, see Networking/ClickAction.h
+	std::shared_ptr<ClickActionPlayer> clickActions = std::make_shared<ClickActionPlayer>();
+
 	/*
 		Things the game remembers between launches rather than settings the player picks: last server and name,
 		window size, hot bar. Kept out of Config/settings.txt so they can be written often without rewriting that
@@ -99,6 +132,9 @@ struct ClientProgramData
 	//graphics/startresolutionx and y as of launch or the last settings save, so a newly picked one can be applied
 	glm::ivec2 appliedStartResolution = glm::ivec2(0);
 	std::shared_ptr<RenderTarget> shadows = nullptr;
+	//graphics/shadowresolution is off, so the sun and moon cast nothing and shadows is a single texel
+	bool sunShadows = true;
+
 	//graphics/shadowresolution, graphics/shadowsoftness, and graphics/shadowcolor as of launch or the last settings save
 	int shadowResolution = 0;
 	int shadowSoftness = 1;
@@ -119,6 +155,9 @@ struct ClientProgramData
 	//graphics/imagebasedlighting as of launch or the last settings save
 	bool imageBasedLighting = true;
 
+	//graphics/depthprepass as of launch or the last settings save, see the pre-pass in LoopClient::renderScene
+	bool depthPrePass = true;
+
 	//Empty, sky.vert builds a fullscreen triangle from gl_VertexID but core profile still needs a VAO bound
 	GLuint skyVao = 0;
 
@@ -135,6 +174,22 @@ struct ClientProgramData
 
 	//Rain of whichever server we're on, and the map of what's overhead that keeps it outside
 	Rain rain;
+
+	//Times each render pass while the debug menu asks for it, otherwise costs nothing, see LoopClient::renderEverything
+	GpuProfiler profiler;
+
+	/*
+		God rays: where the sky still shows around the sun, at half the width and height of the screen,
+		nullptr while graphics/godrayquality is None. See LoopClient::renderGodRays
+	*/
+	std::shared_ptr<RenderTarget> godRayMask = nullptr;
+
+	//graphics/godrayquality as of launch or the last settings save, as places looked at along each ray, 0 for off
+	int godRaySamples = 0;
+
+	GLint godRaySunScreenUniform = -1;
+	GLint godRaySampleCountUniform = -1;
+	GLint godRayStrengthUniform = -1;
 
 	//Copy of the finished scene that underwater.frag draws back warped, made the first time the camera goes under the water
 	std::shared_ptr<RenderTarget> underwaterScene = nullptr;

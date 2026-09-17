@@ -6,14 +6,14 @@
 #include <cmath>
 #include <sstream>
 
-bool VehicleGhost::start(const std::string& saveName, const std::string& bytes, bool placeAsVehicle, const BrickTypes& types, std::string& failure)
+bool VehicleGhost::start(const std::string& saveName, const std::string& bytes, bool placeAsVehicle, const BrickTypes& types, const PrintTypes& prints, std::string& failure)
 {
 	cancel();
 
 	std::vector<Brick> loaded;
 	size_t total = 0;
 	std::istringstream stream(bytes, std::ios::binary);
-	LodReadResult result = readLodBricks(stream, &types, [&](Brick& brick)
+	LodReadResult result = readLodBricks(stream, &types, &prints, [&](Brick& brick)
 	{
 		total++;
 		if (loaded.size() >= maxBricks)

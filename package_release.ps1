@@ -2,6 +2,7 @@
 .SYNOPSIS
 Packages a release Windows binary along with the files it needs at runtime
 (Assets, Shaders, serverstart.lua, and Saves if present) into a single zip archive.
+Assets are taken from the working tree, so the gitignored ones (music, .webm prints) go in too.
 
 .DESCRIPTION
 Unlike the Linux release script, there's no glibc-style ABI baseline to
@@ -56,7 +57,8 @@ New-Item -ItemType Directory -Path $PkgDir -Force | Out-Null
 try {
     Copy-Item (Join-Path $OutDir "*.exe") $PkgDir
     Copy-Item (Join-Path $OutDir "*.dll") $PkgDir -ErrorAction SilentlyContinue
-    # From the local copy rather than git, so gitignored assets like Assets/music are packaged too
+    # From the local copy rather than git, so gitignored assets are packaged too: Assets/music and the
+    # .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
     Copy-Item "Assets" $PkgDir -Recurse
     Copy-Item "Shaders" $PkgDir -Recurse
     Copy-Item "serverstart.lua" $PkgDir

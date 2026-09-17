@@ -203,6 +203,16 @@ class Vehicle : public SimObject
 	//Server: no engine or steering, and every wheel's brakes on, for a vehicle nobody is driving
 	void park();
 
+	/*
+		Server: stands it back on its wheels facing the way it was, still, and lifts it clear of whatever it was stuck in,
+		for a player left clicking a vehicle nobody is in, see Networking/PacketsFromClient/ClickDetails.cpp
+	*/
+	void flipUpright();
+
+	//How far above half its height flipUpright lifts it, and the most it lifts it at all, world units
+	static constexpr float flipLift = 1.0f;
+	static constexpr float maxFlipLift = 10.0f;
+
 	//Server: copies each wheel's steering, suspension, and contact out of the physics, after a step
 	void updateWheelStates();
 
@@ -268,6 +278,22 @@ class Vehicle : public SimObject
 	virtual unsigned int getCreationPacketBytes() const override;
 
 	virtual unsigned int getUpdatePacketBytes() const override;
+
+	//The first byte of an update is how long to play it back over, see SimObject::scaleUpdateInterval
+	//A byte can't say more than 255, and anything that long is treated as "no idea" by the interpolator anyway
+	virtual void scaleUpdateInterval(enet_uint8* update, unsigned int multiplier) const override
+	{
+		update[0] = (enet_uint8)std::min<unsigned int>(update[0] * multiplier, 255u);
+	}
+
+	//See SimObject::getNetRelevancePosition
+	virtual bool getNetRelevancePosition(glm::vec3& position) const override
+	{
+		if (!body)
+			return false;
+		position = b2g3(body->getWorldTransform().getOrigin());
+		return true;
+	}
 
 	virtual void addToCreationPacket(enet_uint8* dest) const override;
 

@@ -20,5 +20,6 @@ void main()
 	vec4 viewSpace = inverse(CameraProjection) * vec4(ndc, 1.0, 1.0);
 	viewRay = (inverse(CameraAngle) * vec4(viewSpace.xyz / viewSpace.w, 0.0)).xyz;
 
-	gl_Position = vec4(ndc, 0.0, 1.0);
+	//Right on the far plane, so the sky can be drawn after the scene and only reach the pixels nothing else covered
+	gl_Position = vec4(ndc, 1.0, 1.0);
 }

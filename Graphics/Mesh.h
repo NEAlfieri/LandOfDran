@@ -208,6 +208,10 @@ class ModelInstance
 	//World space middle of one of its meshes as of the last calculateMeshTransforms and setModelTransform, see Mesh::center
 	glm::vec3 getMeshCenter(int meshIdx) const;
 
+	//Where one of its meshes sits inside the model, baseScale and any playing animation applied, but not
+	//setModelTransform's whole model transform. What a draw that puts the model somewhere of its own needs, see Mesh::renderOnce
+	const glm::mat4& getMeshTransform(int meshIdx) const { return MeshTransforms[meshIdx]; }
+
 	//World space rotation of one of its meshes, with any scale taken out, as of the same updates as getMeshCenter
 	glm::quat getMeshRotation(int meshIdx) const;
 
@@ -340,6 +344,17 @@ class Mesh
 	glm::vec3 low = glm::vec3(0);
 
 	/*
+		Its bounding box in the whole model's space, its node's transform applied but not baseScale, from Model::calculateMeshBounds
+		Unlike center/low this is filled server side too, so servers can work out which mesh of a model a point is on, see Model::getMeshAtPoint
+		A mesh no node draws, or one with no vertices, is left with boundsHigh below boundsLow
+	*/
+	glm::vec3 boundsLow = glm::vec3(1);
+	glm::vec3 boundsHigh = glm::vec3(-1);
+
+	//Whether calculateMeshBounds found any vertices for it
+	bool hasBounds() const { return boundsHigh.x >= boundsLow.x; }
+
+	/*
 		Texture coordinates of a decal's top left and bottom right corners on this mesh, client only
 		Nothing outside of them gets the decal, like the sides and back of a torso wearing a shirt
 		From a decalarea line in the model's .txt, otherwise the whole 0 to 1 range
@@ -377,6 +392,13 @@ class Mesh
 
 	//Render all instances of this particular mesh
 	void render(std::shared_ptr<ShaderManager> graphics, bool useMaterials = true) const;
+
+	/*
+		Draws one copy of the mesh with no instance of the model behind it, from the model matrix in
+		BasicUniforms instead, which the caller sets along with BasicUniforms::nonInstanced.
+		Used for drawing a model somewhere that isn't the world, like an item's picture in the item bar
+	*/
+	void renderOnce(std::shared_ptr<ShaderManager> graphics) const;
 
 	//Renders exactly one instance of this mesh (by its buffer offset) using the outline shader, assumed already
 	//in use. Used for the highlight/outline X-ray effect, one ModelInstance at a time - see ModelInstance::renderSelfOutline
@@ -479,6 +501,17 @@ class Model
 	//Was at least one node an Assimp inserted rotation pivot node
 	bool rotationPivotsApplied = false;
 
+	/*
+		Whether an animated node's defaultTransform is its rest pose, or just wherever the file happened
+		to be saved. A DTS shape gives every node a default translation and rotation of its own, apart
+		from any sequence, so it is one. An FBX node is only the scene graph as the artist left it: every
+		animated node in Brickhead.fbx sits at the origin except the right arm, which sits mid-grab
+		because that is the frame the file was saved on. So an FBX keeps no translation and no rotation
+		as the rest pose, which is what Model::addAnimation assumes when working out which nodes an
+		animation actually moves, and what ModelInstance::calculateNodeTransform falls back to.
+	*/
+	bool nodeDefaultsAreRestPose = false;
+
 	//What frame of animation should be displayed for an instance when we're not playing any animations on it
 	float animationDefaultTime = 0;
 
@@ -564,12 +597,31 @@ class Model
 	//Calls render on just one of its meshes
 	void renderMesh(std::shared_ptr<ShaderManager> graphics, int meshIdx) const;
 
+	//Calls renderOnce on just one of its meshes, see Mesh::renderOnce
+	void renderMeshOnce(std::shared_ptr<ShaderManager> graphics, int meshIdx) const;
+
+	/*
+		The box its drawn meshes fill, baseScale applied, in the model's own space. False for a model with
+		nothing drawn in it. Taken from the pose it was loaded in, so an animation having moved a limb since isn't counted
+	*/
+	bool getDrawnBounds(glm::vec3& low, glm::vec3& high) const;
+
 	//Calls renderSingleInstance(bufferOffset) on each mesh, assumes the outline shader is already bound.
 	//Used for the highlight/outline X-ray effect - see ModelInstance::renderSelfOutline
 	void renderSingleInstance(unsigned int bufferOffset) const;
 
 	//Calculates collisionHalfExtents and collisionOffset, called in constructor
 	void calculateCollisionBox(const aiScene* scene);
+
+	//Fills every mesh's boundsLow/boundsHigh, called in both constructors
+	void calculateMeshBounds(const aiScene* scene);
+
+	/*
+		Which mesh a point in the model's own space (before baseScale) is on or nearest to, -1 for a model with nothing paintable
+		Meshes that are never drawn, and the see-through face plate over a head, are skipped, and the smallest box wins a tie
+		Uses the bounding boxes the model was loaded in, so an animation having moved a limb since isn't taken into account
+	*/
+	int getMeshAtPoint(const glm::vec3& point) const;
 
 	/*
 		File path refers to a text file that describes where the actual model is

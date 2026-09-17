@@ -13,7 +13,8 @@ void applyPhysicsAdjustment(JoinedClient* source, Server const* const server, EN
 	//This is only needed because I needed to avoid a circular dependancy by not including SPD in Server.h
 	const ServerProgramData* pd = (const ServerProgramData*)pdv;
 
-	if(packet->dataLength < (1 + sizeof(netIDType)))
+	//The whole fixed header: type, net ID, ms since last send, and both flags bytes, all of which are read below
+	if(packet->dataLength < (1 + sizeof(netIDType) + 3))
 	{
 		std::cout << "Packet too small to be a physics adjustment packet" << std::endl;
 		return;
@@ -30,7 +31,8 @@ void applyPhysicsAdjustment(JoinedClient* source, Server const* const server, EN
 	unsigned char flags = packet->data[byteIterator];
 	byteIterator++;
 
-	//Second flags byte, a client never sends anything in it for its own dynamics, see Dynamic::addToUpdatePacket
+	//Second flags byte, which for a client's own dynamics only ever says how its position was encoded, see Dynamic::addToUpdatePacket
+	unsigned char extraFlags = packet->data[byteIterator];
 	byteIterator++;
 
 	bool needPosRot = flags & 1;
@@ -38,7 +40,7 @@ void applyPhysicsAdjustment(JoinedClient* source, Server const* const server, EN
 	bool needAngVel = flags & 4;
 
 	unsigned neededSize = 1 + sizeof(netIDType) + 3;
-	neededSize += needPosRot ? PositionBytes + QuaternionBytes : 0;
+	neededSize += needPosRot ? updatePositionBytes(extraFlags) + QuaternionBytes : 0;
 	neededSize += needVel ? VelocityBytes : 0;
 	neededSize += needAngVel ? AngularVelocityBytes : 0;
 
@@ -53,10 +55,19 @@ void applyPhysicsAdjustment(JoinedClient* source, Server const* const server, EN
 	glm::vec3 linVel;
 	glm::vec3 angVel;
 
+	//The object has to be found before its position can be read, since a delta is measured off its last keyframe
+	std::shared_ptr<Dynamic> toUpdate = pd->dynamics->find(id);
+
+	if (!toUpdate)
+		return;
+
+	//A delta off a keyframe that never arrived tells us nothing, so leave the object where the server already has it
+	bool havePos = false;
+
 	if (needPosRot)
 	{
-		getPosition(packet->data + byteIterator, pos);
-		byteIterator += PositionBytes;
+		havePos = toUpdate->readUpdatePosition(packet->data + byteIterator, extraFlags, pos);
+		byteIterator += updatePositionBytes(extraFlags);
 		getQuaternion(packet->data + byteIterator, rot);
 		byteIterator += QuaternionBytes;
 	}
@@ -73,12 +84,7 @@ void applyPhysicsAdjustment(JoinedClient* source, Server const* const server, EN
 		byteIterator += AngularVelocityBytes;
 	}
 
-	std::shared_ptr<Dynamic> toUpdate = pd->dynamics->find(id);
-
-	if (!toUpdate)
-		return;
-
-	if (needPosRot)
+	if (needPosRot && havePos)
 	{
 		btTransform t;
 		t.setOrigin(btVector3(pos.x, pos.y, pos.z));

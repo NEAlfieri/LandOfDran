@@ -26,6 +26,9 @@ class BrickHolder
 	std::vector<Brick*> bricks;
 	std::unordered_map<netIDType, Brick*> byId;
 
+	//Every brick that has a name, by that name exactly, for getNamed. Bricks with no name are left out entirely
+	std::unordered_map<std::string, std::vector<Brick*>> byName;
+
 	//Inclusive min/max voxel bounds of every brick
 	RTree<Brick*, int, 3, float> tree;
 
@@ -61,15 +64,19 @@ class BrickHolder
 	void createBody(Brick* brick);
 	void destroyBody(Brick* brick);
 
+	//Puts a brick into byName under the name it has now, or takes it back out, both nothing for a brick with no name
+	void addName(Brick* brick);
+	void removeName(Brick* brick);
+
 	//AddBricks packets for these bricks, each under the MTU
 	std::vector<ENetPacket*> makeAddPackets(const std::vector<const Brick*>& toSend) const;
 
 	public:
 
 	//Bytes per brick in AddBricks packets
-	static constexpr unsigned int recordBytes = 21;
+	static constexpr unsigned int recordBytes = 23;
 
-	//typeID is written as is, so the caller maps it between the client's and server's special types
+	//typeID and printID are written as is, so the caller maps them between the client's and server's special types and prints
 	static void writeRecord(const Brick* brick, enet_uint8* data);
 	static Brick readRecord(const enet_uint8* data);
 
@@ -99,6 +106,12 @@ class BrickHolder
 	//An unknown material becomes BrickMaterial_None
 	void setMaterial(Brick* brick, unsigned char material);
 
+	//0 for no print, otherwise 1 more than an index into PrintTypes, see Brick::printID
+	void setPrint(Brick* brick, uint16_t printID);
+
+	//Names are server side only, clients never learn them. Keeps byName up to date, so always rename through this
+	void setName(Brick* brick, const std::string& name);
+
 	//Would a brick with this min corner and rotated size overlap an existing one
 	bool overlaps(int x, int y, int z, int footprintWidth, int height, int footprintLength) const;
 
@@ -110,6 +123,12 @@ class BrickHolder
 
 	//nullptr if no brick has that ID
 	Brick* find(netIDType netId) const;
+
+	//How many bricks are named this, matching case exactly. An empty name is always 0, however many bricks have no name
+	size_t numNamed(const std::string& name) const;
+
+	//The index'th brick with that name, nullptr past the end. Removing one changes the order of the rest, like get
+	Brick* getNamed(const std::string& name, size_t index) const;
 
 	size_t size() const { return bricks.size(); }
 	Brick* get(size_t index) const { return bricks[index]; }

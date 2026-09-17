@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include "DtsShape.h"
 
 #include <tuple>
 
@@ -102,7 +103,12 @@ void Model::addAnimation(Animation& animation,int id)
 			if (time > animation.startTime && time < animation.endTime)
 				times.push_back(time);
 
-		//Rest pose is no translation or rotation, see ModelInstance::calculateNodeTransform
+		/*
+			Does the animation move this node at all, measured against a rest pose of no translation and no
+			rotation, which is what ModelInstance::calculateNodeTransform falls back to. A DTS node rests at
+			its own default instead, see Model::nodeDefaultsAreRestPose, so a sequence that holds one still
+			away from the origin counts as moving it, which costs nothing but a mix that changes nothing.
+		*/
 		for (float time : times)
 		{
 			glm::vec3 pos;
@@ -743,6 +749,8 @@ Mesh::Mesh(aiMesh const* const src, Model const* const parent,bool serverSide)
 	if (serverSide)
 	{
 		name = src->mName.C_Str();
+		//Servers don't draw, but getMeshAtPoint still needs to know which meshes aren't part of how the model looks
+		nonRenderingMesh = lowercase(name) == "collision";
 		return;
 	}
 
@@ -973,6 +981,25 @@ void Mesh::render(std::shared_ptr<ShaderManager> graphics, bool useMaterials) co
 	glBindVertexArray(0);
 }
 
+void Mesh::renderOnce(std::shared_ptr<ShaderManager> graphics) const
+{
+	if (nonRenderingMesh || !valid)
+		return;
+
+	if (graphics->basicUniforms.DecalArea != decalArea)
+	{
+		graphics->basicUniforms.DecalArea = decalArea;
+		graphics->updateBasicUBO();
+	}
+
+	if (material)
+		material->use(graphics);
+
+	glBindVertexArray(vao);
+	glDrawElements(GL_TRIANGLES, vertexCount, GL_UNSIGNED_SHORT, (void*)0);
+	glBindVertexArray(0);
+}
+
 void Mesh::renderSingleInstance(unsigned int bufferOffset) const
 {
 	if (nonRenderingMesh)
@@ -1140,6 +1167,86 @@ static void growToMeshes(const aiScene* scene, const aiNode* node, aiMatrix4x4 t
 		growToMeshes(scene, node->mChildren[a], transform, minPos, maxPos);
 }
 
+//The same walk as growToMeshes, except each mesh gets its own box rather than one around the lot of them
+void Model::calculateMeshBounds(const aiScene* scene)
+{
+	//Each node left to visit, with the transform that puts its meshes in the whole model's space
+	std::vector<std::pair<const aiNode*, aiMatrix4x4>> toVisit;
+	toVisit.emplace_back(scene->mRootNode, aiMatrix4x4());
+
+	while (!toVisit.empty())
+	{
+		const aiNode* node = toVisit.back().first;
+		aiMatrix4x4 transform = toVisit.back().second * node->mTransformation;
+		toVisit.pop_back();
+
+		for (unsigned int a = 0; a < node->mNumMeshes; a++)
+		{
+			unsigned int meshIdx = node->mMeshes[a];
+			if (meshIdx >= allMeshes.size())
+				continue;
+
+			Mesh* mesh = allMeshes[meshIdx];
+			const aiMesh* src = scene->mMeshes[meshIdx];
+			for (unsigned int v = 0; v < src->mNumVertices; v++)
+			{
+				aiVector3D position = transform * src->mVertices[v];
+				glm::vec3 vertex(position.x, position.y, position.z);
+
+				if (mesh->hasBounds())
+				{
+					mesh->boundsLow = glm::min(mesh->boundsLow, vertex);
+					mesh->boundsHigh = glm::max(mesh->boundsHigh, vertex);
+				}
+				else
+				{
+					mesh->boundsLow = vertex;
+					mesh->boundsHigh = vertex;
+				}
+			}
+		}
+
+		for (unsigned int a = 0; a < node->mNumChildren; a++)
+			toVisit.emplace_back(node->mChildren[a], transform);
+	}
+}
+
+int Model::getMeshAtPoint(const glm::vec3& point) const
+{
+	//The face plate sits right in front of the head, and is see-through apart from the face, so the head is what's really there
+	int facePlate = getFaceMeshIdx();
+	if (facePlate != -1 && lowercase(allMeshes[facePlate]->name) == "head")
+		facePlate = -1;
+
+	int best = -1;
+	float bestDistance = 0;
+	float bestVolume = 0;
+
+	for (int a = 0; a < (int)allMeshes.size(); a++)
+	{
+		const Mesh* mesh = allMeshes[a];
+		if (a == facePlate || mesh->nonRenderingMesh || !mesh->hasBounds())
+			continue;
+
+		//How far outside the box the point is along each axis, all zero for one inside it
+		glm::vec3 away = glm::max(glm::max(mesh->boundsLow - point, point - mesh->boundsHigh), glm::vec3(0));
+		float distance = glm::dot(away, away);
+
+		glm::vec3 size = mesh->boundsHigh - mesh->boundsLow;
+		float volume = size.x * size.y * size.z;
+
+		//A smaller box inside a bigger one, like a head within a whole body, is the more useful answer
+		if (best == -1 || distance < bestDistance || (distance == bestDistance && volume < bestVolume))
+		{
+			best = a;
+			bestDistance = distance;
+			bestVolume = volume;
+		}
+	}
+
+	return best;
+}
+
 void Model::calculateCollisionBox(const aiScene* scene)
 {
 	//Find the collision mesh, kinda redundant since we do it in getCollisionTransformMatrix
@@ -1239,9 +1346,21 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	debug("Loading model descriptor file: " + filePath);
 
-	std::ifstream descriptorFile(filePath.c_str());
+	/*
+		Blockland add-ons ship their models as .dts files, which say everything about themselves a
+		descriptor file would, so one can be handed straight to newDynamicType or newItemType on its own.
+		Reading it as a descriptor that only points at itself keeps the rest of this the same, and
+		still lets a .txt point its file line at a .dts when it does want decalarea or material lines.
+	*/
+	std::istringstream selfDescriptor("file\t" + getFileFromPath(filePath) + "\n");
 
-	if (!descriptorFile.is_open())
+	std::ifstream descriptorFile;
+	if (!isDtsPath(filePath))
+		descriptorFile.open(filePath.c_str());
+
+	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
+
+	if (!isDtsPath(filePath) && !descriptorFile.is_open())
 	{
 		error("Could not open file " + filePath);
 		return;
@@ -1254,9 +1373,9 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	std::string modelPath = "";
 
 	std::string line = "";
-	while (!descriptorFile.eof())
+	while (!descriptor.eof())
 	{
-		getline(descriptorFile, line);
+		getline(descriptor, line);
 
 		//Every line is just two arguments separated by a tab
 
@@ -1329,12 +1448,28 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	debug("Loading model " + filePath + " with flags " + std::to_string(desiredImporterFlags));
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(modelPath, desiredImporterFlags);
+	const aiScene* scene = nullptr;
+
+	/*
+		A DTS shape is read by us rather than by Assimp, but comes out of it looking like anything
+		else Assimp would have handed back, so everything below here treats the two the same
+	*/
+	std::unique_ptr<aiScene> dtsScene;
+	std::vector<DtsSequence> dtsSequences;
+
+	if (isDtsPath(modelPath))
+	{
+		dtsScene.reset(loadDtsScene(modelPath, &dtsSequences));
+		scene = dtsScene.get();
+	}
+	else
+		scene = importer.ReadFile(modelPath, desiredImporterFlags);
 
 	if (!scene)
 	{
 		error("Problem loaded model file " + modelPath);
-		error(importer.GetErrorString());
+		if (!isDtsPath(modelPath))
+			error(importer.GetErrorString());
 		return;
 	}
 
@@ -1348,7 +1483,23 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	//rootNode = new Node(scene->mRootNode, this);*/
 
+	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
+
+	/*
+		A DTS shape brings its animations along with it, under whatever names the add-on gave them,
+		so nothing has to add them by hand the way an addAnimation line does for an FBX model. Both
+		sides load the same file in the same order, so the IDs they hand out line up.
+	*/
+	for (const DtsSequence& sequence : dtsSequences)
+	{
+		Animation animation;
+		animation.name = sequence.name;
+		animation.startTime = sequence.startTime;
+		animation.endTime = sequence.endTime;
+		animation.defaultSpeed = sequence.defaultSpeed;
+		addAnimation(animation);
+	}
 }
 
 //Full constructor for client-side loading, includes materials and animations
@@ -1360,9 +1511,16 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	debug("Loading model descriptor file: " + filePath);
 
-	std::ifstream descriptorFile(filePath.c_str());
+	//A .dts is its own descriptor, see the note on this in the server-side constructor above
+	std::istringstream selfDescriptor("file\t" + getFileFromPath(filePath) + "\n");
 
-	if (!descriptorFile.is_open())
+	std::ifstream descriptorFile;
+	if (!isDtsPath(filePath))
+		descriptorFile.open(filePath.c_str());
+
+	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
+
+	if (!isDtsPath(filePath) && !descriptorFile.is_open())
 	{
 		error("Could not open file " + filePath);
 		return;
@@ -1388,9 +1546,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	std::map<std::string, glm::vec4> decalAreas;
 
 	std::string line = "";
-	while (!descriptorFile.eof())
+	while (!descriptor.eof())
 	{
-		getline(descriptorFile, line);
+		getline(descriptor, line);
 
 		//Every line is just two arguments separated by a tab
 
@@ -1488,12 +1646,25 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	debug("Loading model " + filePath + " with flags " + std::to_string(desiredImporterFlags));
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(modelPath, desiredImporterFlags);
+	const aiScene* scene = nullptr;
+
+	//A DTS shape is read by us rather than by Assimp, see the same branch in the constructor above
+	std::unique_ptr<aiScene> dtsScene;
+	std::vector<DtsSequence> dtsSequences;
+
+	if (isDtsPath(modelPath))
+	{
+		dtsScene.reset(loadDtsScene(modelPath, &dtsSequences));
+		scene = dtsScene.get();
+	}
+	else
+		scene = importer.ReadFile(modelPath, desiredImporterFlags);
 
 	if (!scene)
 	{
 		error("Problem loaded model file " + modelPath);
-		error(importer.GetErrorString());
+		if (!isDtsPath(modelPath))
+			error(importer.GetErrorString());
 		return;
 	}
 
@@ -1582,7 +1753,23 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 			}
 
 			debug("Loading material " + std::string(src->GetName().C_Str()));
-			Material* tmp = new Material(std::string(src->GetName().C_Str()),albedoPath,normalPath,roughPath,metalPath, "",textures);
+
+			/*
+				Materials are kept by name, and a DTS one is named by the add-on that wrote it, which
+				means names as common as "black" or "white". Putting its folder in front keeps two
+				add-ons that both have a "black" from being handed each other's texture. The override
+				lookup above still goes by the plain name the shape uses.
+			*/
+			std::string materialName = isDtsPath(modelPath)
+				? folder + std::string(src->GetName().C_Str())
+				: std::string(src->GetName().C_Str());
+
+			/*
+				A DTS material is only a name with a flat texture under it, and the ones add-ons use for
+				shades of grey are all pure black differing only in how see-through they are, so its
+				alpha has to be read rather than dropped, see Texture::addLayer
+			*/
+			Material* tmp = new Material(materialName,albedoPath,normalPath,roughPath,metalPath, "",textures, isDtsPath(modelPath));
 			allMaterials.push_back(tmp);
 
 			if (!tmp->isValid())
@@ -1610,6 +1797,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	for (const auto& [meshName, area] : decalAreas)
 		error("decalarea line for " + meshName + " but " + filePath + " has no mesh by that name");
+
+	//See the note on this member, it has to be known before any Node is constructed
+	nodeDefaultsAreRestPose = isDtsPath(modelPath);
 
 	rootNode = new Node(scene->mRootNode, this);
 
@@ -1704,7 +1894,23 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 		}
 	}
 
+	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
+
+	/*
+		A DTS shape brings its animations along with it, under whatever names the add-on gave them,
+		so nothing has to add them by hand the way an addAnimation line does for an FBX model. Both
+		sides load the same file in the same order, so the IDs they hand out line up.
+	*/
+	for (const DtsSequence& sequence : dtsSequences)
+	{
+		Animation animation;
+		animation.name = sequence.name;
+		animation.startTime = sequence.startTime;
+		animation.endTime = sequence.endTime;
+		animation.defaultSpeed = sequence.defaultSpeed;
+		addAnimation(animation);
+	}
 
 	valid = true;
 }
@@ -1807,6 +2013,37 @@ void Model::renderMesh(std::shared_ptr<ShaderManager> graphics, int meshIdx) con
 		allMeshes[meshIdx]->render(graphics);
 }
 
+void Model::renderMeshOnce(std::shared_ptr<ShaderManager> graphics, int meshIdx) const
+{
+	if (meshIdx >= 0 && meshIdx < (int)allMeshes.size())
+		allMeshes[meshIdx]->renderOnce(graphics);
+}
+
+bool Model::getDrawnBounds(glm::vec3& low, glm::vec3& high) const
+{
+	bool any = false;
+
+	for (unsigned int a = 0; a < allMeshes.size(); a++)
+	{
+		if (allMeshes[a]->nonRenderingMesh || !allMeshes[a]->hasBounds())
+			continue;
+
+		low = any ? glm::min(low, allMeshes[a]->boundsLow) : allMeshes[a]->boundsLow;
+		high = any ? glm::max(high, allMeshes[a]->boundsHigh) : allMeshes[a]->boundsHigh;
+		any = true;
+	}
+
+	if (!any)
+		return false;
+
+	//A negative scale on an axis would turn that side of the box inside out
+	glm::vec3 scaledLow = low * baseScale;
+	glm::vec3 scaledHigh = high * baseScale;
+	low = glm::min(scaledLow, scaledHigh);
+	high = glm::max(scaledLow, scaledHigh);
+	return true;
+}
+
 void Model::renderSingleInstance(unsigned int bufferOffset) const
 {
 	for (unsigned int a = 0; a < allMeshes.size(); a++)
@@ -1844,6 +2081,22 @@ Node::Node(aiNode const* const src, Model * parent)
 
 	//What is this node's default state before any animations
 	CopyaiMat(src->mTransformation, defaultTransform);
+
+	/*
+		The same thing split into a position and a rotation, which is what ModelInstance::calculateNodeTransform
+		rebuilds a node from once it has any animation keys at all. Left at zero and identity, any node an
+		animation touches snaps to its parent's origin the moment one plays, or as one fades, which a DTS
+		shape's slides and bolts would do because it bakes each part's rest position into its node.
+
+		Only worth taking where the file means it as a rest pose, see Model::nodeDefaultsAreRestPose: Assimp
+		hands back an FBX node as the artist left it, which for Brickhead's right arm is a frame of the grab.
+		setDefaultFrame overwrites both of these when it's used.
+	*/
+	if (parent->nodeDefaultsAreRestPose)
+	{
+		defaultPos = getTransformFromMatrix(defaultTransform);
+		defaultRot = getRotationFromMatrix(defaultTransform);
+	}
 
 	//Assimp gives us meshes as indicies to an array of meshes loaded earlier
 	for (unsigned int a = 0; a < src->mNumMeshes; a++)

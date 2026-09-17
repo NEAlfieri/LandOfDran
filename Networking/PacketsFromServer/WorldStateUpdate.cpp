@@ -41,6 +41,9 @@ bool WorldStateUpdatePacket::applyPacket(const ClientProgramData& pd, Simulation
 	memcpy(&simulation.dayCycle.fogEnd, data, sizeof(float));
 	data += sizeof(float);
 
+	memcpy(&simulation.dayCycle.fogHeight, data, sizeof(float));
+	data += sizeof(float);
+
 	memcpy(&simulation.rainIntensity, data, sizeof(float));
 	simulation.rainIntensity = std::clamp(simulation.rainIntensity, 0.0f, 1.0f);
 

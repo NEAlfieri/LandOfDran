@@ -5,6 +5,8 @@ model	frag	model.frag.glsl
 model	vert	model.vert.glsl
 brick	frag	model.frag.glsl
 brick	vert	brick.vert.glsl
+brickDepth	frag	brickDepth.frag.glsl
+brickDepth	vert	brick.vert.glsl
 outline	vert	highlight.vert.glsl
 outline	frag	highlight.frag.glsl
 modelShadowCascade	vert	modelShadowCascade.vert.glsl
@@ -29,3 +31,7 @@ rain	vert	rain.vert.glsl
 rain	frag	rain.frag.glsl
 rainSplash	vert	rainSplash.vert.glsl
 rainSplash	frag	rainSplash.frag.glsl
+godRayMask	vert	sky.vert.glsl
+godRayMask	frag	godRayMask.frag.glsl
+godRay	vert	underwater.vert.glsl
+godRay	frag	godRay.frag.glsl

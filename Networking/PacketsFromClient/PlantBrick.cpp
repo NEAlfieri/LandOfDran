@@ -18,6 +18,9 @@ void plantBrick(JoinedClient* source, Server const* const server, ENetPacket con
 	Brick desc = BrickHolder::readRecord(packet->data + 1);
 	desc.ownerID = source->getNetId();
 
+	//Prints are put on with the wrench, so the record's is the client's own index for one and means nothing here
+	desc.printID = 0;
+
 	Brick* brick = pd->bricks->add(desc);
 	if (!brick)
 	{

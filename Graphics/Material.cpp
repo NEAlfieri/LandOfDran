@@ -1,6 +1,6 @@
 #include "Material.h"
 
-void Material::finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager>  textures)
+void Material::finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager>  textures, bool flattenAlbedoAlpha)
 {
 	int howManyLayers = 0;
 	if (albedo.length() > 0)
@@ -52,7 +52,7 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 	{
 		useAlbedo = currentLayer;
 		++currentLayer;
-		PBRArrayTexture->addLayer(albedo);
+		PBRArrayTexture->addLayer(albedo, flattenAlbedoAlpha);
 	}
 
 	if (normal.length() > 0)
@@ -65,11 +65,21 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 	//No point in incrementing currentLayer beyond this point...
 	//Create the final layer with various masks used for PBR rendering
 
-	//Bail early, no metalness/roughness/occlusion data, no need for a 3rd layer
+	/*
+		Bail early, no metalness/roughness/occlusion data, no need for a 3rd layer. Without the
+		return the layers this material didn't ask for get added as empty components anyway, which
+		is only ever reached by a material that has no PBR maps at all, like the flat textures a
+		DTS shape names. The shaders already draw one of those with default values, see useRoughness
+		and the rest in model.frag.glsl.
+	*/
 	if (howManyLayers == currentLayer)
 	{
+		PBRArrayTexture->setFilter(GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR);
+
 		if (PBRArrayTexture->isValid())
 			valid = true;
+
+		return;
 	}
 
 	//Metalness
@@ -109,12 +119,12 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 		valid = true;
 }
 
-Material::Material(const std::string &_name, const std::string &albedo, const  std::string &normal, const  std::string &roughness, const  std::string &metalness, const  std::string &occlusion, std::shared_ptr<TextureManager>  textures)
+Material::Material(const std::string &_name, const std::string &albedo, const  std::string &normal, const  std::string &roughness, const  std::string &metalness, const  std::string &occlusion, std::shared_ptr<TextureManager>  textures, bool flattenAlbedoAlpha)
 	: name(_name)
 {
 	scope("Material::Material (explicit)");
 
-	finishCreation(albedo, normal, roughness, metalness, occlusion, textures);
+	finishCreation(albedo, normal, roughness, metalness, occlusion, textures, flattenAlbedoAlpha);
 }
 
 Material::Material(const std::string &filePath, std::shared_ptr<TextureManager>  textures)

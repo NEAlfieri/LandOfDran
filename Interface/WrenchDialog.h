@@ -13,6 +13,12 @@ struct WrenchSubmission
 	std::string name = "";
 	BrickAttachments attachments;
 
+	//A PrintType's name, "" for a brick with no print, see Bricks/PrintTypes.h
+	std::string printName = "";
+
+	//Only a brick whose type has TEX:PRINT faces gets a print section, the dialog fills this in itself
+	bool canPrint = false;
+
 	//A wheel or steering wheel brick gets a section for its vehicle settings
 	VehiclePart part = VehiclePart_None;
 
@@ -34,6 +40,7 @@ class WrenchDialog : public Window
 	//What the server has to pick from, plus the brick's own pick if Lua gave it one that isn't listed
 	std::vector<std::string> musicNames;
 	std::vector<std::string> emitterNames;
+	std::vector<std::string> printNames;
 
 	//The spotlight's direction as sliders, in degrees, a pitch of -90 points straight down
 	float lightYaw = 0;
@@ -43,6 +50,21 @@ class WrenchDialog : public Window
 	float lastConeAngle = 60;
 
 	bool submitted = false;
+
+	//The Copy button at the top, which stays on between windows: what the last one held when it closed, put onto the next one it can go on
+	bool copying = false;
+	bool hasCopy = false;
+	bool copiedFromVehicle = false;
+	WrenchSubmission copied;
+
+	//Whether the last frame drew the window, so closing it any way, even the X or another dialog opening, is noticed
+	bool wasOpen = false;
+
+	//Remembers what was being edited as the window closes, if Copy is on
+	void stashCopy();
+
+	//Puts the remembered settings that apply to what's opening onto it, over what the server sent
+	void applyCopy();
 
 	//A vehicle's Save: the file name typed, and whether it was clicked
 	std::string saveName = "";
@@ -58,7 +80,8 @@ class WrenchDialog : public Window
 	public:
 
 	//Shows a brick's settings from the server, replacing anything that was being edited
-	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters);
+	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters,
+		const std::vector<std::string>& prints);
 
 	//True once after Apply is clicked, with what to send
 	bool takeSubmission(WrenchSubmission& submission);

@@ -31,6 +31,39 @@ class Dynamic : public SimObject
 	unsigned int lastSentTime = 0;
 
 	/*
+		Sender side, see addToUpdatePacket: the last full position we wrote out, as the far end will have decoded it,
+		and which generation it was. Positions after it go out as PositionDeltaBytes measured from here for as long as
+		they stay in range, see addPositionDelta
+	*/
+	glm::vec3 keyframePosition = glm::vec3(0, 0, 0);
+	unsigned char keyframeGeneration = 0;
+	bool hasKeyframe = false;
+	//Time with SDL_GetTicks of the keyframe above, so one goes out regularly and a receiver that missed one recovers quickly
+	unsigned int lastKeyframeTime = 0;
+
+	/*
+		Everything requiresNetUpdate worked out about the update it just asked for, so getUpdatePacketBytes and
+		addToUpdatePacket don't each redo the same distance and angle comparisons - ObjHolder calls all three
+		once per object per tick, and physics doesn't step in between, see LoopServer::run
+	*/
+	struct PendingUpdate
+	{
+		bool posRot = false;
+		bool vel = false;
+		bool angVel = false;
+		bool look = false;
+		bool oneShot = false;
+		//Whether the position goes out as a delta off keyframePosition rather than a full one, and what it is
+		bool positionIsDelta = false;
+		glm::vec3 positionDelta = glm::vec3(0, 0, 0);
+	};
+
+	PendingUpdate pendingUpdate;
+
+	//Works out pendingUpdate from where the body is now, called by requiresNetUpdate for an update it is about to ask for
+	void measurePendingUpdate();
+
+	/*
 		Determines its physical appearance and physics properties
 	*/
 	std::shared_ptr<DynamicType> type = nullptr;
@@ -81,6 +114,9 @@ class Dynamic : public SimObject
 	//Client: draws it here rather than where physics or the interpolator have it, like an item in someone's hand, for everything that follows where it's drawn too
 	void setDrawnTransform(const glm::vec3& position, const glm::quat& rotation);
 
+	//Client: what holds its meshes' transforms and per instance render data, nullptr server side
+	ModelInstance* getModelInstance() const { return modelInstance; }
+
 	void play(int id, bool loop) { if (!modelInstance) return; modelInstance->playAnimation(id, loop); }
 
 	void stop(int id) { if (!modelInstance) return;  modelInstance->stopAnimation(id); }
@@ -109,6 +145,32 @@ class Dynamic : public SimObject
 
 	//Server only, the look direction in the last update we sent
 	glm::vec3 lastSentLook = glm::vec3(0, 0, 0);
+
+	/*
+		Receiver side: the last full position an update carried for this object and which generation it was, so a
+		position delta can be measured back off of it. 255 until we have been sent one, which makes us drop deltas
+		rather than apply them to a position we never got, see UpdateSimObjectsPacket::applyPacket
+	*/
+	glm::vec3 receivedKeyframePosition = glm::vec3(0, 0, 0);
+	unsigned char receivedKeyframeGeneration = 255;
+
+	//Server only: makes the next position we send a full one rather than a delta, see requireFullNetUpdate
+	bool needsKeyframe = true;
+
+	/*
+		Writes the position of an update as either a full keyframe or a delta off the last one, per pendingUpdate,
+		stamping which of the two it is and the generation it belongs to into extraFlags
+	*/
+	void writeUpdatePosition(enet_uint8* dest, const glm::vec3& pos, unsigned char& extraFlags);
+
+	/*
+		Receiver side: reads the position out of an update, whichever of the two forms it took, and remembers a
+		keyframe for the deltas that follow it
+		Returns false for a delta measured from a keyframe we never got, which means we have no idea where this
+		object actually is and the caller should leave it where it is rather than put it somewhere wrong
+		The caller advances by updatePositionBytes(extraFlags) either way
+	*/
+	bool readUpdatePosition(enet_uint8 const* src, unsigned char extraFlags, glm::vec3& pos);
 
 	//Client only, the look direction the head is drawn with, following lookDirection smoothly for other players
 	glm::vec3 renderedLook = glm::vec3(0, 0, -1);
@@ -210,6 +272,38 @@ class Dynamic : public SimObject
 	//How many bytes would this add to a packet updating objects if it was added to it
 	virtual unsigned int getUpdatePacketBytes() const override;
 
+	//The first byte of an update is how long to play it back over, see SimObject::scaleUpdateInterval
+	//A byte can't say more than 255, and anything that long is treated as "no idea" by the interpolator anyway
+	virtual void scaleUpdateInterval(enet_uint8* update, unsigned int multiplier) const override
+	{
+		update[0] = (enet_uint8)std::min<unsigned int>(update[0] * multiplier, 255u);
+	}
+
+	//A position keyframe is what the deltas after it are measured from, so throttled clients need it even on a tick
+	//they would otherwise skip, see SimObject::lastUpdateAnchorsLaterOnes
+	virtual bool lastUpdateAnchorsLaterOnes() const override
+	{
+		return pendingUpdate.posRot && !pendingUpdate.positionIsDelta;
+	}
+
+	//A client that has only just been sent this object has no keyframe to measure a position delta from, and none
+	//of our lastSent state describes what it holds, so start it over from a full one
+	virtual void requireFullNetUpdate() override
+	{
+		needsKeyframe = true;
+		forceUpdateAll = true;
+	}
+
+	//An object out of the physics world - a carried item - has a stale body position, and the little it still sends
+	//(where its holder looks, grabs) has to reach everyone, so it stays unthrottled
+	virtual bool getNetRelevancePosition(glm::vec3& position) const override
+	{
+		if (!inWorld || !body)
+			return false;
+		position = b2g3(body->getWorldTransform().getOrigin());
+		return true;
+	}
+
 	//Add getCreationPacketBytes() worth of data to the given packet with all the data needed for the client to create it
 	virtual void addToCreationPacket(enet_uint8 * dest) const override;
 
@@ -235,6 +329,22 @@ class Dynamic : public SimObject
 	//Applies (or, if color.a <= 0, clears) an outline/highlight effect on this object. Used both client-side when
 	//applying a packet and server-side for bookkeeping so late-joining clients get it baked into their creation packet
 	void setHighlight(const glm::vec4& color, float thickness);
+
+	/*
+		Text drawn floating over it on clients, empty for none, and the color it's drawn in, see dynamic:setNameTag in Lua
+		Players get their name put here as they join, see serverstart.lua, and LoopClient::updateNameTags draws them
+	*/
+	std::string nameTag = "";
+	glm::vec3 nameTagColor = glm::vec3(1, 1, 1);
+
+	//Longer text is cut down to this, so one packet always holds a whole tag
+	static constexpr size_t maxNameTagLength = 64;
+
+	//Sets nameTag (cut to maxNameTagLength) and its color, both server and client side
+	void setNameTag(const std::string& text, const glm::vec3& color);
+
+	//Server side: returns a fully created packet ready to broadcast with the current name tag, see NameTagPacket
+	ENetPacket* makeNameTagPacket() const;
 
 	//Server side: returns a fully created packet ready to broadcast to relay the highlight update, does not apply it locally
 	ENetPacket* makeHighlightPacket(const glm::vec4& color, float thickness) const;

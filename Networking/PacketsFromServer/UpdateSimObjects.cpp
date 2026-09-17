@@ -159,10 +159,18 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 			glm::vec3 angVel;
 			glm::vec3 gravity;
 			float restitution, friction;
+
+			//A position sent as a delta off a keyframe we never got leaves us with no position at all, see Dynamic::readUpdatePosition
+			bool havePos = false;
+
+			//A position delta is measured off this object's own last keyframe, so it has to be found before one can be read
+			std::shared_ptr<Dynamic> toUpdate = simulation.dynamics->find(lastId);
+
 			if (needPosRot)
 			{
-				getPosition(packet->data + byteIterator, pos);
-				byteIterator += PositionBytes;
+				if (toUpdate)
+					havePos = toUpdate->readUpdatePosition(packet->data + byteIterator, extraFlags, pos);
+				byteIterator += updatePositionBytes(extraFlags);
 
 				getQuaternion(packet->data + byteIterator, rot);
 				byteIterator += QuaternionBytes;
@@ -223,7 +231,6 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 			}
 
 			//TODO: Friction, per-object gravity, and restitution are not actually sent on object creation yet so new joining players won't have the same values client-side
-			std::shared_ptr<Dynamic> toUpdate = simulation.dynamics->find(lastId);
 			if (toUpdate)
 			{
 				//Carried items are drawn in hand, not wherever the server last had them on the ground
@@ -235,8 +242,9 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 					//for when prediction ends and Dynamic::handOffFromPrediction hands control back to it
 					bool predictingLocally = getTicksMS() < toUpdate->predictLocallyUntil;
 
-					if (needPosRot)
+					if (needPosRot && havePos)
 					{
+						//msSinceLastSend already accounts for how often this client is sent one, see SimObject::scaleUpdateInterval
 						toUpdate->interpolator.addSnapshot(pos, rot, simulation.idealBufferSize, msSinceLastSend);
 
 						if (!predictingLocally)

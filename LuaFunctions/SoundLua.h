@@ -22,6 +22,9 @@ void sendSoundState(const ServerProgramData* pd, JoinedClient* client);
 //For sounds the server plays on its own, like splashes: plays a registered sound once for everyone, silent if there's none by that name
 void playSoundAt(const std::string& name, const glm::vec3& position, float pitch, float volume);
 
+//The ID of a sound type by name, -1 if there isn't one
+int findSoundType(const std::string& name);
+
 //Same, following a dynamic around while it plays
 void playSoundOn(const std::string& name, const std::shared_ptr<Dynamic>& dynamic, float pitch, float volume);
 

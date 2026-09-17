@@ -76,6 +76,38 @@ class SimObject
 	//How many bytes would this add to a packet updating objects if it was added to it
 	virtual unsigned int getUpdatePacketBytes() const = 0;
 
+	/*
+		Server: where in the world this object is, for deciding how often a given client needs to hear about it,
+		see ObjHolder::sendRecent
+		Returning false means updates for it always go to everyone at full rate, which is the right answer for
+		anything with no meaningful position of its own, or that clients need regardless of where they're standing
+	*/
+	virtual bool getNetRelevancePosition(glm::vec3& position) const { return false; }
+
+	/*
+		Server: makes the next update for this object carry its whole state rather than anything measured against
+		what a client is assumed to already have. Called for a client that just got sent creation packets, since
+		nothing it holds yet can be delta compressed against, see ObjHolder::sendAll
+	*/
+	virtual void requireFullNetUpdate() {}
+
+	/*
+		Server: whether later updates for this object are measured against the one just written into a packet, which
+		means a client that skips this one can't use those either, see Dynamic::writeUpdatePosition
+		Distance throttling sends these to everyone who can see the object at all rather than skipping them, since
+		skipping one costs a client every update until the next, not just this one
+	*/
+	virtual bool lastUpdateAnchorsLaterOnes() const { return false; }
+
+	/*
+		Server: an update says how long the client receiving it should play it back over, which is the rate the server
+		writes them at - but a client far enough away is only sent every second or fourth one, and playing those back
+		at the writing rate means a step of movement and then a wait. The update is staged before we know which band
+		any client is in, so this rewrites that interval in a copy already placed in a packet
+		Types whose updates carry no interpolated transform have nothing to rewrite
+	*/
+	virtual void scaleUpdateInterval(enet_uint8* update, unsigned int multiplier) const {}
+
 	//Add getCreationPacketBytes() worth of data to the given packet with all the data needed for the client to create it
 	virtual void addToCreationPacket(enet_uint8* dest) const = 0;
 

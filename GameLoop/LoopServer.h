@@ -73,6 +73,12 @@ class LoopServer
 	//Sends the bricks of vehicles made since the last tick, after vehicles' creations go out
 	void sendNewVehicleBricks();
 
+	/*
+		Works out where each client is watching from and how many bytes of object updates they can be sent, once for
+		the whole tick, before the sendRecent calls that spend it. See ObjHolder::sendRecent
+	*/
+	void startUpdateBudgets();
+
 public:
 
 	//Constructor have any issues?

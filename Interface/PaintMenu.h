@@ -76,6 +76,9 @@ class PaintMenu : public Window
 	//Opens or closes the custom color picker
 	void toggleCustomColor();
 
+	//Hides the palette, for the item bar or brick bar taking over, see LoopClient::handleInput
+	void putAway();
+
 	bool isPaletteShown() const { return shown; }
 
 	glm::u8vec4 getColor() const;

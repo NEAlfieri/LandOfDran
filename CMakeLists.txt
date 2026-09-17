@@ -70,6 +70,19 @@ find_package(SDL2 CONFIG REQUIRED)
 find_package(Lua REQUIRED)
 find_package(OpenAL REQUIRED)
 
+# libvpx decodes the VP8/VP9 in a .webm print, see Graphics/VideoPlayer.h. Only the library is looked
+# for: its headers are in External/vpx, so a machine with just the runtime (a media player or browser
+# pulls it in) still builds them. Without the library video prints are left out and .webm prints are
+# skipped with a log line; everything else builds the same.
+# The sonames are there for that runtime-only case, where nothing has made the libvpx.so symlink a
+# development package would. Decoding has had the same ABI since libvpx 1.11, so any of them will do.
+find_library(VPX_LIBRARY NAMES vpx vpxmd libvpx libvpx.so.9 libvpx.so.8 libvpx.so.7)
+if(VPX_LIBRARY)
+	message(STATUS "Video prints: using libvpx at ${VPX_LIBRARY}")
+else()
+	message(STATUS "Video prints: no libvpx found, .webm prints will be skipped. Install libvpx-dev (or any package with the libvpx runtime) to get them")
+endif()
+
 # Add source to this project's executable.
 add_executable (LandOfDran 
 "LandOfDran.cpp" 
@@ -96,6 +109,7 @@ add_executable (LandOfDran
 "External/RTree.h"
 "External/dr_wav.h"
 "External/dr_mp3.h"
+"External/vpx/vpx/vpx_decoder.h"
 
 "External/Imgui/imgui.h"
 "External/Imgui/imgui.cpp"
@@ -129,6 +143,14 @@ add_executable (LandOfDran
 "Graphics/Material.cpp" 
 "Graphics/Mesh.h" 
 "Graphics/Mesh.cpp" 
+"Graphics/DtsShape.h" 
+"Graphics/DtsShape.cpp" 
+"Networking/ClickAction.h" 
+"Networking/ClickAction.cpp" 
+"GameLoop/ClickActionPlayer.h" 
+"GameLoop/ClickActionPlayer.cpp" 
+"Networking/PacketsFromServer/SetClickAction.h" 
+"Networking/PacketsFromServer/SetClickAction.cpp" 
 "Graphics/PlayerCamera.h" 
 "Graphics/PlayerCamera.cpp"  
 "Graphics/Interpolator.h" 
@@ -150,12 +172,19 @@ add_executable (LandOfDran
 "Graphics/InstancedBrickRenderer.cpp"
 "Graphics/PointLights.h"
 "Graphics/PointLights.cpp"
+"Graphics/GpuProfiler.cpp"
+"Graphics/ItemIconRenderer.h"
+"Graphics/ItemIconRenderer.cpp"
 "Graphics/WaterRipples.h"
 "Graphics/WaterRipples.cpp"
 "Graphics/ParticleSystem.h"
 "Graphics/ParticleSystem.cpp"
 "Graphics/Rain.h"
 "Graphics/Rain.cpp"
+"Graphics/VideoPlayer.h"
+"Graphics/VideoPlayer.cpp"
+"Graphics/PrintVideos.h"
+"Graphics/PrintVideos.cpp"
 
 "Interface/InputMap.h"  
 "Interface/InputMap.cpp" 
@@ -237,6 +266,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/CenterPrint.cpp"
 "Networking/PacketsFromServer/HighlightAppearance.h"
 "Networking/PacketsFromServer/HighlightAppearance.cpp"
+"Networking/PacketsFromServer/NameTag.h"
+"Networking/PacketsFromServer/NameTag.cpp"
 "Networking/PacketsFromServer/WorldStateUpdate.h"
 "Networking/PacketsFromServer/WorldStateUpdate.cpp"
 "Networking/PacketsFromServer/AddBricks.h"
@@ -245,6 +276,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/RemoveBricks.cpp"
 "Networking/PacketsFromServer/SpecialBrickTypes.h"
 "Networking/PacketsFromServer/SpecialBrickTypes.cpp"
+"Networking/PacketsFromServer/BrickPrintTypes.h"
+"Networking/PacketsFromServer/BrickPrintTypes.cpp"
 "Networking/PacketsFromServer/AddSoundType.h"
 "Networking/PacketsFromServer/AddSoundType.cpp"
 "Networking/PacketsFromServer/OneShotSound.h"
@@ -340,6 +373,8 @@ add_executable (LandOfDran
 "Bricks/BrickHolder.cpp"
 "Bricks/BrickTypes.h"
 "Bricks/BrickTypes.cpp"
+"Bricks/PrintTypes.h"
+"Bricks/PrintTypes.cpp"
 "Bricks/BrickSaves.h"
 "Bricks/BrickSaves.cpp"
 "Bricks/GhostBrick.h"
@@ -394,6 +429,12 @@ target_link_libraries(LandOfDran PRIVATE SDL2::SDL2 SDL2::SDL2main)
 target_link_libraries(LandOfDran PRIVATE OpenGL::GL)
 target_link_libraries(LandOfDran PRIVATE assimp::assimp)
 target_link_libraries(LandOfDran PRIVATE ${LUA_LIBRARIES})
+
+if(VPX_LIBRARY)
+	target_link_libraries(LandOfDran PRIVATE ${VPX_LIBRARY})
+	target_include_directories(LandOfDran PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/External/vpx")
+	target_compile_definitions(LandOfDran PRIVATE HAVE_LIBVPX)
+endif()
 
 # FindOpenAL's include dir is the AL folder itself, and the code includes <AL/al.h>
 if(OPENAL_INCLUDE_DIR)

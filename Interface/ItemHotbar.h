@@ -25,6 +25,9 @@ class ItemHotbar : public Window
 		std::string name = "";
 		//Not owned, nullptr to show the name instead
 		Texture* icon = nullptr;
+		//The icon is a picture the game drew of the item's model rather than an image file, so its rows
+		//run bottom to top and it's read upside down, see ItemIconRenderer
+		bool iconIsRender = false;
 	};
 
 	Slot slots[slotCount];
@@ -54,7 +57,7 @@ class ItemHotbar : public Window
 	bool scroll(int amount);
 
 	//What a slot shows, set each frame from the items the server says we carry
-	void setSlot(int slot, bool filled, const std::string& name, Texture* icon);
+	void setSlot(int slot, bool filled, const std::string& name, Texture* icon, bool iconIsRender = false);
 
 	//True once after the bar comes out or goes away, or the picked slot changes
 	bool takeChange();

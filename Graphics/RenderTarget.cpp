@@ -50,6 +50,8 @@ RenderTarget::RenderTarget(const RenderTargetSettings& _settings,std::shared_ptr
 		//Shadow targets, whose filters shouldn't wrap around to the other side, see below
 		if (settings.depthCompare)
 			colorResult->setWrapping(GL_CLAMP_TO_EDGE);
+		else if (settings.colorWrap != GL_REPEAT)
+			colorResult->setWrapping(settings.colorWrap);
 		colorResult->addToFramebuffer();
 		drawBuffers = new GLenum[1];
 		drawBuffers[0] = { GL_COLOR_ATTACHMENT0 };
@@ -80,6 +82,9 @@ RenderTarget::RenderTarget(const RenderTargetSettings& _settings,std::shared_ptr
 		//Render buffers allow quicker write access to depth buffer if we don't need to read to it
 		//We still want a depth buffer since we will do depth testing when rendering to this frame buffer
 		glGenRenderbuffers(1, &renderBuffer);
+		//A generated name isn't a render buffer object until it's bound, without this the storage call and the
+		//attachment below both fail and the frame buffer comes back incomplete
+		glBindRenderbuffer(GL_RENDERBUFFER, renderBuffer);
 		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT32F, settings.width, settings.height);
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, renderBuffer);
 	}

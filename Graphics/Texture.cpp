@@ -302,7 +302,13 @@ Texture *TextureManager::createTexture(unsigned int desiredLayers, std::string n
 
 	//Texture cannot be used until you load desiredLayers layers with addLayer
 	Texture* ret = new Texture();
-	ret->textureType = (desiredLayers == 1) ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY;
+	/*
+		Even a one layer texture is an array texture. The only thing that asks for one of these is a
+		material, whose layers the shaders always sample as an array, and a material with nothing but
+		an albedo (like the flat textures a DTS shape names) would otherwise come out as a plain 2D
+		texture that Texture::addLayer refuses to fill.
+	*/
+	ret->textureType = GL_TEXTURE_2D_ARRAY;
 	ret->layers = desiredLayers;
 	ret->name = name;
 	ret->hasMipmaps = makeMipmaps;
@@ -313,7 +319,7 @@ Texture *TextureManager::createTexture(unsigned int desiredLayers, std::string n
 	return ret;
 }
 
-void Texture::addLayer(std::string filePath)
+void Texture::addLayer(std::string filePath, bool flattenAlphaOntoWhite)
 {
 	scope("Texture::addLayer");
 
@@ -369,6 +375,15 @@ void Texture::addLayer(std::string filePath)
 		channels = readChannels;
 		isHDR = readHDR;
 
+		/*
+			The flat textures a DTS shape names come in whatever shape the add-on saved them, including
+			greyscale ones with an alpha channel. Those would go up as a two channel texture and be read
+			back as red and green, turning a white detail orange, so everything here is widened to full
+			colour and the alpha is then flattened out below.
+		*/
+		if (flattenAlphaOntoWhite && !isHDR)
+			channels = 4;
+
 		//Allocate all the space for all the layers of the texture 
 		glBindTexture(textureType, handle);
 		glTexImage3D(
@@ -401,6 +416,26 @@ void Texture::addLayer(std::string filePath)
 	{
 		error("Error processing image " + filePath);
 		return;
+	}
+
+	/*
+		Mix every pixel toward white by how transparent it is, then leave it opaque, for the flat
+		textures a DTS shape names. Nothing here blends, so without this their alpha is thrown away
+		and every shade of grey an add-on made out of see-through black comes out the same black.
+	*/
+	if (flattenAlphaOntoWhite && !isHDR && channels == 4)
+	{
+		unsigned char* pixels = (unsigned char*)data;
+		for (int pixel = 0; pixel < width * height; pixel++)
+		{
+			unsigned char* at = pixels + pixel * 4;
+			float opacity = at[3] / 255.0f;
+
+			for (int channel = 0; channel < 3; channel++)
+				at[channel] = (unsigned char)(at[channel] * opacity + 255.0f * (1.0f - opacity) + 0.5f);
+
+			at[3] = 255;
+		}
 	}
 
 	//Actually pass pixel data to OpenGL / graphics card
@@ -738,15 +773,126 @@ void TextureManager::allocateForDecals(unsigned int dimensions, unsigned int max
 	currentDecalCount++;
 }
 
-bool TextureManager::addDecal(const std::string &filePath,int id)
+/*
+	Averages RGBA pixels down (or stretches them up) into a square of destSize, each destination pixel
+	covering the source pixels it lands on. Color is weighted by alpha, so the see-through pixels around
+	a face don't darken its edges
+*/
+static void resizeRgba(const unsigned char* source, int sourceWidth, int sourceHeight, int destSize, std::vector<unsigned char>& out)
 {
-	scope("TextureManager::addDecal");
+	out.resize((size_t)destSize * destSize * 4);
+
+	for (int y = 0; y < destSize; y++)
+	{
+		int top = y * sourceHeight / destSize;
+		int bottom = std::max(top + 1, (y + 1) * sourceHeight / destSize);
+
+		for (int x = 0; x < destSize; x++)
+		{
+			int left = x * sourceWidth / destSize;
+			int right = std::max(left + 1, (x + 1) * sourceWidth / destSize);
+
+			uint64_t color[3] = { 0, 0, 0 };
+			uint64_t alpha = 0;
+			for (int sourceY = top; sourceY < bottom; sourceY++)
+			{
+				for (int sourceX = left; sourceX < right; sourceX++)
+				{
+					const unsigned char* pixel = source + ((size_t)sourceX + (size_t)sourceY * sourceWidth) * 4;
+					for (int channel = 0; channel < 3; channel++)
+						color[channel] += (uint64_t)pixel[channel] * pixel[3];
+					alpha += pixel[3];
+				}
+			}
+
+			unsigned char* dest = out.data() + ((size_t)x + (size_t)y * destSize) * 4;
+			uint64_t count = (uint64_t)(right - left) * (bottom - top);
+			for (int channel = 0; channel < 3; channel++)
+				dest[channel] = alpha > 0 ? (unsigned char)((color[channel] + alpha / 2) / alpha) : 0;
+			dest[3] = (unsigned char)((alpha + count / 2) / count);
+		}
+	}
+}
+
+//Halves a square of RGBA pixels, for one mip level of a decal, averaging color by alpha like resizeRgba
+static void halveRgba(const std::vector<unsigned char>& source, int size, std::vector<unsigned char>& out)
+{
+	int half = std::max(1, size / 2);
+	out.resize((size_t)half * half * 4);
+
+	for (int y = 0; y < half; y++)
+	{
+		for (int x = 0; x < half; x++)
+		{
+			uint64_t color[3] = { 0, 0, 0 };
+			uint64_t alpha = 0;
+			for (int offsetY = 0; offsetY < 2; offsetY++)
+			{
+				for (int offsetX = 0; offsetX < 2; offsetX++)
+				{
+					int sourceX = std::min(size - 1, x * 2 + offsetX);
+					int sourceY = std::min(size - 1, y * 2 + offsetY);
+					const unsigned char* pixel = source.data() + ((size_t)sourceX + (size_t)sourceY * size) * 4;
+					for (int channel = 0; channel < 3; channel++)
+						color[channel] += (uint64_t)pixel[channel] * pixel[3];
+					alpha += pixel[3];
+				}
+			}
+
+			unsigned char* dest = out.data() + ((size_t)x + (size_t)y * half) * 4;
+			for (int channel = 0; channel < 3; channel++)
+				dest[channel] = alpha > 0 ? (unsigned char)((color[channel] + alpha / 2) / alpha) : 0;
+			dest[3] = (unsigned char)((alpha + 2) / 4);
+		}
+	}
+}
+
+bool TextureManager::setDecalPixels(const unsigned char* rgba, int width, int height, int id, bool withMipmaps)
+{
+	scope("TextureManager::setDecalPixels");
 
 	if (!decals || id < 0 || (unsigned)id >= decals->layers)
 	{
 		error("Decal ID " + std::to_string(id) + " is beyond max decals " + std::to_string(decals ? decals->layers : 0));
 		return false;
 	}
+
+	if (!rgba || width < 1 || height < 1)
+		return false;
+
+	int size = decals->width;
+	std::vector<unsigned char> pixels;
+	resizeRgba(rgba, width, height, size, pixels);
+
+	glBindTexture(decals->textureType, decals->handle);
+	GLenum format = getTextureFormatEnum(decals->channels, false);
+	glTexSubImage3D(decals->textureType, 0, 0, 0, id, size, size, 1, format, GL_UNSIGNED_BYTE, pixels.data());
+
+	/*
+		A decal that changes after finalizeDecals has to fill in its own smaller levels: glGenerateMipmap
+		would redo all of them, every face and shirt included, for the one layer that moved
+	*/
+	if (withMipmaps)
+	{
+		int levels = std::max(1, (int)log2(std::max(decals->width, decals->height)));
+		std::vector<unsigned char> smaller;
+		int levelSize = size;
+
+		for (int level = 1; level < levels; level++)
+		{
+			halveRgba(pixels, levelSize, smaller);
+			levelSize = std::max(1, levelSize / 2);
+			glTexSubImage3D(decals->textureType, level, 0, 0, id, levelSize, levelSize, 1, format, GL_UNSIGNED_BYTE, smaller.data());
+			pixels.swap(smaller);
+		}
+	}
+
+	return true;
+}
+
+bool TextureManager::addDecal(const std::string &filePath,int id)
+{
+	scope("TextureManager::addDecal");
 
 	//Last parameter is 4 to force an alpha channel, if there wasn't one the image will be opaque
 	int readWidth, readHeight, readChannels;
@@ -760,51 +906,14 @@ bool TextureManager::addDecal(const std::string &filePath,int id)
 
 	debug("Loading decal " + filePath + " Dimensions: " + std::to_string(readWidth) + "/" + std::to_string(readHeight));
 
-	//Any size of image is averaged down (or stretched up) to the size of a decal
-	//Color is weighted by alpha, so the see-through pixels around a face don't darken its edges
-	int size = decals->width;
-	std::vector<unsigned char> pixels(size * size * 4);
-	for (int y = 0; y < size; y++)
-	{
-		int top = y * readHeight / size;
-		int bottom = std::max(top + 1, (y + 1) * readHeight / size);
-
-		for (int x = 0; x < size; x++)
-		{
-			int left = x * readWidth / size;
-			int right = std::max(left + 1, (x + 1) * readWidth / size);
-
-			uint64_t color[3] = { 0, 0, 0 };
-			uint64_t alpha = 0;
-			for (int sourceY = top; sourceY < bottom; sourceY++)
-			{
-				for (int sourceX = left; sourceX < right; sourceX++)
-				{
-					const stbi_uc* source = data + (sourceX + sourceY * readWidth) * 4;
-					for (int channel = 0; channel < 3; channel++)
-						color[channel] += (uint64_t)source[channel] * source[3];
-					alpha += source[3];
-				}
-			}
-
-			unsigned char* dest = pixels.data() + (x + y * size) * 4;
-			uint64_t count = (uint64_t)(right - left) * (bottom - top);
-			for (int channel = 0; channel < 3; channel++)
-				dest[channel] = alpha > 0 ? (unsigned char)((color[channel] + alpha / 2) / alpha) : 0;
-			dest[3] = (unsigned char)((alpha + count / 2) / count);
-		}
-	}
-
+	//finalizeDecals makes the smaller levels of every layer at once, so this one doesn't do its own
+	bool written = setDecalPixels(data, readWidth, readHeight, id, false);
 	stbi_image_free(data);
 
-	glBindTexture(decals->textureType, decals->handle);
-	glTexSubImage3D(decals->textureType, 0, 0, 0, id, size, size, 1,
-		getTextureFormatEnum(decals->channels, false),
-		GL_UNSIGNED_BYTE,
-		pixels.data());
+	if (written)
+		currentDecalCount++;
 
-	currentDecalCount++;
-	return true;
+	return written;
 }
 
 void TextureManager::finalizeDecals()

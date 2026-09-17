@@ -70,7 +70,9 @@ side of the sky.
 | `getAmbientColor(phase)` | phase name | r, g, b | That phase's ambient color. |
 | `setFogDistance(start, end)` | distances from the camera in world units | none | Fog begins at `start` and completely hides everything past `end`. Needs `0 <= start < end <= 900`. Defaults to `150, 290`. Grass and water always reach past `end`, and shadows cover the view out to `end`, so a longer fog distance spreads the same shadow detail over more ground. |
 | `getFogDistance()` | none | start, end | Current fog distances. |
-| `resetDayCycle()` | none | none | Puts every phase's sky, fog, sun, and ambient color and the fog distances back to their defaults. Doesn't change the time of day or time scale. |
+| `setFogHeight(height)` | `height`: world height the fog fills up to. Needs `0 <= height <= 2000`. | none | How far up a skybox the fog reaches, so the fogged edge of the world blends into it. A view ray leaves the fog once it climbs past `height`, and how far it traveled to get there fogs it the same way distance fogs the world, so raising it drags the fog further up the sky and lowering it pulls the fog down to the horizon. `0` leaves a skybox unfogged. Defaults to `40`. Only the sky uses it, fog on the world itself is still distance only. |
+| `getFogHeight()` | none | number | Current fog height. |
+| `resetDayCycle()` | none | none | Puts every phase's sky, fog, sun, and ambient color, the fog distances, and the fog height back to their defaults. Doesn't change the time of day or time scale. |
 
 The setters log an error and do nothing if the phase name is unknown or the arguments are the wrong
 count or type. Negative colors and brightness are treated as 0.
@@ -98,6 +100,8 @@ A skybox path is one of:
   again. Images are drawn as they are and never light anything. The sun and moon are drawn over them.
 
 Every skybox fades into the fog color toward the horizon, so the fogged edge of the world blends into it.
+How far up the sky that fade reaches is `setFogHeight` above: a skybox with trees or buildings along its
+horizon usually wants a height that covers all of them, or `setFogHeight(0)` for no fog on the sky at all.
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
@@ -146,6 +150,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientWrenchVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client holds Insert and left clicks a vehicle, before its wrench dialog opens. Return `client, nil` to keep the dialog closed. Not fired by `client:openWrenchDialog`. |
 | `ClientLoadVehicle` | `function(client, brickCount, asVehicle) ... return client, brickCount, asVehicle end` | Fires when a vehicle save a client uploaded from their Saved Vehicles window is about to be placed, with how many bricks it has (wheels included) and whether it's loading as a vehicle or as bricks. Return `client, nil` to stop it, which tells the client nothing. Not fired by `loadVehicleFile`. See [Vehicles](#vehicles). |
 | `ClientRemoveVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client confirms Remove vehicle in a vehicle's wrench dialog, before it's removed. Return `client, nil` to keep it. Not fired by `vehicle:destroy` or `clearAllVehicles`. |
+| `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `Inventory.lua` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
 | `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `Inventory.lua` throws the item in their hand. |
 | `ProjectileHit` | `function(projectile, hit, x, y, z, tag) ... return projectile, hit, x, y, z, tag end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, and `tag` is the tag it was fired with. It's removed right after its listeners run, unless one already removed it. Return values are ignored. `Inventory.lua` bursts launcher shells here. |
 
@@ -163,9 +168,9 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `getDynamicId(netId)` | net ID | Dynamic | Looks up a dynamic by its net ID. Errors if it doesn't exist. |
 | `getDynamicIdx(index)` | 0-based index | Dynamic | Looks up a dynamic by its position in the internal list (see `getNumDynamics`). |
 | `getNumDynamics()` | none | count | How many dynamics currently exist. |
-| `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. |
+| `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. `modelFilePath` is normally a `.txt` descriptor, but a `.dts` (the shapes Blockland add-ons ship their models in) can be given straight to it with no descriptor next to it, see [DTS models](#dts-models). |
 | `getDynamicType(scriptName)` | string | typeID | Looks up a previously-registered type's ID by its script name. |
-| `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone. While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. |
+| `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone. While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. A `.dts` model needs none of these lines: it registers every sequence it came with under its own name, see [DTS models](#dts-models). |
 | `raycast(startX, startY, startZ, endX, endY, endZ[, dynamicToIgnore])` | ray start/end points; optionally a Dynamic to exclude from the hit test | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Casts a ray through the physics world. Returns the Dynamic, Static, or Brick it hit first, then the world position of the hit, the normal of the surface it hit (pointing out of it), and the distance from the start point. If it hit the ground, which has no object, the hit object is `nil` and the rest still follow. Returns just `nil` if it hit nothing. `local hit = raycast(...)` still works if you only need the object. |
 | `addProjectile(typeID, x, y, z, velX, velY, velZ[, tag[, shooter]])` | dynamic type ID; position; velocity in studs per second; any string, `""` by default, or `nil`; a Dynamic, or `nil` | Dynamic | Fires a dynamic that falls with gravity and is turned every tick so its model's +Y points the way it's going (while faster than 8 studs a second). It never falls asleep, and is swept along each physics step so it doesn't skip through thin bricks. It passes through `shooter`, usually the player who fired it. Clients only draw it where the server has it, it never bumps into their own player. The first time it touches anything that collides, the ground included, `ProjectileHit` fires with `tag` and it's removed. Bricks and statics with collision off don't count. |
 
@@ -195,9 +200,11 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getMass()` | none | value | Current mass. |
 | `dynamic:setMassProps(mass, centerX, centerY, centerZ)` | mass and local center of mass | none | Sets mass and center of mass together. |
 | `dynamic:setMeshColor(meshName, r, g, b, a)` | mesh name within the model, color | none | Recolors one mesh of the model and broadcasts the change to clients. |
+| `dynamic:getMeshAt(x, y, z)` | a world position, like one `raycast()` or `client:getCursorItem()` gave | mesh name, or `nil` | Which mesh of the model a spot is on, for painting the body part someone was sprayed or shot on. The spot is moved into the model's own space and matched against the bounding box each mesh was loaded with, so the nearest mesh wins, the smaller of two boxes wins a tie, and a spot outside the model still gives the mesh it's nearest. Meshes that are never drawn (`Collision`) and the see-through face plate over a head (`Face1`) are skipped. Animations aren't taken into account, so a limb the model is playing an animation on is matched where it sits in the pose the model was loaded in. `nil` for a model with nothing paintable. |
 | `dynamic:setMeshDecal(meshName, decalName)` | mesh name within the model; file name of an image in `Assets/faces` or `Assets/shirts` (e.g. `"smiley.png"` or `"Mod-Police.png"`, up to 64 characters), or `""` to remove it | none | Shows a face or shirt on one mesh, drawn over its color, and broadcasts the change. The image covers the mesh's texture coordinates from 0 to 1, or only the rectangle a `decalarea` line in the model's `.txt` gives that mesh (`decalarea`, the mesh name, then the texture coordinates of the image's top left and bottom right corners, all tab separated), with nothing outside it; the default player's `Torso` has one covering its front. A model's face plate (a mesh named `Face1`, or `Face` without one) is see-through except for the face, so without a face it isn't drawn at all, and it casts no shadow or outline. Clients look the name up in their own `Assets/faces` folder, then `Assets/shirts`, so one they don't have isn't shown. |
 | `dynamic:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
 | `dynamic:clearHighlight()` | none | none | Removes the outline/highlight effect. |
+| `dynamic:setNameTag(text, r, g, b)` | text up to 64 characters, `""` for none; color, 0-1 each | none | Puts floating text over the object for every client, drawn over the world above its collision box, and broadcasts it. Clients don't draw the tag on the object they control, so you never see your own, and a tag fades out past 150 world units and is left off past 250. `serverstart.lua` gives each player their client's name in `ClientJoin`. |
 | `dynamic:getNumControllers()` | none | count | How many clients currently control this dynamic (usually 0 or 1; 0 means it's a normal server-simulated object, not a player). |
 | `dynamic:getControllerIdx(index)` | 0-based index | Client | The client controlling this dynamic at that index. |
 | `dynamic:snapToCursor(client, xOffset, yOffset, zOffset)` | client to attach to; view-space offset: `x` = right, `y` = up, `z` = distance in front of the camera | none | Attaches the dynamic to a client's cursor: every physics tick its position is recomputed from that client's live camera position/direction plus this offset, and its gravity is disabled. Calling this again while already snapped just updates the client/offset. |
@@ -213,6 +220,27 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 
 ---
 
+## DTS models
+
+Anywhere a model file path is taken (`newDynamicType` and `newItemType`, which statics and vehicles reuse) the path can point at a `.dts` instead of a `.txt` descriptor. DTS is the shape format Torque and Blockland use, so the models an add-on folder ships can be used as they are:
+
+```lua
+--A Blockland unit is two studs, and a stud is one world unit, so 2 is a DTS model's true size
+pistol = newItemType("pistol","Add-ons/Weapon_Package_Tier1/PISTOL_.dts",2,2,2,"Pistol","")
+```
+
+What to expect from one:
+
+- **No descriptor file is needed.** A `.txt` descriptor can still point its `file` line at a `.dts` when it wants `decalarea` or `material` lines. Assimp's import flags do nothing for a `.dts`, which is read directly.
+- **Scale 2 is true to size**, since a Blockland unit is two studs and a stud is one world unit.
+- **Materials are the image files sitting next to the shape.** A DTS material is only a name, so a material called `black50` looks for `black50.png` (or `.jpg`, `.jpeg`, `.bmp`) in the same folder, ignoring case. They are flat colour textures with no normal or roughness map, which the shaders draw with default values. A material with no image next to it logs an error and draws untextured.
+- **A see-through texture is read as a shade, not as transparency.** Add-ons make their greys out of black at part opacity, so `black25`, `black50` and `black75` are all pure black and differ only in their alpha. Nothing here blends, so each pixel is mixed toward white by how transparent it is and left opaque, which is how they look in Blockland: `black25` comes out light grey, `black75` dark grey, and `blank` (fully transparent white, usually a barrel) comes out white. Greyscale textures are widened to full colour first, so a grey-plus-alpha one like `whiteCheck` doesn't come back as red and green.
+- **Animations come with the model.** Every sequence the shape was exported with is registered under its own name, at the speed it was exported to run at, so `addAnimation` lines aren't needed: `item:playAnimation("fire")` works on a shape that has a `fire` sequence. Both sides load the same file, so the IDs line up.
+- **Only the most detailed detail level is loaded**, and its meshes are named after the objects holding them, which is what `getMeshIdx` and painting see. A mesh whose faces use several materials is split into one mesh per material, named `object_material`.
+- **Only version 24 shapes** are read, which is what Blockland's exporter writes. Anything else logs an error and loads nothing. Vertex animation, sorted meshes, and a shape's bone weights are ignored.
+
+---
+
 ## Items
 
 Items are tools like the hammer: dynamics that players can carry in their inventory. On the ground an item is an
@@ -220,7 +248,9 @@ ordinary dynamic. It falls, collides, and floats, every `dynamic:` method works 
 `client:getCursorItem()` can hit it. Item tables are Dynamic tables (`type` is `1`) that have the `item:` methods
 below as well, so check with `dynamic:isItem()`.
 
-Each client can carry 5 items, in slots 0 to 4. While an item is carried its body is out of the physics world. It
+Each client can carry 5 items, in slots 0 to 4, plus one `client:setHandItem` put in their hand outside those slots,
+which is held instead of whatever their item bar has picked and which their item bar can't reach. While an item is
+carried its body is out of the physics world. It
 doesn't collide, fall, or float, and `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`, `activate`,
 and `snapToCursor` do nothing. `getPosition` gives the position of the player carrying it. Settings like gravity,
 friction, and buoyancy are kept for when it's back on the ground. Items a leaving client still carries go back into the
@@ -228,12 +258,16 @@ world where they were, after `ClientLeave` listeners run.
 
 Players press Q (the "Show/Hide Items" key) to slide their items out on the right of the screen, which puts the item in
 the picked slot in their player's right hand for everyone to see, or in front of their camera in first person. The mouse
-wheel picks another slot while their items are out. Pressing Q again, or a brick hot bar slot's key, puts them away. A
+wheel picks another slot while their items are out. Pressing Q again, a brick hot bar slot's key, or the paint palette's
+key (which puts a paint can in their hand instead, see `ClientPaintCan`) puts them away, and Q and a brick slot's key put
+the paint palette away in turn. A
 carried item is held by the first dynamic `client:setDefaultController` gave its client, and isn't drawn anywhere
 without one. Pressing Ctrl+W fires `ClientDropItem`, and letting go of a mouse button fires `ClientClickRelease`.
 
-`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, `paintCan`, and
-`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped). Left clicking an
+`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, and
+`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped).
+The `paintCan` isn't one of them: opening the paint palette puts one in their hand with `client:setHandItem` (see
+`ClientPaintCan`), and it's destroyed again once their item bar or brick bar takes it back. Left clicking an
 item on the ground within 10 studs picks it up into the first empty slot. Holding left mouse with the hammer or wrench
 in hand swings it, hitting right away and then about once a second for as long as it's held, except the wrench stops once
 it opens a dialog. The hammer knocks loose a brick it's clicked on (`brick:remove(true)`), and the wrench opens the
@@ -242,6 +276,10 @@ brick's wrench dialog, playing `WrenchHit`. Hitting anything else within reach, 
 `hammerExplosionEmitter`, or the wrench's) where it hit. Holding left mouse with the paint can sprays a `paintEmitter` stream in the player's paint color from
 the can to what they look at, with the `SprayLoop` sound, and paints every brick within 13 studs the crosshair passes
 over with their paint color and material (`client:getPaintColor`, `client:getPaintMaterial`), checking about every 30 ms.
+Spraying someone's player instead paints the body part the crosshair is on (`dynamic:getMeshAt`) their paint color, which
+puffs a `hammerExplosionEmitter` off that part, plays `BodyRemove` from them, and goes back to however that player
+painted themselves (`client:applyAppearance`) 20 seconds after they were last sprayed. Games play `SprayActivate`
+themselves as their palette comes out, so `serverstart.lua` registers both names.
 Left clicking with the launcher in hand plays its `fire` animation and the `Launch` sound, puts a `gunSmokeEmitter` at the
 end of its barrel, and fires a `launcherShell` (`addProjectile`, tagged `"launcherShell"`) at 90 studs a second toward
 whatever the crosshair is on, trailing a `shellTrailEmitter`, at most once every 650 ms. Where a shell lands it makes a
@@ -252,7 +290,7 @@ Ctrl+W throws the item in hand the way the player looks.
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
-| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ, uiName, iconPath)` | same as `newDynamicType`; the name shown in the item bar; an image for its slot, relative to the game folder, or `""` for none, which shows the name instead | typeID | Registers a kind of item. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. |
+| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ, uiName, iconPath)` | same as `newDynamicType`; the name shown in the item bar; an image for its slot, relative to the game folder, or `""` for none, which shows the name instead | typeID | Registers a kind of item. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. A `.dts` model works here too, see [DTS models](#dts-models). |
 | `setItemHand(typeID, gripX, gripY, gripZ, pitch, yaw, roll)` | item type ID; the point on the model that goes in the hand, in world units after scaling; degrees around the x, y, and z axes | none | How items of a type sit in a hand. Unturned, the model's +Y points up out of the hand and its -Z the way its holder faces, and a negative pitch leans its top forward. Call it at startup, before anyone joins. By default the model's origin is in the hand, unturned. |
 | `createItem(typeID, x, y, z)` | item type ID from `newItemType`; position | Item | Spawns an item on the ground. Logs an error for a type that isn't an item type. |
 | `getNumItems()` | none | count | How many items exist, carried or not. |
@@ -272,6 +310,68 @@ Along with every `dynamic:` method.
 | `item:stopAnimation([name])` | animation name, or nothing | none | Stops the looping animation if it's the one named, or whatever loops without a name. A swing finishes the one it's partway through. |
 | `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`. |
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
+
+---
+
+## Click prediction
+
+A click normally has to reach the server before anything happens, so a shot is heard and seen a
+round trip after the button goes down. `client:setClickAction` gets ahead of that: it tells one
+client's game what their *next* click with an item will look like, and their game plays it the
+moment they click.
+
+Only the look of it is predicted. The shot, what it hits, and the ammo are all still worked out by
+the server, so the worst a wrong guess can do is show a flash that shouldn't have happened.
+
+Because the server says what the **next** click does, the client never needs to know any rules: an
+empty gun is simply sent the dry click track instead of the firing one.
+
+| Function | Arguments | Returns | Description |
+|---|---|---|---|
+| `client:setClickAction(item, action)` | the item it applies to; a table, see below | none | What that client's game plays the instant they click while holding that item. Replaces whatever was set before. |
+| `client:setClickAction()` | none | none | Stop predicting anything, for a client holding something that isn't a weapon. |
+
+The action table:
+
+| Field | Default | Description |
+|---|---|---|
+| `steps` | required | The things that happen, in a list. |
+| `repeatMS` | `0` | While the button stays down, the track may play again this often without asking the server, for an automatic weapon. `0` plays once per click. |
+| `repeatLimit` | `0` | How many more times the track may play before you send another, which is what keeps a client from showing more shots than the magazine holds. It covers an automatic weapon carrying on while held **and** someone clicking faster than the round trip. Send a fresh action after every shot; the client subtracts the plays it has made that you haven't answered for yet, so a refresh never hands back rounds already spent. |
+
+Each step happens `at` milliseconds after the click, and is one of a sound, an animation, an
+emitter, or a light, by which of those fields it has:
+
+| Field | Description |
+|---|---|
+| `at` | Milliseconds after the click, `0` for right away. |
+| `sound` | A sound type name, with optional `pitch` and `volume`. It follows the item. |
+| `animation` | The name of one of the item model's animations, played once. |
+| `emitter` | An emitter type name. Ejects for `forMS`. |
+| `light` | `{r, g, b}`, with `brightness`, `coronaWidth` and `forMS`. Lights and casts shadows like any other light. |
+| `forMS` | How long an emitter or light lasts. |
+| `offset` | Where an emitter or light sits in the item's **own** space, so it stays on the end of the barrel as the item moves. This is the model's own muzzle point, not an offset from the player. |
+
+```lua
+client:setClickAction(pistol, {
+	repeatMS = 96, repeatLimit = 34,
+	steps = {
+		{ at = 0,   sound = "PistolFire" },
+		{ at = 0,   animation = "fire" },
+		{ at = 0,   emitter = "MuzzleFlash", forMS = 60, offset = {0, 0.6, -2.2} },
+		{ at = 0,   light = {1, 0.9, 0.5}, brightness = 35, coronaWidth = 0.35, forMS = 60, offset = {0, 0.6, -2.2} },
+		{ at = 115, sound = "PistolClick" }
+	}
+})
+```
+
+Anything the server plays itself when the shot happens is seen by the shooter **as well as** their
+predicted copy, so a sound is best sent to everyone else with `client:playSound` rather than from
+the item, and a light the server makes is worth turning down. There's no way yet to broadcast an
+emitter or an animation to everyone *except* one client.
+
+The client is only told about the item it's holding, so a predicted action stops mattering as soon
+as they put it away. An action is dropped if the item it names isn't what they click with.
 
 ---
 
@@ -490,12 +590,14 @@ as they join, and draw bricks of types they don't have as plain boxes.
 | `addSpecialBrick(x, y, z, typeName, r, g, b, a[, angleID])` | min corner in studs/plates; a special brick type's name (like `"45° Ramp 2x"`, case-insensitive, or its `.blb` file name); color; `angleID` 0-3 | Brick, or `nil` | Adds a special brick, which takes its type's size. Logs an error if there's no type by that name. Returns `nil` without an error if it would overlap another brick or be out of bounds. The shape's color faces (like a pine tree's green) keep their own color. |
 | `getNumBricks()` | none | count | How many bricks exist. |
 | `getBrickIdx(index)` | 0-based index | Brick | Looks up a brick by its position in the internal list. Removing bricks changes the order. |
+| `getNumNamedBricks(name)` | a brick's name | count | How many bricks are named that, matching case exactly, so `"Door"` and `"door"` are different names. Bricks with no name aren't counted under any name, so an empty name is always 0. |
+| `getNamedBrickIdx(name, index)` | the name, matching case exactly; 0-based index | Brick | Looks up one of the bricks with that name. Logs an error and returns nothing past the last one. Removing or renaming a brick with that name changes the order of the rest, like `getBrickIdx`. Both of these are constant time lookups, unlike scanning every brick with `getNumBricks`. |
 | `getBrickId(id)` | net ID | Brick or `nil` | Looks up a brick by its net ID. |
 | `getBrickAt(x, y, z)` | one stud/plate grid cell | Brick or `nil` | The brick filling that cell, if any. |
 | `clearAllBricks()` | none | none | Removes every brick. |
-| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, and emitter, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
-| `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Other special types, and the old game's lights, music, and prints, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
-| `loadBlocklandSave(fileName)` | file name inside `Saves` | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
+| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, emitter, and print, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
+| `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, prints, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Prints come by name, from the old game's saves too, however many faces its print mask covered; ones the server doesn't have are dropped and listed in the log. Other special types, and the old game's lights and music, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
+| `loadBlocklandSave(fileName)` | file name inside `Saves` | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, prints, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Prints are matched by the name in the save, like `Letters/X`; ones the server doesn't have are dropped and listed in the log. Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
 | `addBlocklandLight(uiName, table)` / `addBlocklandLight(uiName, nil)` | a Blockland light type's name, like `"Red Light"`, 1-255 characters, case-insensitive; light fields as for `brick:setLight` | none | Sets the light `loadBlocklandSave` puts on bricks that had this Blockland light type, replacing any set before. Fields left out get a new light's defaults, so without an `offset` the light sits in the middle of its brick, like Blockland's. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` forgets the type, so its lights are skipped. Bricks already loaded keep their lights. |
 | `addBlocklandEmitter(uiName, typeName)` / `addBlocklandEmitter(uiName, nil)` | a Blockland emitter's name, like `"Fog A"`, 1-255 characters, case-insensitive; an emitter type's name | none | Makes `loadBlocklandSave` put an emitter of that type on bricks that had this Blockland emitter, instead of looking for a type with that `uiName`. Logs an error if there's no emitter type by that name. `nil` goes back to matching by `uiName`. |
 
@@ -521,6 +623,33 @@ selector. Shape effects are only drawn: a brick always collides as its plain sha
 | `Foil` | Metallic, with crinkled rainbow highlights that shift as you look at it from different directions. |
 | `Rainbow` | Its color is replaced by one that cycles through the rainbow every 5 seconds, in bands that flow diagonally across a build. |
 
+### Prints
+
+A print is a picture drawn over the paint of a print brick's printed faces, the ones a `.blb` marks `TEX:PRINT`,
+like `1x1 Print` or `2x2F Print`. Prints load from Blockland style folders under `Assets/brick/prints`
+(`Print_<group>[_Default]/prints/<image>.png`) and are named `<group>/<image>`, so
+`Assets/brick/prints/Print_Letters_Default/prints/X.png` is `Letters/X`, the same name Blockland saves use.
+Each brick wears one print, on every printed face it has. Players pick one in the wrench dialog, Lua with
+`brick:setPrint`, and a print's see-through parts show the brick's own color.
+
+Clients load their own copy of the folder and match the server's prints by name as they join, so a print a
+client doesn't have leaves that brick plain for them. Prints come along in `saveBuild` files and are read
+back from the old game's saves and from Blockland `.bls` saves by name.
+
+A print can also be a **`.webm` video** in the same folders, named the same way (`Print_Screens/prints/news.webm`
+is `Screens/news`), which plays on the brick and loops. Everything else treats it as an ordinary print: the
+server only ever knows its name, so a dedicated server needs no video support at all. Each client plays it
+from its own clock, so players don't see exactly the same frame, and any audio in the file is ignored (a brick
+plays sound with `brick:setMusic`). Only videos a brick in the world is actually wearing are decoded, at most
+`graphics/maxvideoprints` (4 by default) of them at once, and the rest hold a still frame. VP8 and VP9 both
+play; a client built without libvpx, or one missing the file, draws those bricks plain.
+
+Making one, at the size prints are drawn (256x256) and a sensible bitrate:
+
+```
+ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print_Screens/prints/news.webm
+```
+
 ### `brick:` methods
 
 | Method | Arguments | Returns | Description |
@@ -536,7 +665,7 @@ selector. Shape effects are only drawn: a brick always collides as its plain sha
 | `brick:setColliding(collides)` | bool | none | Turns collision on or off. Non-colliding bricks can still be hit by `raycast()`. |
 | `brick:getOwner()` | none | client net ID, or `-1` | Who planted it. `-1` for bricks added by Lua or loaded from a save. |
 | `brick:getName()` | none | string | The brick's name, empty by default. |
-| `brick:setName(name)` | string | none | Sets the brick's name. |
+| `brick:setName(name)` | string | none | Sets the brick's name, which `getNumNamedBricks` and `getNamedBrickIdx` find it by. `""` takes its name away. Names are only kept on the server (and in saves); clients never learn them. |
 | `brick:remove([showEffect])` | optional bool | none | Removes the brick. With `true`, clients show it popping loose and flying off like an undone brick. Leave it off when removing many bricks at once. |
 | `brick:isSpecial()` | none | bool | Whether it's a special brick with its own shape, rather than a basic box. |
 | `brick:getTypeName()` | none | string | A special brick's type name, like `"45° Ramp 2x"`. Empty for basic bricks. |
@@ -546,17 +675,22 @@ selector. Shape effects are only drawn: a brick always collides as its plain sha
 | `brick:setLight(table)` / `brick:setLight(nil)` | light fields, see below | none | Puts a light on the brick, or changes it. Fields left out keep the brick's current values, or a new light's defaults. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` takes the light off. |
 | `brick:getEmitter()` | none | emitter type name, or `nil` | The emitter on the brick. |
 | `brick:setEmitter(typeName)` / `brick:setEmitter(nil)` | an emitter type's name | none | Puts an emitter of that type in the middle of the brick, replacing any it had. `nil` takes it off. |
+| `brick:getPrint()` | none | print name, or `""` | The print on the brick, like `"Letters/X"`. |
+| `brick:setPrint(name)` / `brick:setPrint("")` | a print's name, case-insensitive | none | Puts a print on the brick, drawn on the printed faces of a print brick type. A `.webm` print plays there, see Prints above. Logs an error and changes nothing for a name no print has. `""` takes it off. Prints on a brick whose type has no printed face are kept but never drawn. |
 
 ### Wrench dialog and brick attachments
 
 Players wrench a brick to open its wrench dialog, where they can change whether it collides, its name,
-its music loop with volume and pitch, its light, and its emitter. Wheel and steering wheel bricks also get a section for
+its music loop with volume and pitch, its light, its emitter, and, on a print brick, its print. Wheel and steering wheel bricks also get a section for
 how they drive once sliced into a vehicle, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
 wrench item in hand (see [Items](#items)), or holding Insert (the `Wrench` key bind) and left clicking one. Lua can
 veto or redirect the Insert way with the `ClientWrenchBrick` event, or open a dialog itself with `client:openWrenchDialog`.
 Anyone can currently wrench any brick; there are no build permissions yet. The music list only shows
 sounds registered with `newSoundType(name, file, true)` and the emitter list every emitter type, but a
 brick keeps any sound or emitter Lua put on it when a player applies the dialog without changing it.
+The Print section only shows on a brick whose type has a printed face, and lists every print the server
+loaded from `Assets/brick/prints`, `.webm` videos included; players whose own copy is missing one see the
+brick plain.
 
 The music loop, light, and emitter are real sound loops, lights, and emitters: they show up in
 `getNumLights`/`getLightIdx` and `getNumEmitters`/`getEmitterIdx`, are sent to players who join later,
@@ -801,7 +935,9 @@ A "client" represents one connected player/connection.
 | `client:removeItem(slot)` | 0-4 | Item or `nil` | Takes the item out of the slot and puts it back into the world just in front of the client's player, not moving, or where it was without a player. `nil` for an empty slot. |
 | `client:getItem(slot)` | 0-4 | Item or `nil` | The item in that slot. |
 | `client:getSelectedSlot()` | none | slot, open | The slot the client's item bar has picked (0-4, kept while it's put away), and whether their items are out. |
-| `client:getHeldItem()` | none | Item or `nil` | The item in the client's hand: the one in the picked slot while their items are out. |
+| `client:getHeldItem()` | none | Item or `nil` | The item in the client's hand: their `setHandItem` one if they have one, otherwise the one in the picked slot while their items are out. |
+| `client:setHandItem(item or nil)` | an item on the ground, or `nil`/nothing to empty their hand | Item or `nil` | Puts an item in the client's hand without using a slot, so their item bar can't reach it and it's held whatever their bar has picked. Whatever was in their hand before goes back into the world in front of their player and is returned, as does the one there when this is called with `nil`. Logs an error for an item someone already carries. `Inventory.lua` puts a paint can here while the paint palette has one out. |
+| `client:getHandItem()` | none | Item or `nil` | The item `setHandItem` put in their hand, `nil` if there isn't one. |
 | `client:getCameraPosition()` | none | x, y, z | Where the client's camera was as of their last movement update, which comes about every 100 ms. Needs `setDefaultController`. |
 | `client:getCameraDirection()` | none | x, y, z | Which way their camera looked then, normalized. Needs `setDefaultController`. While they hold left mouse, their camera is sent about every 30 ms instead. |
 | `client:getPaintColor()` | none | r, g, b, a | The color their paint palette (E, or Right Shift's custom color) has picked, 0-1. Their game sends it as they connect and whenever it changes. White until then. |

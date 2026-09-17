@@ -109,6 +109,27 @@ int ClientData::addItem(const ServerProgramData* pd, const std::shared_ptr<Item>
 	return slot;
 }
 
+btTransform ClientData::droppedItemTransform(const Item& item) const
+{
+	//Where LoopServer::updateItems last moved it along with its holder, or out in front of them so it doesn't land inside them
+	btTransform transform = item.body->getWorldTransform();
+
+	std::shared_ptr<Dynamic> holder = item.getHolder();
+	if (!holder)
+		return transform;
+
+	std::shared_ptr<Model> model = holder->getType()->getModel();
+	glm::vec3 halfExtents = model->getColHalfExtents();
+
+	glm::vec3 ahead = controllers[0].lastCameraDirection;
+	ahead.y = 0;
+	ahead = glm::length(ahead) > 0.001f ? glm::normalize(ahead) : glm::vec3(0, 0, -1);
+
+	float reach = std::max(halfExtents.x, halfExtents.z) + glm::length(item.getType()->getModel()->getColHalfExtents()) + 0.25f;
+	transform.setOrigin(g2b3(b2g3(holder->getPosition()) + model->getColOffset() + ahead * reach));
+	return transform;
+}
+
 std::shared_ptr<Item> ClientData::removeItem(const ServerProgramData* pd, int slot)
 {
 	if (slot < 0 || slot >= inventorySize)
@@ -119,20 +140,7 @@ std::shared_ptr<Item> ClientData::removeItem(const ServerProgramData* pd, int sl
 	if (!item)
 		return nullptr;
 
-	//Where LoopServer::updateItems last moved it along with its holder, or out in front of them so it doesn't land inside them
-	btTransform transform = item->body->getWorldTransform();
-	if (std::shared_ptr<Dynamic> holder = item->getHolder())
-	{
-		std::shared_ptr<Model> model = holder->getType()->getModel();
-		glm::vec3 halfExtents = model->getColHalfExtents();
-
-		glm::vec3 ahead = controllers[0].lastCameraDirection;
-		ahead.y = 0;
-		ahead = glm::length(ahead) > 0.001f ? glm::normalize(ahead) : glm::vec3(0, 0, -1);
-
-		float reach = std::max(halfExtents.x, halfExtents.z) + glm::length(item->getType()->getModel()->getColHalfExtents()) + 0.25f;
-		transform.setOrigin(g2b3(b2g3(holder->getPosition()) + model->getColOffset() + ahead * reach));
-	}
+	btTransform transform = droppedItemTransform(*item);
 
 	item->owner.reset();
 	item->slot = -1;
@@ -143,8 +151,53 @@ std::shared_ptr<Item> ClientData::removeItem(const ServerProgramData* pd, int sl
 	return item;
 }
 
+std::shared_ptr<Item> ClientData::setHandItem(const ServerProgramData* pd, const std::shared_ptr<Item>& item)
+{
+	std::shared_ptr<Item> previous = handItem.lock();
+	handItem.reset();
+
+	if (previous && previous != item)
+	{
+		btTransform transform = droppedItemTransform(*previous);
+		previous->owner.reset();
+		previous->slot = -1;
+		previous->returnToWorld(transform);
+		pd->markItemChanged(previous);
+	}
+
+	if (item)
+	{
+		item->removeFromWorld();
+		item->owner = me;
+		item->slot = -1;
+		handItem = item;
+		pd->markItemChanged(item);
+	}
+
+	return previous;
+}
+
+std::shared_ptr<Item> ClientData::getHeldItem() const
+{
+	//An item Lua put in their hand is held instead of whatever their item bar has picked, see Item::isEquipped
+	if (std::shared_ptr<Item> hand = handItem.lock())
+		return hand;
+
+	if (!inventoryOpen || selectedSlot < 0 || selectedSlot >= inventorySize)
+		return nullptr;
+
+	return inventory[selectedSlot].lock();
+}
+
 void ClientData::forgetItem(const Item& item)
 {
+	//An item in their hand was never in a slot, see setHandItem
+	if (handItem.lock().get() == &item)
+	{
+		handItem.reset();
+		return;
+	}
+
 	if (item.slot < 0 || item.slot >= inventorySize || inventory[item.slot].lock().get() != &item)
 		return;
 
@@ -154,6 +207,7 @@ void ClientData::forgetItem(const Item& item)
 
 void ClientData::dropAllItems(const ServerProgramData* pd)
 {
+	setHandItem(pd, nullptr);
 	for (int a = 0; a < inventorySize; a++)
 		removeItem(pd, a);
 }
@@ -162,6 +216,18 @@ void ClientData::dropAllItems(const ServerProgramData* pd)
 	1 byte					-	packet type
 	4 bytes per slot		-	net ID of the item in each slot, NO_ID for an empty one
 */
+void ClientData::sendClickAction(const ClickAction& action) const
+{
+	if (!client)
+		return;
+
+	ENetPacket* packet = enet_packet_create(NULL, 1 + action.packedSize(), getFlagsFromChannel(OtherReliable));
+	packet->data[0] = (unsigned char)SetClickAction;
+	action.writeTo(packet->data + 1);
+
+	client->send(packet, OtherReliable);
+}
+
 void ClientData::sendInventory() const
 {
 	if (!client)

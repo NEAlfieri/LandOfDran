@@ -18,3 +18,12 @@ datablock fxDTSBrickData(brick1x4x4PrintData)
 	uiName = "1x4x4 Print";
 	iconName = "./1x4x4 Print";
 };
+
+datablock fxDTSBrickData(brick1x2PrintData)
+{
+	brickFile = "./1x2Print.blb";
+	category = "Special";
+	subCategory = "Prints";
+	uiName = "1x2 Print";
+	iconName = "./1x2 Print";
+};

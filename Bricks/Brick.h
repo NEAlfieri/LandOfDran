@@ -77,6 +77,12 @@ struct Brick
 
 	glm::u8vec4 color = glm::u8vec4(255, 255, 255, 255);
 
+	/*
+		0 for no print, otherwise 1 more than the index of its PrintType in PrintTypes, drawn on the TEX:PRINT faces of a print brick
+		In network records it's the server's index instead, and clients map it to their own, see BrickPrintTypesPacket
+	*/
+	uint16_t printID = 0;
+
 	//A BrickMaterial
 	unsigned char material = BrickMaterial_None;
 

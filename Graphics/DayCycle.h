@@ -53,11 +53,21 @@ struct DayCycle
 	float fogStart = 150;
 	float fogEnd = 290;
 
+	/*
+		World height the fog fills up to, which only matters for how far up a skybox it reaches: a sky ray
+		leaves the fog once it climbs past this height, and how far it traveled to get there fogs it the same
+		way distance fogs the world. 0 leaves the sky clear, tall enough hides a whole skybox behind the fog
+	*/
+	float fogHeight = 40;
+
 	//The camera sees 1000 units, and grass, water, and shadows all stretch out to wherever fog ends
 	static constexpr float maxFogEnd = 900;
 
-	//Floats in phases plus the fog distances, as sent over the network
-	static constexpr int networkFloats = 4 * 4 * 3 + 2;
+	//Past this the whole sky is fog anyway, since a ray that high up has gone further than any fog distance
+	static constexpr float maxFogHeight = 2000;
+
+	//Floats in phases plus the fog distances and height, as sent over the network
+	static constexpr int networkFloats = 4 * 4 * 3 + 3;
 
 	DayCycle()
 	{

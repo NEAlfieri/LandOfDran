@@ -36,6 +36,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 uniform sampler2D Reflection;
@@ -131,9 +132,20 @@ vec3 skyIrradiance(int first, vec3 n)
 	return max(irradiance, vec3(0.0));
 }
 
+//Keep in sync with skyFogAmount in sky.frag
+float skyFogAmount(vec3 ray)
+{
+	float depth = FogHeight - CameraPosition.y;
+	if(ray.y <= 0.0)
+		return 1.0;
+	if(depth <= 0.0)
+		return 0.0;
+
+	return clamp((depth / ray.y - FogDistanceMin) / (FogDistanceMax - FogDistanceMin), 0.0, 1.0);
+}
+
 //Keep in sync with skyboxColor in sky.frag
-const float skyboxFogHeight = 0.25;
-vec3 skyboxColor(int kind, samplerCube cube, vec3 ray, vec3 gradient)
+vec3 skyboxColor(int kind, samplerCube cube, vec3 ray, vec3 gradient, float fog)
 {
 	if(kind == 0)
 		return gradient;
@@ -141,14 +153,15 @@ vec3 skyboxColor(int kind, samplerCube cube, vec3 ray, vec3 gradient)
 	vec3 image = textureLod(cube, ray, 0.0).rgb;
 	if(kind == 2)
 		image = pow(image / (image + vec3(1.0)), vec3(1.0 / 2.2));
-	return mix(FogColor, image, smoothstep(0.0, skyboxFogHeight, ray.y));
+	return mix(image, FogColor, fog);
 }
 
 //Same as sky.frag, minus the sun and moon
 vec3 skyColorFor(vec3 ray)
 {
 	vec3 gradient = mix(FogColor, SkyColor, smoothstep(0.0, 0.4, ray.y));
-	return mix(skyboxColor(DaySkybox, SkyDay, ray, gradient), skyboxColor(NightSkybox, SkyNight, ray, gradient), SkyboxBlend);
+	float fog = skyFogAmount(ray);
+	return mix(skyboxColor(DaySkybox, SkyDay, ray, gradient, fog), skyboxColor(NightSkybox, SkyNight, ray, gradient, fog), SkyboxBlend);
 }
 
 //Same as in model.frag, see PointLightUniforms in ShaderSpecification.h

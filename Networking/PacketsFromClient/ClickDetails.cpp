@@ -10,7 +10,20 @@
 static constexpr float vehicleReach = 30.0f;
 
 //Honking while driving waits this long between honks, like the old game
-static constexpr unsigned int honkCooldownMS = 1000;
+static constexpr unsigned int honkCooldownMS = 350;
+
+//Nobody drives it and nobody stands on any of its seats, so left clicking it flips it upright
+static bool isVehicleEmpty(const Vehicle& vehicle)
+{
+	if (vehicle.driverID != NO_ID)
+		return false;
+
+	for (const PassengerSeat& seat : vehicle.passengerSeats)
+		if (seat.riderID != NO_ID)
+			return false;
+
+	return true;
+}
 
 /*
 	Do not attempt to assign a handle to JoinedClient to other objects directly
@@ -83,6 +96,17 @@ void clickDetails(JoinedClient* source, Server const* const server, ENetPacket c
 		{
 			client->lastHonkMS = SDL_GetTicks();
 			playSoundAt("Honk", b2g3(vehicle->body->getWorldTransform().getOrigin()), 1.0f, 1.0f);
+		}
+		else if (!vehicle && !client->getHeldItem())
+		{
+			//An empty hand left clicking a vehicle nobody is in stands it back on its wheels, for getting one unstuck
+			//A tool in their hand gets the click instead, so a wrench still opens the vehicle's dialog rather than flipping it out from under the crosshair
+			btRigidBody* ignore = client->controlledObjects.empty() ? nullptr : client->controlledObjects[0]->body;
+			btVector3 hitPosition, hitNormal;
+			btRigidBody* hit = pd->physicsWorld->doRaycast(g2b3(pos), g2b3(pos + glm::normalize(dir) * vehicleReach), ignore, hitPosition, hitNormal);
+			std::shared_ptr<Vehicle> clicked = vehicleFromBody(hit);
+			if (clicked && isVehicleEmpty(*clicked))
+				clicked->flipUpright();
 		}
 	}
 

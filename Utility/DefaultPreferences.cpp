@@ -43,6 +43,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	
 	//GUI Settings
 	settings->addFloat("gui/opacity",				0.75f, false,		"HUD Opacity",0,1);
+	settings->addBool("gui/showfps",				true, false,		"Show Frame Rate");
+	settings->setTooltip("gui/showfps",			"The average frame rate in the top left corner, and the slowest frame of the last half second beside it");
 	settings->addEnum("gui/scaling",					1, 				"GUI Scaling Factor", 	{"Small","Normal","Large","Largest"});
 	settings->addFloat("gui/rounding", 				0.0, false,		"UI element rounding",0.0,15.0);
 	settings->addColor("gui/windowcolor", glm::vec4(0.06, 0.06, 0.06, 0.940), false, "Window Background Color");
@@ -67,20 +69,30 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 
 	//Graphics settings
 	settings->addEnum("graphics/waterquality",		1, 	 			"Water Quality",	{"No Reflection/Refraction", "Half Res Reflection/Refraction", "Full Res Reflection/Refraction"});
-	settings->addEnum("graphics/shadowresolution",	1, 	 			"Shadow Resolution", 	{"2k Shadows","4k Shadows","8k Shadows"});
+	settings->addEnum("graphics/shadowresolution",	2, 	 			"Shadow Resolution", 	{"Off","2k Shadows","4k Shadows"});
+	settings->setTooltip("graphics/shadowresolution",	"Sun and moon shadows. Off leaves everything lit by them, which is the cheapest the scene gets, and doesn't affect point light shadows");
 	settings->addEnum("graphics/shadowsoftness",		1,  			"Shadow Softness" , 	{"Hard","Soft (3x3 texels)","Softer (5x5 texels)","Softest (7x7 texels)"});
 	settings->addBool("graphics/shadowcolor",		true, false, 	"Colored Shadows");
 	settings->setTooltip("graphics/shadowcolor",		"Light through transparent bricks takes on their color");
+	settings->addBool("graphics/depthprepass",		true, false,	"Depth Pre-Pass");
+	settings->setTooltip("graphics/depthprepass",	"Draws bricks into the depth buffer first so hidden ones are never shaded. Much faster inside a big build, slightly slower looking at almost nothing");
 	settings->addBool("graphics/imagebasedlighting",	true, false,	"Image Based Lighting");
 	settings->setTooltip("graphics/imagebasedlighting", "Servers with a .hdr sky light everything with it and show it in reflections, otherwise it's only drawn as the sky");
 	settings->addInt("graphics/pointshadows",		4, false,		"Point Light Shadows", 0, 8);
 	settings->setTooltip("graphics/pointshadows",	"How many of the lights nearest the camera cast shadows, each costs up to six extra shadow passes a frame");
-	settings->addEnum("graphics/godrayquality",		1, 	 			"God ray samples", 	{"None","32 samples","64 samples","96 samples","128 samples"});
+	settings->addEnum("graphics/pointshadowquality",	2,				"Point Shadow Quality",	{"Low","Medium","High"});
+	settings->setTooltip("graphics/pointshadowquality", "How sharp those lights' shadows are. Each step doubles the size of every cube face, so at 8 shadowed lights High takes about 200 MB of video memory where Low takes 13");
+	settings->addEnum("graphics/godrayquality",		0, 	 			"God ray samples", 	{"None","32 samples","64 samples","96 samples","128 samples"});
+	settings->setTooltip("graphics/godrayquality",	"Sunlight streaming past whatever is between you and the sun. Costs an extra pass over everything in view, plus more work per pixel the more samples you ask for, and nothing at all at night or with your back to the sun");
 	settings->addEnum("graphics/spritedensity",		1, 				"Sprite density",	{"Low","Medium","High","Very High"});
 	settings->addFloat("graphics/brickdebrisseconds",	3.6f, false,	"Brick Debris Seconds",0,15);
 	settings->setTooltip("graphics/brickdebrisseconds", "How long removed bricks stay as debris, 0 for none");
 	settings->addInt("graphics/maxparticles",		20000, false,	"Max Particles", 0, 100000);
 	settings->setTooltip("graphics/maxparticles",	"Emitters stop making particles while this many are alive, 0 for no particles");
+	settings->addInt("graphics/maxvideoprints",		4, false,		"Video Prints Playing", 0, 32);
+	settings->setTooltip("graphics/maxvideoprints",	"How many .webm prints play at once, the rest hold a frame. Each one decodes video every frame it's in the world");
+	settings->addBool("graphics/itemicons3d",		true, false,	"3D Item Icons");
+	settings->setTooltip("graphics/itemicons3d",	"The item bar shows a little drawing of each item you're carrying instead of its flat icon, and turns the one you have picked. Off uses whatever icon the server gave the item");
 	settings->addEnum("graphics/rainquality",		2,				"Rain Quality",		{"Sound Only","Low","Medium","High"});
 	settings->setTooltip("graphics/rainquality",		"Falling drops, splashes, and wet surfaces when a server makes it rain. Costs nothing while it isn't raining");
 
@@ -88,4 +100,14 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->addBool("hosting/useevalpassword",	false, false,	"Enable Lua Password");
 	settings->setTooltip("hosting/useevalpassword",	"Enables the password for remote Lua execution");
 	settings->addString("hosting/evalpassword",	"changeme", false, "Lua console password");	
+
+	//How often each client hears about an object depends on how far from them it is, see NetRelevanceSettings
+	settings->addFloat("hosting/updatenear",		300.0f, false,	"Full Update Distance",		0, 16384);
+	settings->setTooltip("hosting/updatenear",	"Objects this close to a player are updated every tick");
+	settings->addFloat("hosting/updatemid",		700.0f, false,	"Half Update Distance",		0, 16384);
+	settings->setTooltip("hosting/updatemid",	"Out to here objects are updated every other tick");
+	settings->addFloat("hosting/updatefar",		1500.0f, false,	"Quarter Update Distance",	0, 16384);
+	settings->setTooltip("hosting/updatefar",	"Out to here objects are updated every fourth tick, past it not at all");
+	settings->addInt("hosting/updatebytespertick",	8192, false,	"Update Bytes Per Tick",	256, 65536);
+	settings->setTooltip("hosting/updatebytespertick",	"Most object update bytes one player can be sent per tick, a cap rather than a target");
 }

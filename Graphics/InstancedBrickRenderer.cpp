@@ -9,8 +9,8 @@
 static constexpr int cubeVertexFloats = 14;
 //Min corner, size, color, material
 static constexpr int instanceFloats = 11;
-//Min corner, size, color, material, quarter turns
-static constexpr int specialInstanceFloats = 12;
+//Min corner, size, color, material, quarter turns, print decal layer
+static constexpr int specialInstanceFloats = 13;
 //In studs horizontally and plates vertically
 static constexpr int chunkSize = 64;
 
@@ -55,10 +55,12 @@ static void appendInstance(std::vector<float>& instances, const glm::vec3& corne
 	instances.insert(instances.end(), { corner.x, corner.y, corner.z, size.x, size.y, size.z, color.r, color.g, color.b, alpha, (float)brick.material });
 }
 
-static void appendSpecialInstance(std::vector<float>& instances, const glm::vec3& corner, const Brick& brick, float alpha)
+//printLayer is which layer of the decal array holds the brick's print, or -1 for a brick with none
+static void appendSpecialInstance(std::vector<float>& instances, const glm::vec3& corner, const Brick& brick, float alpha, int printLayer)
 {
 	appendInstance(instances, corner, brick, alpha);
 	instances.push_back((float)brick.angleID);
+	instances.push_back((float)printLayer);
 }
 
 static std::vector<float> makeCube()
@@ -188,7 +190,7 @@ void InstancedBrickRenderer::createSpecialVao(GLuint& vao, GLuint& instanceBuffe
 
 	glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
 	glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-	for (GLuint attribute : { 5, 6, 7, 9, 10 })
+	for (GLuint attribute : { 5, 6, 7, 9, 10, 11 })
 	{
 		glEnableVertexAttribArray(attribute);
 		glVertexAttribDivisor(attribute, 1);
@@ -209,6 +211,28 @@ void InstancedBrickRenderer::pointSpecialInstances(GLsizei firstInstance) const
 	glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 6 * sizeof(float)));
 	glVertexAttribPointer(10, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 10 * sizeof(float)));
 	glVertexAttribPointer(9, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 11 * sizeof(float)));
+	glVertexAttribPointer(11, 1, GL_FLOAT, GL_FALSE, stride, (void*)(offset + 12 * sizeof(float)));
+}
+
+int InstancedBrickRenderer::printLayer(const Brick& brick) const
+{
+	return prints ? prints->getDecalLayer(brick.printID) : -1;
+}
+
+void InstancedBrickRenderer::countPrints(Chunk* chunk, const std::vector<std::pair<uint16_t, int>>& newCounts)
+{
+	//What the chunk had before comes out of the total, whatever it has now goes in
+	for (const auto& entry : chunk->prints)
+	{
+		auto found = printCounts.find(entry.first);
+		if (found != printCounts.end() && (found->second -= entry.second) <= 0)
+			printCounts.erase(found);
+	}
+
+	for (const auto& entry : newCounts)
+		printCounts[entry.first] += entry.second;
+
+	chunk->prints = newCounts;
 }
 
 const SpecialBrickType* InstancedBrickRenderer::specialType(const Brick& brick) const
@@ -234,6 +258,9 @@ InstancedBrickRenderer::Chunk* InstancedBrickRenderer::getChunk(const Brick* bri
 		createInstancedVao(chunk->vao[transparency], chunk->instanceBuffer[transparency]);
 		createSpecialVao(chunk->specialVao[transparency], chunk->specialInstanceBuffer[transparency]);
 	}
+
+	//Its bounds are only worked out once upload has its bricks, until then it's an empty box at the origin
+	addToList(chunk);
 
 	return chunk;
 }
@@ -283,6 +310,7 @@ void InstancedBrickRenderer::rebuild(Chunk* chunk)
 	if (chunk->bricks.empty())
 	{
 		chunks.erase(chunk->key);
+		removeFromList(chunk);
 		destroyChunk(chunk);
 		return;
 	}
@@ -294,6 +322,7 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 {
 	std::vector<float> instances[2];
 	std::vector<std::pair<int, const Brick*>> specials[2];
+	std::vector<std::pair<uint16_t, int>> prints;
 	glm::vec3 min = glm::vec3(FLT_MAX);
 	glm::vec3 max = glm::vec3(-FLT_MAX);
 	bool anyUndulo = false;
@@ -311,6 +340,16 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 
 		if (const SpecialBrickType* type = specialType(*brick))
 		{
+			//Only a print that's really drawn counts, a brick can wear one Lua gave it with no face to show it on
+			if (brick->printID != 0 && type->groupCount[BrickTexturePrint] > 0)
+			{
+				auto found = std::find_if(prints.begin(), prints.end(), [&](const auto& entry) { return entry.first == brick->printID; });
+				if (found == prints.end())
+					prints.push_back({ brick->printID, 1 });
+				else
+					found->second++;
+			}
+
 			//A type with see-through faces is drawn with the transparent bricks even when it's painted opaque
 			specials[brick->color.a < 255 || type->hasTransparency ? 1 : 0].push_back({ brick->typeID - 1, brick });
 			continue;
@@ -319,9 +358,18 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 		appendInstance(instances[brick->color.a < 255 ? 1 : 0], corner, *brick, brick->color.a / 255.0f);
 	}
 
+	countPrints(chunk, prints);
+
 	glm::vec3 wiggle = glm::vec3(anyUndulo ? unduloAmplitude : 0.0f);
 	chunk->min = min * gridScale - wiggle;
 	chunk->max = max * gridScale + wiggle;
+
+	//A brick group's chunk isn't in chunkList, its bounds are in its own space and it's drawn by transform
+	if (chunk->listIndex >= 0)
+	{
+		chunkList[chunk->listIndex].min = chunk->min;
+		chunkList[chunk->listIndex].max = chunk->max;
+	}
 
 	for (int transparency = 0; transparency < 2; transparency++)
 	{
@@ -343,7 +391,7 @@ void InstancedBrickRenderer::upload(Chunk* chunk)
 				runs.push_back({ sorted[a].first, (GLsizei)a, 0 });
 			runs.back().count++;
 
-			appendSpecialInstance(specialInstances, glm::vec3(brick->x, brick->y, brick->z), *brick, brick->color.a / 255.0f);
+			appendSpecialInstance(specialInstances, glm::vec3(brick->x, brick->y, brick->z), *brick, brick->color.a / 255.0f, printLayer(*brick));
 		}
 
 		glBindBuffer(GL_ARRAY_BUFFER, chunk->specialInstanceBuffer[transparency]);
@@ -422,7 +470,7 @@ void InstancedBrickRenderer::uploadSingleInstance(const glm::vec3& corner, const
 void InstancedBrickRenderer::uploadSingleSpecialInstance(const glm::vec3& corner, const Brick& brick, float alpha) const
 {
 	std::vector<float> instance;
-	appendSpecialInstance(instance, corner, brick, alpha);
+	appendSpecialInstance(instance, corner, brick, alpha, printLayer(brick));
 
 	glBindBuffer(GL_ARRAY_BUFFER, singleSpecialInstanceBuffer);
 	glBufferData(GL_ARRAY_BUFFER, instance.size() * sizeof(float), instance.data(), GL_DYNAMIC_DRAW);
@@ -478,6 +526,7 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 	for (int faceGroup = 0; faceGroup < BrickTextureCount; faceGroup++)
 	{
 		bool materialInUse = false;
+		glUniform1i(printFaceUniform, faceGroup == BrickTexturePrint);
 
 		for (size_t a = 0; a < sets.size(); a++)
 		{
@@ -495,6 +544,11 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 
 				if (!materialInUse)
 				{
+					//A print covers its whole face, however DecalArea was left by the last mesh drawn, see brick.vert
+					//Set right here so Material::use uploads it, since Mesh::render only re-uploads when it sees a different one
+					if (faceGroup == BrickTexturePrint)
+						shaders->basicUniforms.DecalArea = glm::vec4(0, 0, 1, 1);
+
 					materials[faceGroup]->use(shaders);
 					materialInUse = true;
 				}
@@ -508,32 +562,111 @@ void InstancedBrickRenderer::drawSpecial(std::shared_ptr<ShaderManager> shaders,
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	glUniform1i(specialMeshUniform, 0);
+	glUniform1i(printFaceUniform, 0);
+}
+
+void InstancedBrickRenderer::visibleChunks(const std::shared_ptr<ShaderManager>& shaders, bool transparent, std::vector<const Chunk*>& out) const
+{
+	int transparency = transparent ? 1 : 0;
+
+	std::array<glm::vec4, 6> planes = frustumPlanes(shaders->cameraUniforms.CameraProjection * shaders->cameraUniforms.CameraView);
+	const glm::vec3& eye = shaders->cameraUniforms.CameraPosition;
+
+	//Chunks come out of the map in no particular order, so they're sorted before drawing. Opaque bricks go
+	//nearest first, which lets the depth test throw away everything behind a wall before model.frag ever runs
+	//on it, and transparent ones farthest first, since they blend and have to arrive in back to front order
+	std::vector<std::pair<float, const Chunk*>> sorted;
+	sorted.reserve(chunkList.size());
+	for (const ChunkBounds& bounds : chunkList)
+	{
+		const Chunk* chunk = bounds.chunk;
+		if (chunk->count[transparency] == 0 && chunk->specialRuns[transparency].empty())
+			continue;
+		if (!boxVisible(planes, bounds.min, bounds.max))
+			continue;
+
+		//Squared distance to the nearest point of the chunk, 0 for the one the camera is inside
+		glm::vec3 toBox = glm::clamp(eye, bounds.min, bounds.max) - eye;
+		sorted.push_back({ glm::dot(toBox, toBox), chunk });
+	}
+
+	std::sort(sorted.begin(), sorted.end(), [transparent](const std::pair<float, const Chunk*>& a, const std::pair<float, const Chunk*>& b)
+		{ return transparent ? a.first > b.first : a.first < b.first; });
+
+	out.clear();
+	out.reserve(sorted.size());
+	for (const auto& entry : sorted)
+		out.push_back(entry.second);
+}
+
+void InstancedBrickRenderer::renderDepth(std::shared_ptr<ShaderManager> shaders) const
+{
+	std::vector<const Chunk*> visible;
+	visibleChunks(shaders, false, visible);
+	if (visible.empty())
+		return;
+
+	const glm::mat4 identity(1.0f);
+	glUniformMatrix4fv(brickDepthTransformUniform, 1, GL_FALSE, &identity[0][0]);
+
+	//Nothing here writes color, so the whole cube goes in one draw instead of three by face group
+	for (const Chunk* chunk : visible)
+	{
+		if (chunk->count[0] > 0)
+		{
+			glBindVertexArray(chunk->vao[0]);
+			glDrawArraysInstanced(GL_TRIANGLES, 0, topCount + bottomCount + sidesCount, chunk->count[0]);
+		}
+
+		if (chunk->specialRuns[0].empty())
+			continue;
+
+		/*
+			Culling stays exactly as the shading pass has it. The shadow pass turns it off for these, since a shape
+			that isn't closed has to cast from both sides, but here the pre-pass must lay down the depth of the very
+			triangles the shading pass will draw and no others. With back faces let through, a thin shape like a
+			fence rail has its two sides within a depth quantum of each other, they interpolate depth a little
+			differently, and the back face wins some pixels - where the front face then fails the equal test and
+			leaves a speckled hole with the ground showing through it
+		*/
+		glUniform1i(brickDepthSpecialMeshUniform, 1);
+		glBindVertexArray(chunk->specialVao[0]);
+		glBindBuffer(GL_ARRAY_BUFFER, chunk->specialInstanceBuffer[0]);
+		for (const SpecialRun& run : chunk->specialRuns[0])
+		{
+			const SpecialBrickType* type = types->getSpecial(run.type);
+			if (!type)
+				continue;
+
+			pointSpecialInstances(run.first);
+			glDrawArraysInstanced(GL_TRIANGLES, specialTypeOffsets[run.type], type->vertexCount(), run.count);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glUniform1i(brickDepthSpecialMeshUniform, 0);
+	}
+
+	glBindVertexArray(0);
 }
 
 void InstancedBrickRenderer::render(std::shared_ptr<ShaderManager> shaders, bool transparent) const
 {
 	int transparency = transparent ? 1 : 0;
 
-	std::array<glm::vec4, 6> planes = frustumPlanes(shaders->cameraUniforms.CameraProjection * shaders->cameraUniforms.CameraView);
+	std::vector<const Chunk*> chunkOrder;
+	visibleChunks(shaders, transparent, chunkOrder);
+	if (chunkOrder.empty())
+		return;
 
 	std::vector<InstanceSet> visible;
 	std::vector<SpecialSet> visibleSpecial;
-	for (const auto& entry : chunks)
+	visible.reserve(chunkOrder.size());
+	for (const Chunk* chunk : chunkOrder)
 	{
-		const Chunk* chunk = entry.second;
-		if (chunk->count[transparency] == 0 && chunk->specialRuns[transparency].empty())
-			continue;
-		if (!boxVisible(planes, chunk->min, chunk->max))
-			continue;
-
 		if (chunk->count[transparency] > 0)
 			visible.push_back({ chunk->vao[transparency], chunk->count[transparency] });
 		if (!chunk->specialRuns[transparency].empty())
 			visibleSpecial.push_back({ chunk->specialVao[transparency], chunk->specialInstanceBuffer[transparency], &chunk->specialRuns[transparency] });
 	}
-
-	if (visible.empty() && visibleSpecial.empty())
-		return;
 
 	setTransform(glm::mat4(1.0f));
 
@@ -686,11 +819,16 @@ void InstancedBrickRenderer::renderLoose(std::shared_ptr<ShaderManager> shaders,
 	glDisable(GL_BLEND);
 }
 
+std::string InstancedBrickRenderer::getShadowStats() const
+{
+	return std::to_string(shadowChunksDrawn) + " chunks drawn of " + std::to_string(shadowChunksTested) + " looked at";
+}
+
 bool InstancedBrickRenderer::hasTransparentBricks() const
 {
-	for (const auto& entry : chunks)
+	for (const ChunkBounds& bounds : chunkList)
 	{
-		if (entry.second->count[1] > 0 || !entry.second->specialRuns[1].empty())
+		if (bounds.chunk->count[1] > 0 || !bounds.chunk->specialRuns[1].empty())
 			return true;
 	}
 	for (const auto& entry : groups)
@@ -753,11 +891,12 @@ void InstancedBrickRenderer::drawChunkShadow(const Chunk* chunk, bool opaque, bo
 	glBindVertexArray(0);
 }
 
-void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatrix, bool opaque, bool transparent, bool tintProgram, const std::vector<GroupDraw>* draws, const glm::vec3* skipPoint) const
+void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatrix, bool opaque, bool transparent, bool tintProgram, const std::vector<GroupDraw>* draws, const glm::vec3* skipPoint, bool cullNear) const
 {
 	std::array<glm::vec4, 6> planes = frustumPlanes(lightSpaceMatrix);
 	//Chunks between the light and the cascade still shadow it, GL_DEPTH_CLAMP flattens them onto its near plane
-	planes[4] = glm::vec4(0, 0, 0, 1);
+	if (!cullNear)
+		planes[4] = glm::vec4(0, 0, 0, 1);
 
 	GLint specialUniform = tintProgram ? tintSpecialMeshUniform : shadowSpecialMeshUniform;
 	GLint transformUniform = tintProgram ? tintTransformUniform : shadowTransformUniform;
@@ -766,11 +905,15 @@ void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatr
 	const glm::mat4 identity(1.0f);
 	glUniformMatrix4fv(transformUniform, 1, GL_FALSE, &identity[0][0]);
 
-	for (const auto& entry : chunks)
+	for (const ChunkBounds& bounds : chunkList)
 	{
-		if (boxVisible(planes, entry.second->min, entry.second->max))
-			drawChunkShadow(entry.second, opaque, transparent, specialUniform);
+		if (boxVisible(planes, bounds.min, bounds.max))
+		{
+			shadowChunksDrawn++;
+			drawChunkShadow(bounds.chunk, opaque, transparent, specialUniform);
+		}
 	}
+	shadowChunksTested += (int)chunkList.size();
 
 	if (!draws || draws->empty())
 		return;
@@ -808,8 +951,28 @@ void InstancedBrickRenderer::renderShadowCascade(const glm::mat4& lightSpaceMatr
 		glUniform3fv(skipPointUniform, 1, &(*skipPoint)[0]);
 }
 
+void InstancedBrickRenderer::addToList(Chunk* chunk)
+{
+	chunk->listIndex = (int)chunkList.size();
+	chunkList.push_back({ chunk->min, chunk->max, chunk });
+}
+
+void InstancedBrickRenderer::removeFromList(Chunk* chunk)
+{
+	if (chunk->listIndex < 0)
+		return;
+
+	//The last entry takes the leaving one's place, so this doesn't shuffle thousands of chunks along
+	chunkList[chunk->listIndex] = chunkList.back();
+	chunkList[chunk->listIndex].chunk->listIndex = chunk->listIndex;
+	chunkList.pop_back();
+	chunk->listIndex = -1;
+}
+
 void InstancedBrickRenderer::destroyChunk(Chunk* chunk)
 {
+	countPrints(chunk, {});
+
 	glDeleteVertexArrays(2, chunk->vao);
 	glDeleteBuffers(2, chunk->instanceBuffer);
 	glDeleteVertexArrays(2, chunk->specialVao);
@@ -823,10 +986,12 @@ void InstancedBrickRenderer::clear()
 		destroyChunk(entry.second);
 
 	chunks.clear();
+	chunkList.clear();
 	dirtyChunks.clear();
 }
 
-InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types) : types(_types)
+InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> shaders, std::shared_ptr<TextureManager> textures, const BrickTypes* _types,
+	const PrintTypes* _prints) : types(_types), prints(_prints)
 {
 	std::vector<float> cube = makeCube();
 
@@ -861,9 +1026,12 @@ InstancedBrickRenderer::InstancedBrickRenderer(std::shared_ptr<ShaderManager> sh
 		error("Could not load brick materials from Assets/brick/");
 
 	tileByStudsUniform = shaders->brickShader->getUniformLocation("tileByStuds");
+	printFaceUniform = shaders->brickShader->getUniformLocation("printFace");
 	brickTransformUniform = shaders->brickShader->getUniformLocation("brickTransform");
 	glowUniform = shaders->brickShader->getUniformLocation("glow");
 	specialMeshUniform = shaders->brickShader->getUniformLocation("specialMesh");
+	brickDepthSpecialMeshUniform = shaders->brickDepthShader->getUniformLocation("specialMesh");
+	brickDepthTransformUniform = shaders->brickDepthShader->getUniformLocation("brickTransform");
 	shadowSpecialMeshUniform = shaders->brickShadowCascadeShader->getUniformLocation("specialMesh");
 	tintSpecialMeshUniform = shaders->brickShadowTintShader->getUniformLocation("specialMesh");
 	shadowTransformUniform = shaders->brickShadowCascadeShader->getUniformLocation("brickTransform");

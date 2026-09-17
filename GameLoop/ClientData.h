@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Networking/JoinedClient.h"
+#include "../Networking/ClickAction.h"
 #include "../SimObjects/Dynamic.h"
 #include "../SimObjects/Light.h"
 #include "../SimObjects/Item.h"
@@ -68,6 +69,13 @@ struct ClientData
 	int selectedSlot = 0;
 	bool inventoryOpen = false;
 
+	//An item in their hand that isn't in any of their slots, Lua's client:setHandItem, which their item bar can't reach and is held instead of whatever it has picked
+	//Inventory.lua puts a paint can here while their palette is out
+	std::weak_ptr<Item> handItem;
+
+	//Whether their paint palette wants a paint can in their hand, from PaintCanRequest packets, see Lua's ClientPaintCan
+	bool paintCanOut = false;
+
 	//The color and material their paint palette has picked, from PaintChoice packets, see Lua's client:getPaintColor
 	glm::u8vec4 paintColor = glm::u8vec4(255, 255, 255, 255);
 	unsigned char paintMaterial = 0;
@@ -95,6 +103,16 @@ struct ClientData
 	//Takes the item out of a slot and back into the world just in front of their player, or where it last was without one. nullptr for an empty slot
 	std::shared_ptr<Item> removeItem(const ServerProgramData* pd, int slot);
 
+	//Puts an item that's on the ground in their hand without using a slot, or takes the one that's there back out into the world for nullptr
+	//Returns whatever was in their hand before, which also goes back into the world, or nullptr
+	std::shared_ptr<Item> setHandItem(const ServerProgramData* pd, const std::shared_ptr<Item>& item);
+
+	//The item in their player's hand, whatever setHandItem put there, otherwise the slot their item bar has picked while it's out. nullptr for an empty hand
+	std::shared_ptr<Item> getHeldItem() const;
+
+	//Where an item they're carrying goes when it leaves their inventory, just in front of their player or where it last was without one
+	btTransform droppedItemTransform(const Item& item) const;
+
 	//Empties the slot an item is in without putting it anywhere, for an item being destroyed
 	void forgetItem(const Item& item);
 
@@ -103,6 +121,16 @@ struct ClientData
 
 	//Tells their game which items are in which of their slots
 	void sendInventory() const;
+
+	/*
+		Tells their game what to play the moment they click with an item, before it hears back about
+		the click at all, see Networking/ClickAction.h. Only the look of it: the shot itself is still
+		worked out here. Send one with no item to stop predicting anything
+	*/
+	void sendClickAction(const ClickAction& action) const;
+
+	//Goes up with every click action sent, so their game can tell a replaced one from the one running
+	mutable uint32_t clickActionGeneration = 0;
 
 	//Turns their flashlight on in color (or just recolors it), or off, playing LightOn or LightOff from their player for anyone nearby
 	//Won't turn it on while flashlightEnabled is off, or without a player from setDefaultController to hold it

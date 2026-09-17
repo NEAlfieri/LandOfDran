@@ -58,8 +58,22 @@ void Interpolator::addSnapshot(const glm::vec3& pos, const glm::quat& rot,float 
 
 	float time = lastFrameTime + timeBetween;
 
-	if (msSinceLastSend == 0)
-		time = getTicksMS() + msSinceLastSend * 1.1;
+	/*
+		0 is the sender restarting our clock outright. 255 is its gap clamped: it only has a byte to say how long it
+		has been, so every longer gap arrives as that and none of them is a playback length worth trusting
+		An object that has been sitting still sends nothing but the 1500ms heartbeat, so the first update after it
+		starts moving again always lands here - creeping to that one over a made up interval, and then queueing
+		everything after it behind that, is what left a player who just started walking looking a second behind
+		Whatever is queued ahead was timed against a rhythm that just ended, so it goes rather than sitting in front
+		of this one and holding playback back. getPosition needs them in time order too
+	*/
+	if (msSinceLastSend == 0 || msSinceLastSend >= 255)
+	{
+		time = getTicksMS();
+
+		while (!snapshots.empty() && snapshots.back().time > time)
+			snapshots.pop_back();
+	}
 
 	snapshots.emplace_back(Snapshot({ pos,rot,time }));
 }

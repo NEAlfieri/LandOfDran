@@ -5,10 +5,15 @@
 	Our own version after that (16483536) swaps its music track and light color for BrickAttachments' music loop, whole light, and emitter,
 	and its material byte is a BrickMaterial (saves from before materials wrote 0 there, which is none)
 	The one after (16483537) adds blink speed and strength to the end of the light, see BrickAttachments::lightFloatCount
+	The one after that (16483538) puts a brick's print name at the very end of its record, see printFlag
 */
 static constexpr unsigned int lodMagic = 16483534;
 static constexpr unsigned int lodMagicAttachments = lodMagic + 2;
 static constexpr unsigned int lodMagicBlinkingLights = lodMagic + 3;
+static constexpr unsigned int lodMagicPrints = lodMagic + 4;
+
+//Flags bit saying a brick record ends with a print, the same bit the old game used for its own print mask and name
+static constexpr unsigned char printFlag = 8;
 
 /*
 	The old game's material byte: 2-9 were pearl, chrome, glow, blink, swirl, rainbow (from Blockland saves, never drawn), slippery, and foil,
@@ -72,7 +77,7 @@ static bool readValue(std::istream& file, auto& value)
 	return (bool)file.read((char*)&value, sizeof(value));
 }
 
-bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks, const BrickTypes* types, bool omitOwnership)
+bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks, const BrickTypes* types, const PrintTypes* prints, bool omitOwnership)
 {
 	std::vector<const Brick*> basic;
 	std::vector<const Brick*> special;
@@ -99,7 +104,7 @@ bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks,
 	}
 
 	unsigned int count = bricks.size();
-	writeValue(file, lodMagicBlinkingLights);
+	writeValue(file, lodMagicPrints);
 	writeValue(file, count);
 
 	writeValue(file, (unsigned int)typeNames.size());
@@ -139,13 +144,23 @@ bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks,
 		writeValue(file, (unsigned char)name.length());
 		file.write(name.c_str(), name.length());
 
+		std::string printName = prints ? prints->getName((int)brick->printID - 1).substr(0, 255) : "";
+
 		unsigned char flags = brick->collides ? 1 : 0;
 		if (brick->attachments)
 			flags |= brick->attachments->getFlags();
+		if (!printName.empty())
+			flags |= printFlag;
 		writeValue(file, flags);
 
 		if (brick->attachments)
 			brick->attachments->writeParts([&file](const void* data, size_t count) { file.write((const char*)data, count); });
+
+		if (!printName.empty())
+		{
+			writeValue(file, (unsigned char)printName.length());
+			file.write(printName.c_str(), printName.length());
+		}
 	};
 
 	writeValue(file, (unsigned int)basic.size());
@@ -161,7 +176,7 @@ bool writeLodBricks(std::ostream& file, const std::vector<const Brick*>& bricks,
 	return (bool)file;
 }
 
-bool saveLodBuild(const BrickHolder& bricks, const std::string& path, bool omitOwnership)
+bool saveLodBuild(const BrickHolder& bricks, const PrintTypes* prints, const std::string& path, bool omitOwnership)
 {
 	scope("saveLodBuild");
 
@@ -180,7 +195,7 @@ bool saveLodBuild(const BrickHolder& bricks, const std::string& path, bool omitO
 	for (size_t a = 0; a < bricks.size(); a++)
 		all.push_back(bricks.get(a));
 
-	if (!writeLodBricks(file, all, bricks.getTypes(), omitOwnership))
+	if (!writeLodBricks(file, all, bricks.getTypes(), prints, omitOwnership))
 	{
 		error("Error while writing " + path);
 		return false;
@@ -191,10 +206,12 @@ bool saveLodBuild(const BrickHolder& bricks, const std::string& path, bool omitO
 }
 
 /*
-	Reads the owner, name, and flags at the end of a next version record, then either our attachments or the old game's music/light/print data, which is skipped
+	Reads the owner, name, and flags at the end of a next version record, then either our attachments or the old game's music and light data, which is skipped
+	Either way a print's name comes out in printName, "" for a brick without one
 	Returns false if the file ran out. lightFloats is how many floats the save's lights have, see BrickAttachments::readParts
 */
-static bool readRecordExtras(std::istream& file, bool hasAttachments, size_t lightFloats, bool& collides, std::string& name, std::shared_ptr<BrickAttachments>& attachments)
+static bool readRecordExtras(std::istream& file, bool hasAttachments, bool hasPrints, size_t lightFloats, bool& collides, std::string& name,
+	std::shared_ptr<BrickAttachments>& attachments, std::string& printName)
 {
 	int ownerID;
 	unsigned char nameLength, flags;
@@ -210,18 +227,41 @@ static bool readRecordExtras(std::istream& file, bool hasAttachments, size_t lig
 
 	collides = flags & 1;
 
-	if (hasAttachments)
+	//A name on its own, however many faces the old game's mask put it on, since a print brick here wears it on all of them
+	auto readPrintName = [&file, &printName](bool hasMask)
 	{
-		if (!(flags & (BrickAttachment_Music | BrickAttachment_Light | BrickAttachment_Emitter | BrickAttachment_Wheel | BrickAttachment_Steering)))
-			return true;
-
-		auto read = std::make_shared<BrickAttachments>();
-		if (!read->readParts(flags, [&file](void* data, size_t count) { return (bool)file.read((char*)data, count); }, lightFloats))
+		unsigned char mask = 1, printNameLength;
+		if (hasMask && !readValue(file, mask))
 			return false;
 
-		read->clampValues();
-		if (!read->isEmpty())
-			attachments = read;
+		if (!readValue(file, printNameLength))
+			return false;
+
+		printName.resize(printNameLength);
+		if (printNameLength > 0 && !file.read(&printName[0], printNameLength))
+			return false;
+
+		if (mask == 0)
+			printName = "";
+		return true;
+	};
+
+	if (hasAttachments)
+	{
+		if (flags & (BrickAttachment_Music | BrickAttachment_Light | BrickAttachment_Emitter | BrickAttachment_Wheel | BrickAttachment_Steering))
+		{
+			auto read = std::make_shared<BrickAttachments>();
+			if (!read->readParts(flags, [&file](void* data, size_t count) { return (bool)file.read((char*)data, count); }, lightFloats))
+				return false;
+
+			read->clampValues();
+			if (!read->isEmpty())
+				attachments = read;
+		}
+
+		if (hasPrints && (flags & printFlag) && !readPrintName(false))
+			return false;
+
 		return true;
 	}
 
@@ -233,29 +273,25 @@ static bool readRecordExtras(std::istream& file, bool hasAttachments, size_t lig
 	if (flags & 4)
 		file.seekg(3 * sizeof(float), std::ios::cur);
 
-	//Print: mask then name
-	if (flags & 8)
-	{
-		unsigned char mask, printNameLength;
-		if (!readValue(file, mask) || !readValue(file, printNameLength))
-			return false;
-		file.seekg(printNameLength, std::ios::cur);
-	}
+	//The old game's print: mask then name
+	if ((flags & printFlag) && !readPrintName(true))
+		return false;
 
 	return (bool)file;
 }
 
-LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const std::function<void(Brick&)>& found)
+LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const PrintTypes* prints, const std::function<void(Brick&)>& found)
 {
 	LodReadResult result;
 
 	unsigned int magic, brickCount, typeCount;
-	if (!readValue(file, magic) || magic < lodMagic || magic > lodMagicBlinkingLights)
+	if (!readValue(file, magic) || magic < lodMagic || magic > lodMagicPrints)
 		return result;
 
 	result.valid = true;
 	bool hasExtras = magic != lodMagic;
 	bool hasAttachments = magic >= lodMagicAttachments;
+	bool hasPrints = magic >= lodMagicPrints;
 	size_t lightFloats = magic >= lodMagicBlinkingLights ? BrickAttachments::lightFloatCount : BrickAttachments::lightFloatCount - 1;
 
 	if (!readValue(file, brickCount) || !readValue(file, typeCount))
@@ -304,9 +340,10 @@ LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const s
 
 			bool collides = true;
 			std::string name = "";
+			std::string printName = "";
 			std::shared_ptr<BrickAttachments> attachments = nullptr;
 			if (ok && hasExtras)
-				ok = readRecordExtras(file, hasAttachments, lightFloats, collides, name, attachments);
+				ok = readRecordExtras(file, hasAttachments, hasPrints, lightFloats, collides, name, attachments, printName);
 
 			if (!ok)
 				return result;
@@ -348,6 +385,15 @@ LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const s
 			desc.collides = collides;
 			desc.name = name;
 			desc.attachments = attachments;
+
+			//A print we don't have leaves the brick plain, like a special type we don't have
+			if (!printName.empty())
+			{
+				printName = blocklandTextToUtf8(printName);
+				desc.printID = (uint16_t)((prints ? prints->find(printName) : -1) + 1);
+				if (desc.printID == 0)
+					result.missingPrints[printName]++;
+			}
 			desc.x = (int)lround(centerX - desc.footprintWidth() * 0.5);
 			desc.y = (int)lround(centerY / PLATE_SIZE - height * 0.5);
 			desc.z = (int)lround(centerZ - desc.footprintLength() * 0.5);
@@ -360,7 +406,7 @@ LodReadResult readLodBricks(std::istream& file, const BrickTypes* types, const s
 	return result;
 }
 
-int loadLodBuild(BrickHolder& bricks, const std::string& path, int offsetX, int offsetY, int offsetZ)
+int loadLodBuild(BrickHolder& bricks, const PrintTypes* prints, const std::string& path, int offsetX, int offsetY, int offsetZ)
 {
 	scope("loadLodBuild");
 
@@ -376,7 +422,7 @@ int loadLodBuild(BrickHolder& bricks, const std::string& path, int offsetX, int 
 	int loaded = 0;
 	int rejected = 0;
 
-	LodReadResult result = readLodBricks(file, bricks.getTypes(), [&](Brick& desc)
+	LodReadResult result = readLodBricks(file, bricks.getTypes(), prints, [&](Brick& desc)
 	{
 		desc.x += offsetX;
 		desc.y += offsetY;
@@ -406,6 +452,17 @@ int loadLodBuild(BrickHolder& bricks, const std::string& path, int offsetX, int 
 		for (const auto& entry : result.missingTypes)
 			list += (list.empty() ? "" : ", ") + entry.first;
 		info(std::to_string(result.skippedSpecial) + " special bricks of types we don't have were skipped: " + list);
+	}
+	if (!result.missingPrints.empty())
+	{
+		int count = 0;
+		std::string list = "";
+		for (const auto& entry : result.missingPrints)
+		{
+			count += entry.second;
+			list += (list.empty() ? "" : ", ") + entry.first;
+		}
+		info(std::to_string(count) + " bricks wear prints we don't have, they loaded plain: " + list);
 	}
 	if (result.invalid > 0)
 		error(std::to_string(result.invalid) + " bricks had invalid sizes or rotations");
@@ -460,7 +517,7 @@ static std::string listCounts(const std::map<std::string, int>& counts, int& tot
 	return list;
 }
 
-int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const std::string& path, const BlocklandAttachmentLookup& lookup)
+int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const PrintTypes* prints, const std::string& path, const BlocklandAttachmentLookup& lookup)
 {
 	scope("loadBlocklandBuild");
 
@@ -518,6 +575,7 @@ int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const std::
 	std::map<std::string, int> missingLights;
 	std::map<std::string, int> missingEmitters;
 	std::map<std::string, int> missingMusic;
+	std::map<std::string, int> missingPrints;
 
 	//Each brick is added once the lines after it, which name it and put things on it, have been read, so its attachments spawn with it
 	Brick pending;
@@ -631,6 +689,15 @@ int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const std::
 
 		//Used as is, like the old game: in the Golden Gate save 45° ramps turned this way have the bricks they lead up to past their high edge
 		pending.angleID = atoi(fields[3].c_str()) % 4;
+
+		//Blockland names its prints the same way we do, e.g. "Letters/X", and a brick without one leaves the field empty
+		if (!fields[6].empty() && fields[6] != "0")
+		{
+			std::string printName = blocklandTextToUtf8(fields[6]);
+			pending.printID = (uint16_t)((prints ? prints->find(printName) : -1) + 1);
+			if (pending.printID == 0)
+				missingPrints[printName]++;
+		}
 		pending.color = palette[std::clamp(atoi(fields[5].c_str()), 0, 63)];
 		pending.collides = fields[10] != "0";
 
@@ -688,6 +755,11 @@ int loadBlocklandBuild(BrickHolder& bricks, const BrickTypes& types, const std::
 	{
 		std::string list = listCounts(missingMusic, count);
 		info(std::to_string(count) + " music loops skipped, no music sound type has their name: " + list);
+	}
+	if (!missingPrints.empty())
+	{
+		std::string list = listCounts(missingPrints, count);
+		info(std::to_string(count) + " bricks wear prints we don't have, they loaded plain: " + list);
 	}
 	if (turnedEmitters > 0)
 		info(std::to_string(turnedEmitters) + " emitters pointed sideways or down in Blockland, emitters on bricks here always point up");

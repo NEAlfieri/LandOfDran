@@ -233,6 +233,51 @@ void Vehicle::park()
 	}
 }
 
+void Vehicle::flipUpright()
+{
+	if (!body)
+		return;
+
+	btTransform transform = body->getWorldTransform();
+
+	//The way it drives, flattened, so a car rolled onto its roof comes back up still pointing where it was
+	btVector3 facing = transform.getBasis() * g2b3(glm::normalize(forward));
+	facing.setY(0);
+	if (facing.length2() < 0.0001f)
+		facing = btVector3(0, 0, 1);
+	facing.normalize();
+
+	//Maps the way it drives and its own up onto that flattened direction and world up. forward is along one of its body's axes, so the two are square to each other
+	btVector3 localForward = g2b3(glm::normalize(forward));
+	btVector3 localRight = localForward.cross(btVector3(0, 1, 0));
+	btVector3 right = facing.cross(btVector3(0, 1, 0));
+
+	btMatrix3x3 fromLocal(localForward.x(), 0, localRight.x(),
+						  localForward.y(), 1, localRight.y(),
+						  localForward.z(), 0, localRight.z());
+	btMatrix3x3 toWorld(facing.x(), 0, right.x(),
+						facing.y(), 1, right.y(),
+						facing.z(), 0, right.z());
+	transform.setBasis(toWorld * fromLocal.transpose());
+
+	//Upright it is as tall as its body's y, so half of that plus a little puts whatever was underground back above it
+	float lift = flipLift;
+	if (shape)
+	{
+		btVector3 low, high;
+		shape->getAabb(btTransform::getIdentity(), low, high);
+		lift = std::clamp((float)(high.y() - low.y()) * 0.5f + flipLift, flipLift, maxFlipLift);
+	}
+	transform.setOrigin(transform.getOrigin() + btVector3(0, lift, 0));
+
+	body->setWorldTransform(transform);
+	body->setLinearVelocity(btVector3(0, 0, 0));
+	body->setAngularVelocity(btVector3(0, 0, 0));
+	if (raycastVehicle)
+		raycastVehicle->resetSuspension();
+	body->activate();
+}
+
 void Vehicle::updateWheelStates()
 {
 	if (!raycastVehicle)
@@ -618,6 +663,7 @@ void Vehicle::readUpdate(const enet_uint8* src, float idealBufferSize)
 	glm::quat rotation;
 	getPosition(src + 1, position);
 	getQuaternion(src + 1 + PositionBytes, rotation);
+	//src[0] already accounts for how often this client is sent one, see SimObject::scaleUpdateInterval
 	interpolator.addSnapshot(position, rotation, idealBufferSize, src[0]);
 
 	memcpy(&serverVelocity[0], src + 1 + PositionBytes + QuaternionBytes, sizeof(float) * 3);

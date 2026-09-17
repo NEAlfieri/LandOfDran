@@ -144,9 +144,12 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 		1 byte		-	1 if it collides
 		1 byte		-	name length
 		0-255 bytes	-	name
-		The rest	-	BrickAttachments::write
+		Then		-	BrickAttachments::write
+		1 byte		-	print name length
+		0-255 bytes	-	print name, "" for no print
 	*/
 	std::string name = brick->name.substr(0, 255);
+	std::string printName = LUA_pd->prints.getName((int)brick->printID - 1).substr(0, 255);
 
 	std::vector<unsigned char> bytes;
 	bytes.push_back(OpenWrenchDialog);
@@ -156,6 +159,8 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 	bytes.push_back((unsigned char)name.length());
 	bytes.insert(bytes.end(), name.begin(), name.end());
 	(brick->attachments ? *brick->attachments : BrickAttachments()).write(bytes);
+	bytes.push_back((unsigned char)printName.length());
+	bytes.insert(bytes.end(), printName.begin(), printName.end());
 
 	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
 	client.wrenchedBrickID = brick->netId;
@@ -302,6 +307,50 @@ static int LUA_getBrickIdx(lua_State* L)
 	return 1;
 }
 
+static int LUA_getNumNamedBricks(lua_State* L)
+{
+	scope("(LUA) getNumNamedBricks");
+
+	if (lua_gettop(L) != 1 || !lua_isstring(L, 1))
+	{
+		error("Expected 1 argument getNumNamedBricks(name)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 1);
+	lua_settop(L, 0);
+
+	lua_pushinteger(L, LUA_pd->bricks->numNamed(name));
+	return 1;
+}
+
+static int LUA_getNamedBrickIdx(lua_State* L)
+{
+	scope("(LUA) getNamedBrickIdx");
+
+	if (lua_gettop(L) != 2 || !lua_isstring(L, 1))
+	{
+		error("Expected 2 arguments getNamedBrickIdx(name, index)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 1);
+	lua_Integer index = lua_tointeger(L, 2);
+	lua_settop(L, 0);
+
+	Brick* brick = index < 0 ? nullptr : LUA_pd->bricks->getNamed(name, (size_t)index);
+	if (!brick)
+	{
+		error("Named brick index out of range");
+		return 0;
+	}
+
+	LUA_pd->bricks->pushLua(L, brick);
+	return 1;
+}
+
 static int LUA_getBrickId(lua_State* L)
 {
 	scope("(LUA) getBrickId");
@@ -379,7 +428,7 @@ static int LUA_saveBuild(lua_State* L)
 	bool omitOwnership = args == 2 && lua_toboolean(L, 2);
 	lua_settop(L, 0);
 
-	lua_pushboolean(L, !path.empty() && saveLodBuild(*LUA_pd->bricks, path, omitOwnership));
+	lua_pushboolean(L, !path.empty() && saveLodBuild(*LUA_pd->bricks, &LUA_pd->prints, path, omitOwnership));
 	return 1;
 }
 
@@ -401,7 +450,7 @@ static int LUA_loadLodSave(lua_State* L)
 	int offsetZ = args == 4 ? (int)floor(lua_tonumber(L, 4)) : 0;
 	lua_settop(L, 0);
 
-	int loaded = path.empty() ? -1 : loadLodBuild(*LUA_pd->bricks, path, offsetX, offsetY, offsetZ);
+	int loaded = path.empty() ? -1 : loadLodBuild(*LUA_pd->bricks, &LUA_pd->prints, path, offsetX, offsetY, offsetZ);
 	if (loaded < 0)
 		lua_pushnil(L);
 	else
@@ -460,7 +509,7 @@ static int LUA_loadBlocklandSave(lua_State* L)
 	lookup.findEmitterType = findBlocklandEmitter;
 	lookup.findMusic = findMusicByName;
 
-	int loaded = path.empty() ? -1 : loadBlocklandBuild(*LUA_pd->bricks, LUA_pd->brickTypes, path, lookup);
+	int loaded = path.empty() ? -1 : loadBlocklandBuild(*LUA_pd->bricks, LUA_pd->brickTypes, &LUA_pd->prints, path, lookup);
 	if (loaded < 0)
 		lua_pushnil(L);
 	else
@@ -610,6 +659,51 @@ static int LUA_brickSetMaterial(lua_State* L)
 	return 0;
 }
 
+static int LUA_brickGetPrint(lua_State* L)
+{
+	scope("(LUA) brick:getPrint");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:getPrint()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	lua_pushstring(L, LUA_pd->prints.getName((int)brick->printID - 1).c_str());
+	return 1;
+}
+
+static int LUA_brickSetPrint(lua_State* L)
+{
+	scope("(LUA) brick:setPrint");
+
+	if (lua_gettop(L) != 2 || !lua_isstring(L, 2))
+	{
+		error("Expected 2 arguments brick:setPrint(printName)");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	std::string name = lua_tostring(L, 2);
+	int print = name.empty() ? -1 : LUA_pd->prints.find(name);
+	if (!name.empty() && print < 0)
+	{
+		error("No print named " + name + ", prints are named like \"2x2f/arrow\" after their folder in Assets/brick/prints");
+		return 0;
+	}
+
+	//Nothing stops a print going on a brick with no printed face, it just won't show
+	LUA_pd->bricks->setPrint(brick, (uint16_t)(print + 1));
+	return 0;
+}
+
 static int LUA_brickIsColliding(lua_State* L)
 {
 	scope("(LUA) brick:isColliding");
@@ -696,7 +790,7 @@ static int LUA_brickSetName(lua_State* L)
 	if (!brick)
 		return 0;
 
-	brick->name = lua_tostring(L, 2);
+	LUA_pd->bricks->setName(brick, lua_tostring(L, 2));
 	return 0;
 }
 
@@ -1138,6 +1232,8 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "addSpecialBrick", LUA_addSpecialBrick);
 	lua_register(L, "getNumBricks", LUA_getNumBricks);
 	lua_register(L, "getBrickIdx", LUA_getBrickIdx);
+	lua_register(L, "getNumNamedBricks", LUA_getNumNamedBricks);
+	lua_register(L, "getNamedBrickIdx", LUA_getNamedBrickIdx);
 	lua_register(L, "getBrickId", LUA_getBrickId);
 	lua_register(L, "getBrickAt", LUA_getBrickAt);
 	lua_register(L, "clearAllBricks", LUA_clearAllBricks);
@@ -1147,7 +1243,7 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "addBlocklandLight", LUA_addBlocklandLight);
 	lua_register(L, "addBlocklandEmitter", LUA_addBlocklandEmitter);
 
-	luaL_Reg* methods = new luaL_Reg[22];
+	luaL_Reg* methods = new luaL_Reg[24];
 	methods[0] = { "getPosition", LUA_brickGetPosition };
 	methods[1] = { "getDimensions", LUA_brickGetDimensions };
 	methods[2] = { "getAngleID", LUA_brickGetAngleID };
@@ -1169,6 +1265,8 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	methods[18] = { "setEmitter", LUA_brickSetEmitter };
 	methods[19] = { "getMaterial", LUA_brickGetMaterial };
 	methods[20] = { "setMaterial", LUA_brickSetMaterial };
-	methods[21] = { NULL, NULL };
+	methods[21] = { "getPrint", LUA_brickGetPrint };
+	methods[22] = { "setPrint", LUA_brickSetPrint };
+	methods[23] = { NULL, NULL };
 	return methods;
 }

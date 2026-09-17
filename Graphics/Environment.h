@@ -39,6 +39,9 @@ class Environment
 	float fogDistanceMin = 150;
 	float fogDistanceMax = 290;
 
+	//Copied from cycle by calc, world height the fog reaches up to, see DayCycle::fogHeight and sky.frag's skyFogAmount
+	float fogHeight = 40;
+
 	//0 shows the day skybox and 1 the night one, they cross fade while the sun is near the horizon, see Skybox
 	float skyboxBlend = 0;
 

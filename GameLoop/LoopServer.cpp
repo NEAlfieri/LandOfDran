@@ -50,6 +50,7 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 
 	server->run(&pd,pd.luaState,pd.eventManager); //   <---- networking
 	endQuietTalkers();
+	startUpdateBudgets();
 	pd.dynamics->sendRecent();
 	updateItems();
 	pd.statics->sendRecent();
@@ -102,6 +103,60 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 	}
 
 	scheduler->run(pd.luaState);
+}
+
+/*
+	A client's update budget is spent across every sendRecent call in the tick, so it's handed out here once rather
+	than per object type. Where they're watching from is their player, or whatever they're riding, since a player on
+	a vehicle is out of the physics world and their body sits wherever it last was
+
+	Whichever type sends first has first claim on it, dynamics as the run loop stands, so a budget small enough to
+	actually bind would starve vehicles and lights before it starved players. It's meant as an overload backstop
+	rather than a target - the distance bands are what shape normal traffic - so keep hosting/updatebytespertick
+	well above what a busy scene needs
+*/
+void LoopServer::startUpdateBudgets()
+{
+	for (unsigned int a = 0; a < pd.clients.size(); a++)
+	{
+		const std::shared_ptr<ClientData>& data = pd.clients[a];
+		if (!data || !data->client)
+			continue;
+
+		JoinedClient& client = *data->client;
+
+		/*
+			A bad connection gets a smaller share rather than nothing at all. Cutting them off entirely, as this used
+			to, leaves them quietly desynced with no way back short of their ping recovering on its own
+		*/
+		float share = 1.0f;
+		if (client.getPing() > 1500.0f)
+			share = NetRelevanceSettings::veryHighPingFactor;
+		else if (client.getPing() > 400.0f)
+			share = NetRelevanceSettings::highPingFactor;
+
+		client.updateByteBudget = (int)(NetRelevanceSettings::bytesPerTick * share);
+
+		client.hasRelevancePosition = false;
+
+		std::shared_ptr<Vehicle> vehicle = data->vehicle.lock();
+		if (vehicle && vehicle->body)
+		{
+			client.relevancePosition = b2g3(vehicle->body->getWorldTransform().getOrigin());
+			client.hasRelevancePosition = true;
+			continue;
+		}
+
+		for (unsigned int b = 0; b < data->controlledObjects.size(); b++)
+		{
+			if (!data->controlledObjects[b])
+				continue;
+
+			client.relevancePosition = b2g3(data->controlledObjects[b]->getPosition());
+			client.hasRelevancePosition = true;
+			break;
+		}
+	}
 }
 
 void LoopServer::endQuietTalkers()
@@ -614,6 +669,9 @@ void LoopServer::broadcastWorldState()
 	memcpy(data, &pd.dayCycle.fogEnd, sizeof(float));
 	data += sizeof(float);
 
+	memcpy(data, &pd.dayCycle.fogHeight, sizeof(float));
+	data += sizeof(float);
+
 	memcpy(data, &pd.rainIntensity, sizeof(float));
 
 	server->broadcast(packet, OtherReliable);
@@ -631,11 +689,18 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 	pd.evalPassword = settings->getString("hosting/evalpassword");
 	pd.useEvalPassword = settings->getBool("hosting/useevalpassword");
+
 	if (pd.useEvalPassword && (pd.evalPassword == " " || pd.evalPassword == "changeme" || pd.evalPassword.length() < 1))
 	{
 		error("Eval password protection is enabled, but the password is still the default 'changeme' (or empty). Set a real password in Settings, under Hosting, then restart the server. Eval console logins are refused until then.");
 		pd.useEvalPassword = false;
 	}
+
+	//Each band has to reach at least as far as the one inside it, whatever the settings file says
+	NetRelevanceSettings::nearDistance = settings->getFloat("hosting/updatenear");
+	NetRelevanceSettings::midDistance = std::max(settings->getFloat("hosting/updatemid"), NetRelevanceSettings::nearDistance);
+	NetRelevanceSettings::farDistance = std::max(settings->getFloat("hosting/updatefar"), NetRelevanceSettings::midDistance);
+	NetRelevanceSettings::bytesPerTick = settings->getInt("hosting/updatebytespertick");
 
 	//Not a dedicated server means we're embedded in the graphical client (single player/"Start Server"), so the
 	//only client that can reach us over loopback is our own host - let them straight into the eval console
@@ -673,6 +738,7 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.bricks->spawnAttachments = updateBrickAttachments;
 	pd.bricks->removeAttachments = removeBrickAttachments;
 	pd.brickTypes.load("Assets/brick/types");
+	pd.prints.load("Assets/brick/prints");
 	pd.bricks->makeLuaMetatable(pd.luaState, "metatable_brick", getBrickFunctions(pd.luaState));
 
 	info("Loading serverstart.lua");

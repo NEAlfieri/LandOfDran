@@ -70,6 +70,8 @@ bool ShaderManager::readShaderList(const std::string &filePath)
 				modelShader = lastProgram;
 			else if (programName == "brick")
 				brickShader = lastProgram;
+			else if (programName == "brickDepth")
+				brickDepthShader = lastProgram;
 			else if (programName == "modelShadowCascade")
 				modelShadowCascadeShader = lastProgram;
 			else if (programName == "brickShadowCascade")
@@ -94,6 +96,10 @@ bool ShaderManager::readShaderList(const std::string &filePath)
 				rainShader = lastProgram;
 			else if (programName == "rainSplash")
 				rainSplashShader = lastProgram;
+			else if (programName == "godRayMask")
+				godRayMaskShader = lastProgram;
+			else if (programName == "godRay")
+				godRayShader = lastProgram;
 			else
 				error("Invalid program name " + programName);
 		}
@@ -171,7 +177,7 @@ ShaderManager::ShaderManager()
 		error("Could not allocate uniform buffer object!");
 
 	glBindBuffer(GL_UNIFORM_BUFFER, environmentUBO);
-	glBufferData(GL_UNIFORM_BUFFER, 144, &environmentUniforms, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, 160, &environmentUniforms, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	//Point lights:
@@ -236,7 +242,7 @@ void ShaderManager::updateBasicUBO() const
 void ShaderManager::updateEnvironmentUBO() const
 {
 	glBindBuffer(GL_UNIFORM_BUFFER, environmentUBO);
-	glBufferData(GL_UNIFORM_BUFFER, 144, &environmentUniforms, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, 160, &environmentUniforms, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 

@@ -62,6 +62,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 out vec2 uvs;
@@ -83,7 +84,9 @@ void main()
 {
 	//Hidden but still casting a shadow, like your own player in first person, see ModelInstance::setHidden
 	//The shadow shaders don't read the flag, here every vertex goes outside the view so nothing is drawn
-	if((InstanceFlags & 262144) != 0)
+	//A non instanced draw has no instance of its own to read flags from, it would get whichever one happens
+	//to sit first in the model's buffer, so none of them apply to it, see Mesh::renderOnce
+	if(!nonInstanced && (InstanceFlags & 262144) != 0)
 	{
 		gl_ClipDistance[0] = -1.0;
 		gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -92,8 +95,8 @@ void main()
 
 	preColor = PreColor;
 	opacity = 1.0;
-	useDecal = (InstanceFlags & 131072) == 131072 ? ((InstanceFlags & 130560) >> 9) : -1;
-	decalCutout = (InstanceFlags & 524288) != 0 ? 1 : 0;
+	useDecal = (!nonInstanced && (InstanceFlags & 131072) == 131072) ? ((InstanceFlags & 130560) >> 9) : -1;
+	decalCutout = (!nonInstanced && (InstanceFlags & 524288) != 0) ? 1 : 0;
 	material = 0;
 	brickLocal = vec3(0.0);
 	brickBoxSize = vec3(0.0);

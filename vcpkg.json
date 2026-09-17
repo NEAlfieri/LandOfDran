@@ -6,12 +6,13 @@
     "enet",
     "glew",
     "glm",
+    "libvpx",
+    "lua",
     "openal-soft",
-    "opus",
     "opengl",
+    "opus",
     "sdl2",
-    "zlib",
-    "lua"
+    "zlib"
   ],
   "overrides": [
     {

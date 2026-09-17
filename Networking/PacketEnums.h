@@ -87,6 +87,7 @@ enum FromClientPacketType : unsigned char
 	VehicleSaveRequest = 22,	//Send the client a save of a vehicle to write to their own computer, see Networking/PacketsFromClient/VehicleFiles.cpp
 	VehicleUpload = 23,		//Part of a vehicle save from the client's computer, with where they placed its ghost
 	VehicleRemoveRequest = 24,	//Remove the vehicle in the wrench dialog the server last sent them
+	PaintCanRequest = 25,	//Whether the client's paint palette wants a paint can in their hand, see Networking/PacketsFromClient/Inventory.cpp
 };
 
 //Flags byte after the mask of a ClickDetails packet
@@ -110,6 +111,10 @@ enum DynamicKind : unsigned char
 //Second flags byte of a dynamic in UpdateSimObjects and ControlledPhysics packets
 #define DynamicExtra_Look 1			//2 bytes follow: where a player looks, see Dynamic::lookDirection
 #define DynamicExtra_OneShot 2		//2 bytes follow: an animation ID played once and a count that changes each time it plays
+#define DynamicExtra_PositionDelta 4	//The position is PositionDeltaBytes measured from the last keyframe rather than PositionBytes from the origin
+//Two bits saying which keyframe the position either is, or is measured from, so a receiver that missed one drops the deltas that follow it
+#define DynamicExtra_GenerationShift 3
+#define DynamicExtra_GenerationMask 24
 
 //Movement flags byte of MovementInputs packets
 #define MovementFlag_Jump 1			//Jump was just pressed
@@ -180,6 +185,9 @@ enum FromServerPacketType : unsigned char
 	OpenVehicleWrench = 36,	//Open the wrench dialog for a vehicle, with its music, see Interface/WrenchDialog.h
 	VehicleSaveData = 37,	//Part of a vehicle save the client asked for, see VehicleSaveDataPacket
 	VehicleBricksBroken = 38,	//Bricks Lua's radiusImpulse broke off a destructable vehicle, which fly off as debris, see VehicleBricksBrokenPacket
+	NameTag = 39,			//Text drawn floating over a dynamic, like a player's name, see Dynamic::makeNameTagPacket
+	BrickPrintTypes = 40,	//The server's print IDs and names as a client joins, so it can match them to its own, see BrickPrintTypesPacket
+	SetClickAction = 41,	//What the client should play the moment they click with an item, before hearing back, see Networking/ClickAction.h
 };
 
 //Flags byte of a PlayerAbilities packet

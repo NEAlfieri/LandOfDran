@@ -31,21 +31,39 @@ class LoopClient
 
 	//Per land of dran kino agent special request
 	//Technically some UI specific calculations might happen during rendering, oh well
+	//Fits the sun's shadow cascades and picks which are redrawn this frame, see the definition
+	void pickShadowCascades(bool* drawCascade);
+
 	void renderEverything(float deltaT);
+
+	//Last window of timings written to the log by -profile, so each is only written once
+	unsigned int loggedProfilerWindow = 0;
 
 	//Called every frame the program runs. Every frame: in a game, not in a game, loading into a game...
 	void handleInput(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
 
 	unsigned int lastSentControlledObjects = 0;
 
-	//The server browser comes back the frame the appearance editor closes
+	//The server browser comes back the frame the appearance editor closes, but only when it was the browser that opened it
 	bool appearanceEditorWasOpen = false;
+	bool appearanceEditorFromBrowser = false;
+
+	//The voice chat key toggles talking on and off rather than being held down, see handleInput
+	bool voiceToggled = false;
 
 	//The mouse goes back to playing the frame the wrench dialog closes
 	bool wrenchDialogWasOpen = false;
 
 	//Same for the custom paint color picker
 	bool colorPickerWasOpen = false;
+
+	/*
+		Opening the palette puts a paint can in our hand, which stays there until the item bar or the brick bar takes it away
+		paletteWasShown catches the moment it comes out, and paintCanSent is the last thing PaintCanRequest told the server
+	*/
+	bool paletteWasShown = false;
+	bool paintCanOut = false;
+	bool paintCanSent = false;
 
 	//And the saved vehicles window
 	bool vehicleLoaderWasOpen = false;
@@ -77,8 +95,17 @@ class LoopClient
 	//Fills the item bar's slots from the items the server says we carry
 	void updateItemHotbar();
 
+	//Draws the model of each item we carry into its own little texture for the item bar to show, see ItemIconRenderer
+	void renderItemIcons();
+
 	//Moves item swings along and draws carried items in their holders' hands, or hides them, after the camera moves for the frame
+	//The item our own item bar has picked, which is what a click acts with
+	std::shared_ptr<Item> getOwnEquippedItem() const;
+
 	void placeHeldItems(float deltaT);
+
+	//Puts every dynamic with a name tag (players' names, see serverstart.lua) on screen over its head, for the GUI to draw
+	void updateNameTags();
 
 	//Right mouse got us into or out of a vehicle, so it doesn't jet until it's let go
 	bool jetSuppressed = false;
@@ -124,6 +151,15 @@ class LoopClient
 
 	//Picks up graphics/shadowsoftness, and (re)creates the shadow cascades if graphics/shadowresolution changed
 	void createShadowTarget(std::shared_ptr<SettingManager> settings);
+
+	//How bright a pixel with nothing but open sky the whole way to the sun comes out, before sunset and camera fades
+	static constexpr float godRayStrength = 0.35f;
+
+	//Picks up graphics/godrayquality, and (re)creates the god ray mask for the window size, or frees it when they're off
+	void createGodRayTarget(std::shared_ptr<SettingManager> settings);
+
+	//Rays of sunlight past whatever is between the camera and the sun, blended onto the finished scene
+	void renderGodRays();
 
 	//Sky, models, grass, and bricks from the currently uploaded camera into the currently bound frame buffer
 	void renderScene(bool clipAtWater);

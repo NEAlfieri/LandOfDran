@@ -93,6 +93,7 @@ layout (std140) uniform EnvironmentUniforms
 	float RainMapTop;
 	float RainMapBottom;
 	vec4 RainMapArea;
+	float FogHeight;
 };
 
 uniform sampler2DArray PBRArray;
@@ -332,6 +333,26 @@ vec3 cascadeLight(int cascade, vec3 surfaceNormal, float grazing, out float edge
 	return lit * mix(vec3(1.0), tint, behindTransparent);
 }
 
+//How wide the damp band around the edge of a shelter is, in world units, see rainExposure
+const float shelterBlend = 1.8;
+
+//Points on two rings around a spot, so averaging over them has no direction of its own
+const vec2 shelterTaps[8] = vec2[8](vec2(1.0, 0.0), vec2(-1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, -1.0),
+	vec2(0.46, 0.46), vec2(-0.46, 0.46), vec2(0.46, -0.46), vec2(-0.46, -0.46));
+
+//1 where rain falls freely onto a spot at this height, 0 where something is overhead
+float rainOpenAt(vec2 at, float height)
+{
+	vec2 mapUV = (at - RainMapArea.xy) / RainMapArea.z;
+
+	//Past the edge of the map, deep in the fog, everything counts as out in the open
+	if(any(lessThan(mapUV, vec2(0.0))) || any(greaterThan(mapUV, vec2(1.0))))
+		return 1.0;
+
+	float overhead = mix(RainMapTop, RainMapBottom, textureLod(RainMap, mapUV, 0.0).r);
+	return clamp((height - overhead) / 0.1 + 1.0, 0.0, 1.0);
+}
+
 //How much rain reaches this surface: 0 under cover or facing down, 1 facing up out in the open, less for walls
 float rainExposure(vec3 surfaceNormal)
 {
@@ -341,14 +362,18 @@ float rainExposure(vec3 surfaceNormal)
 
 	//Lifted off the surface by a couple of map texels, so a wall's own top doesn't count as covering its sides
 	vec3 position = worldPos + surfaceNormal * RainMapArea.w * 2.0 + vec3(0.0, 0.02, 0.0);
-	vec2 mapUV = (position.xz - RainMapArea.xy) / RainMapArea.z;
 
-	//Past the edge of the map, deep in the fog, everything counts as out in the open
-	if(any(lessThan(mapUV, vec2(0.0))) || any(greaterThan(mapUV, vec2(1.0))))
-		return facing;
+	//Rain blows in and splashes past the edge of a roof, so ground fades from wet to dry over a couple of studs
+	//instead of tracing its outline. Walls only look straight up: blurring theirs would wet the sheltered side from around the corner
+	float spread = shelterBlend * smoothstep(0.55, 0.95, surfaceNormal.y);
+	if(spread <= 0.0)
+		return facing * rainOpenAt(position.xz, position.y);
 
-	float overhead = mix(RainMapTop, RainMapBottom, textureLod(RainMap, mapUV, 0.0).r);
-	return facing * clamp((position.y - overhead) / 0.1 + 1.0, 0.0, 1.0);
+	float open = rainOpenAt(position.xz, position.y);
+	for(int i = 0; i < 8; i++)
+		open += rainOpenAt(position.xz + shelterTaps[i] * spread, position.y);
+
+	return facing * open / 9.0;
 }
 
 //Lights placed by Lua, nearest the camera first, see PointLights::update and PointLightUniforms in ShaderSpecification.h
@@ -546,11 +571,18 @@ void main()
 	vec3 albedo = pow(albedo_.rgb,vec3(1.0 + 1.2 * nonLinearAlbedoF));
 	albedo = mix(albedo.rgb,preColor.rgb,preColor.a);
 
+	/*
+		What the surface is painted, in the same space as the color that ends up drawn rather than the
+		linear one lighting works in. Glow floors the drawn color at this, see MaterialGlow below
+	*/
+	vec3 unlitColor = preColor.rgb;
+
 	//On top of the mesh's color, so a painted head still shows its face
 	if(decal != -1)
 	{
 		vec4 decalAlbedo = textureGrad(DecalArray,vec3(decalUvs,decal),dxDecal,dyDecal);
 		albedo = mix(albedo, pow(decalAlbedo.rgb,vec3(1.0 + 1.2 * nonLinearAlbedoF)), decalAlbedo.a);
+		unlitColor = mix(unlitColor, decalAlbedo.rgb, decalAlbedo.a);
 	}
 	
 	//Half paint, half a hue that cycles every 5 seconds (a whole number of times per WaveTime's 100 seconds),
@@ -733,9 +765,9 @@ void main()
 	//Gamma correction
 	color.rgb = pow(color.rgb, vec3(1.0/2.2));
 
-	//However dark it is, never drawn darker than its own color
+	//However dark it is, never drawn darker than its own color, its print included so glow doesn't wash one away
 	if(material == MaterialGlow)
-		color.rgb = max(color.rgb, preColor.rgb);
+		color.rgb = max(color.rgb, unlitColor);
 
 	//After tone mapping, which would otherwise squash the glow to almost nothing on bright or sunlit surfaces
 	color.rgb = mix(color.rgb, vec3(1.0), glow);

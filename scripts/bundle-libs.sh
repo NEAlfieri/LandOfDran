@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Copies a binary's shared library dependencies that don't have a stable
-# soname across distro releases (Bullet, assimp, ENet, Lua, GLEW, SDL2, and
-# assimp's own transitive deps) into a lib/ directory next to it, so the
+# soname across distro releases (Bullet, assimp, ENet, Lua, GLEW, SDL2,
+# libvpx, and assimp's own transitive deps) into a lib/ directory next to it, so the
 # binary doesn't depend on the host having a matching package version
 # installed. Must be run in an environment where `ldd` resolves against the
 # libraries the binary was actually built against (i.e. on the build
@@ -26,6 +26,7 @@ BUNDLE_LIB_PREFIXES=(
     libBulletCollision.so
     libLinearMath.so
     libenet.so
+    libvpx.so
     libdraco.so
     libminizip.so
     libpugixml.so
