@@ -12,6 +12,9 @@ public:
 	btOverlappingPairCache* m_pairCache;
 	btDispatcher* m_dispatcher;
 
+	//Ours: says which other objects the sweep should pass through, on top of m_me
+	std::function<bool(const btCollisionObject*)> skip;
+
 public:
 	btClosestNotMeConvexResultCallback(btCollisionObject* me, const btVector3& fromA, const btVector3& toA, btOverlappingPairCache* pairCache, btDispatcher* dispatcher) : btCollisionWorld::ClosestConvexResultCallback(fromA, toA),
 		m_me(me),
@@ -46,6 +49,9 @@ public:
 	{
 		//don't collide with itself
 		if (proxy0->m_clientObject == m_me)
+			return false;
+
+		if (skip && skip((const btCollisionObject*)proxy0->m_clientObject))
 			return false;
 
 		///don't do CCD when the collision filters are not matching

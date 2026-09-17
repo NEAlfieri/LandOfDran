@@ -752,8 +752,17 @@ void LoopClient::placeHeldItems(float deltaT)
 		}
 		else
 		{
-			//In the right hand as it's drawn, facing the way the holder does
-			facing = holder->renderedTilt * holder->renderedRotation;
+			/*
+				In the right hand as it's drawn, facing the way the holder does, but held level: a body lying
+				down to crawl or tilted to swim has its face toward the floor, and the gun would go with it.
+				Its right stays level through either, so the heading comes off that
+			*/
+			glm::quat body = holder->renderedTilt * holder->renderedRotation;
+			glm::vec3 right = body * glm::vec3(1, 0, 0);
+			right.y = 0;
+			right = glm::length(right) > 0.001f ? glm::normalize(right) : glm::vec3(1, 0, 0);
+			glm::vec3 forward = glm::cross(glm::vec3(0, 1, 0), right);
+			facing = glm::quat_cast(glm::mat3(right, glm::vec3(0, 1, 0), -forward));
 			int hand = holderModel->getMeshIdx("Right_Hand");
 			grip = hand != -1 ? holder->getMeshCenter(hand) : holder->renderedPosition + facing * holderModel->getColOffset();
 		}

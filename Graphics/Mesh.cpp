@@ -1,3 +1,4 @@
+#include <set>
 #include "Mesh.h"
 #include "DtsShape.h"
 
@@ -1412,6 +1413,9 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	//What Assimp flags does the model creator wish for us to import their model with
 	unsigned int desiredImporterFlags = 0;
 
+	//Lower case names of meshes hide lines asked not to draw, see the client side constructor
+	std::set<std::string> hiddenMeshes;
+
 	//The relative file path to the actual 3d model file
 	std::string modelPath = "";
 
@@ -1461,6 +1465,12 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		if (argument == "decalarea")
 		{
 			//Server-side doesn't draw decals
+			continue;
+		}
+
+		if (argument == "hide")
+		{
+			hiddenMeshes.insert(lowercase(value.substr(0, value.find_last_not_of(" \t\r\n") + 1)));
 			continue;
 		}
 
@@ -1520,6 +1530,8 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	{
 		aiMesh *src = scene->mMeshes[a];
 		Mesh* tmp = new Mesh(src, this,serverSide);
+		if (hiddenMeshes.count(lowercase(tmp->name)))
+			tmp->nonRenderingMesh = true;
 		tmp->meshIndex = allMeshes.size();
 		allMeshes.push_back(tmp);
 	}
@@ -1531,6 +1543,7 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		a jeep's wheels hang, see Lua's getTypeNodePosition
 	*/
 	nodeDefaultsAreRestPose = isDtsPath(modelPath);
+	projectileForward = isDtsPath(modelPath) ? glm::vec3(0, 0, -1) : glm::vec3(0, 1, 0);
 	rootNode = new Node(scene->mRootNode, this);
 
 	calculateMeshBounds(scene);
@@ -1595,6 +1608,13 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	//Lower case mesh names and their decalarea lines, see Mesh::decalArea
 	std::map<std::string, glm::vec4> decalAreas;
 
+	/*
+		Lower case names of meshes the descriptor's hide lines ask not to draw. They're loaded and still
+		count for the collision box, they're just never drawn, like the Collision mesh. For a part of a
+		model that can't be drawn the way it was meant, like the see-through trail on a Blockland bullet
+	*/
+	std::set<std::string> hiddenMeshes;
+
 	std::string line = "";
 	while (!descriptor.eof())
 	{
@@ -1650,6 +1670,13 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 			materialOverrides.insert(std::pair<std::string,std::string>(materialName, materialPath));
 
+			continue;
+		}
+
+		//A mesh not to draw, by name
+		if (argument == "hide")
+		{
+			hiddenMeshes.insert(lowercase(value.substr(0, value.find_last_not_of(" \t\r\n") + 1)));
 			continue;
 		}
 
@@ -1867,6 +1894,12 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 		aiMesh* src = scene->mMeshes[a];
 		Mesh* tmp = new Mesh(src, this);
 
+		if (hiddenMeshes.count(lowercase(tmp->name)))
+		{
+			tmp->nonRenderingMesh = true;
+			hiddenMeshes.erase(lowercase(tmp->name));
+		}
+
 		tmp->meshIndex = allMeshes.size();
 		allMeshes.push_back(tmp);
 
@@ -1881,8 +1914,12 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	for (const auto& [meshName, area] : decalAreas)
 		error("decalarea line for " + meshName + " but " + filePath + " has no mesh by that name");
 
+	for (const std::string& meshName : hiddenMeshes)
+		error("hide line for " + meshName + " but " + filePath + " has no mesh by that name");
+
 	//See the note on this member, it has to be known before any Node is constructed
 	nodeDefaultsAreRestPose = isDtsPath(modelPath);
+	projectileForward = isDtsPath(modelPath) ? glm::vec3(0, 0, -1) : glm::vec3(0, 1, 0);
 
 	rootNode = new Node(scene->mRootNode, this);
 

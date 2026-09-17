@@ -10,7 +10,12 @@
 		dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
 
 	What works: firing, the animations, sounds and muzzle effects each weapon came with, real
-	projectiles for the weapons that had them, magazines and reloading, and spare ammo per type.
+	projectiles for the weapons that had them, the casings they throw out, magazines and reloading,
+	and spare ammo per type.
+
+	Their bullet is the plain Gun's, add-ons/Weapon_Gun/bullet.dts in their datablocks, so this needs
+	Weapon_Gun and loads it if it isn't in yet, the way ForceRequiredAddOn did. The sport rifle is
+	the one exception: its datablock fires its own rifle_round.dts.
 
 	What doesn't, yet: nothing takes damage, since the engine has no health system. A shot that
 	lands only leaves a puff. Support_Weapons.lua's fireOneShot is where damage would go once
@@ -26,12 +31,13 @@ local scale = 2
 --The sounds and particles first, since the weapons name them
 dofile(folder .. "Effects.lua")
 
---The round that comes out of a barrel, used both as a real projectile and as the pistol's tracer.
---RIFLE_ROUND is a single round rather than one of the ammo boxes, so it reads as a bullet. It's a
---lot smaller than true to size, since a round at its own scale is over a stud and a half long and
---fills the view as it leaves the barrel
-local bulletScale = 0.45
-ttBulletRound = newDynamicType("ttBulletRound", folder .. "RIFLE_ROUND.dts", bulletScale, bulletScale, bulletScale)
+--The sport rifle's round, its SportRifleProjectile's rifle_round.dts. Everything else fires the
+--plain Gun's bullet, see below
+ttRifleRound = newDynamicType("ttRifleRound", folder .. "RIFLE_ROUND.dts", scale, scale, scale)
+
+--The pump shotgun's spent shell, PumpShotgunShellDebris. The pistol and submachine gun throw out the
+--plain Gun's gunShell
+ttShotgunShell = newDynamicType("ttShotgunShell", folder .. "bushido's_shell_shotgun.dts", scale, scale, scale)
 
 --The weapons themselves. Each shapeFile is the one its datablock named, which for the sport rifle
 --is the .3 model rather than sport_rifle.dts
@@ -55,6 +61,11 @@ end
 
 --How the guns behave, one file each like the .cs files they came from
 dofile(folder .. "Support_Weapons.lua")
+
+--The plain Gun, whose bullet and casing these fire. Its own script loads the support above if it's first
+if gunBullet == nil then
+	dofile("Add-ons/Weapon_Gun/Weapon_Gun.lua")
+end
 dofile(folder .. "Weapon_Pistol.lua")
 dofile(folder .. "Weapon_Submachinegun.lua")
 dofile(folder .. "Weapon_PumpShotgun.lua")

@@ -1,3 +1,4 @@
+#include <functional>
 #include "DtsShape.h"
 #include "../Utility/FileFunctions.h"
 #include "../Utility/StringFunctions.h"
@@ -1099,6 +1100,111 @@ aiScene * loadDtsScene(const std::string &filePath, std::vector<DtsSequence> * s
 		return nullptr;
 	}
 
+	/*
+		A shape's collision detail level, Collision-1 on a Blockland shape, is what it collides as
+		rather than what it looks like, so it becomes the one mesh named Collision that
+		Model::calculateCollisionBox takes a model's box from, the same as a mesh by that name in an
+		FBX. A bullet then collides as its slug rather than as the whole length of its trail. Its
+		objects can hang off any node, so their points are brought into shape space here and the
+		mesh hangs off the root, whose turn is all that's left to apply. A shape without one is
+		boxed around what's drawn, as before.
+	*/
+	int collisionMesh = -1;
+	{
+		int collisionDetail = -1;
+		for (size_t a = 0; a < shape.details.size(); a++)
+		{
+			std::string name = lowercase(shape.nameOf(shape.details[a].name));
+			if (shape.details[a].size < 0 && name.rfind("col", 0) == 0)
+			{
+				collisionDetail = (int)a;
+				break;
+			}
+		}
+
+		//Where a node sits in shape space with nothing animating, following its parents up
+		std::function<glm::mat4(int, int)> nodeTransform = [&](int node, int depth) -> glm::mat4
+		{
+			if (node < 0 || node >= (int)shape.nodes.size() || depth > (int)shape.nodes.size())
+				return glm::mat4(1);
+			glm::mat4 own = glm::translate(shape.nodes[node].defaultTranslation) * glm::toMat4(shape.nodes[node].defaultRotation);
+			int parent = shape.nodes[node].parent;
+			if (parent < 0 || parent == node)
+				return own;
+			return nodeTransform(parent, depth + 1) * own;
+		};
+
+		std::vector<glm::vec3> points;
+		std::vector<unsigned int> indices;
+
+		if (collisionDetail >= 0)
+		{
+			const DtsDetail& colDetail = shape.details[collisionDetail];
+			if (colDetail.subShape >= 0 && colDetail.subShape < (int)shape.subShapeFirstObject.size())
+			{
+				int colFirst = shape.subShapeFirstObject[colDetail.subShape];
+				int colCount = shape.subShapeNumObjects[colDetail.subShape];
+
+				for (int a = colFirst; a < colFirst + colCount; a++)
+				{
+					if (a < 0 || a >= (int)shape.objects.size())
+						continue;
+
+					const DtsObject& object = shape.objects[a];
+					if (colDetail.objectDetail >= object.numMeshes)
+						continue;
+
+					int which = object.startMesh + colDetail.objectDetail;
+					if (which < 0 || which >= (int)shape.meshes.size())
+						continue;
+
+					const DtsMesh& mesh = shape.meshes[which];
+					if (mesh.type == MeshTypeNull || mesh.type == MeshTypeDecal || mesh.verts.size() < 1)
+						continue;
+
+					glm::mat4 transform = nodeTransform(object.node, 0);
+					unsigned int base = (unsigned int)points.size();
+					for (const glm::vec3& v : mesh.verts)
+						points.push_back(glm::vec3(transform * glm::vec4(v, 1)));
+
+					std::vector<unsigned int> own;
+					for (const DtsPrimitive& primitive : mesh.primitives)
+						addTriangles(mesh, primitive, own);
+					for (unsigned int index : own)
+						indices.push_back(base + index);
+				}
+			}
+		}
+
+		if (points.size() > 0)
+		{
+			aiMesh* out = new aiMesh();
+			out->mName = toAiString("Collision");
+			out->mMaterialIndex = 0;
+			out->mNumVertices = (unsigned int)points.size();
+			out->mVertices = new aiVector3D[out->mNumVertices];
+			for (unsigned int b = 0; b < out->mNumVertices; b++)
+				out->mVertices[b] = aiVector3D(points[b].x, points[b].y, points[b].z);
+
+			out->mNumFaces = (unsigned int)(indices.size() / 3);
+			if (out->mNumFaces > 0)
+			{
+				out->mFaces = new aiFace[out->mNumFaces];
+				for (unsigned int b = 0; b < out->mNumFaces; b++)
+				{
+					out->mFaces[b].mNumIndices = 3;
+					out->mFaces[b].mIndices = new unsigned int[3];
+					for (unsigned int c = 0; c < 3; c++)
+						out->mFaces[b].mIndices[c] = indices[b * 3 + c];
+				}
+			}
+
+			collisionMesh = (int)meshes.size();
+			meshes.push_back(out);
+			debug(filePath + " collides as its " + shape.nameOf(shape.details[collisionDetail].name) + " detail level");
+		}
+	}
+
 	scene->mNumMeshes = (unsigned int)meshes.size();
 	scene->mMeshes = new aiMesh * [scene->mNumMeshes];
 	for (unsigned int a = 0; a < scene->mNumMeshes; a++)
@@ -1180,6 +1286,13 @@ aiScene * loadDtsScene(const std::string &filePath, std::vector<DtsSequence> * s
 			root->mChildren[a] = nodes[roots[a]];
 			root->mChildren[a]->mParent = root;
 		}
+	}
+
+	if (collisionMesh >= 0)
+	{
+		root->mNumMeshes = 1;
+		root->mMeshes = new unsigned int[1];
+		root->mMeshes[0] = (unsigned int)collisionMesh;
 	}
 
 	scene->mRootNode = root;

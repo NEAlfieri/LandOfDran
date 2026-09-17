@@ -500,14 +500,95 @@ void LoopServer::playWaterSounds()
 //How close a projectile has to have come to something to hit it, a little past touching since the step may have already pushed it back out
 static constexpr btScalar projectileHitDistance = 0.05f;
 
+//Projectiles pass through each other: a shotgun's pellets all leave the same spot at once and would
+//otherwise burst on one another the moment they were fired
+static bool anotherProjectile(const btRigidBody* other)
+{
+	if (other->getUserIndex() != dynamicBody)
+		return false;
+	std::shared_ptr<Dynamic> dynamic = dynamicFromBody(other);
+	return dynamic && dynamic->isProjectile;
+}
+
+void LoopServer::sweepProjectiles(btScalar timeStep)
+{
+	for (unsigned int a = 0; a < pd.dynamics->size(); a++)
+	{
+		std::shared_ptr<Dynamic> dynamic = pd.dynamics->get(a);
+		if (!dynamic->isProjectile || dynamic->projectileHitRecorded || !dynamic->isInWorld())
+			continue;
+
+		btRigidBody* body = dynamic->body;
+
+		//The box a dynamic collides as sits inside a compound, at its model's collision offset
+		if (body->getCollisionShape()->getShapeType() != COMPOUND_SHAPE_PROXYTYPE)
+			continue;
+		btCompoundShape* compound = (btCompoundShape*)body->getCollisionShape();
+		if (compound->getNumChildShapes() < 1 || compound->getChildShape(0)->getShapeType() != BOX_SHAPE_PROXYTYPE)
+			continue;
+		btBoxShape* box = (btBoxShape*)compound->getChildShape(0);
+
+		//What the substep is about to do to it
+		btVector3 motion = body->getLinearVelocity() * timeStep + body->getGravity() * (0.5f * timeStep * timeStep);
+		if (motion.length2() < 1e-8f)
+			continue;
+
+		btTransform from = body->getWorldTransform() * compound->getChildTransform(0);
+		btTransform to = from;
+		to.setOrigin(from.getOrigin() + motion);
+
+		//Through its shooter while they're still around, and through every other projectile
+		const btRigidBody* shooter = dynamic->projectileShooter.expired() ? nullptr : dynamic->ignoredShooterBody;
+		SweepResult result = pd.physicsWorld->boxSweep(box->getHalfExtentsWithMargin(), from, to, body,
+			[shooter](const btCollisionObject* other) { return other == shooter || anotherProjectile((const btRigidBody*)other); },
+			ProjectileFilter, btBroadphaseProxy::AllFilter ^ ProjectileFilter ^ btBroadphaseProxy::DebrisFilter);
+
+		if (!result.body)
+			continue;
+
+		//Stopped where it touched, so the substep can't carry it on through
+		btTransform stopped = body->getWorldTransform();
+		stopped.setOrigin(stopped.getOrigin() + motion * result.fraction);
+		body->setWorldTransform(stopped);
+		body->setInterpolationWorldTransform(stopped);
+		body->setLinearVelocity(btVector3(0, 0, 0));
+
+		dynamic->projectileHitRecorded = true;
+		pendingProjectileHits.push_back({ dynamic, result.body, result.point });
+	}
+}
+
+void LoopServer::recordProjectileHits()
+{
+	for (unsigned int a = 0; a < pd.dynamics->size(); a++)
+	{
+		std::shared_ptr<Dynamic> dynamic = pd.dynamics->get(a);
+		if (!dynamic->isProjectile || dynamic->projectileHitRecorded || !dynamic->isInWorld())
+			continue;
+
+
+		btVector3 point;
+		btRigidBody* hit = pd.physicsWorld->getFirstContact(dynamic->body, projectileHitDistance, point, anotherProjectile);
+		if (!hit)
+			continue;
+
+		dynamic->projectileHitRecorded = true;
+		pendingProjectileHits.push_back({ dynamic, hit, point });
+	}
+}
+
 void LoopServer::updateProjectiles()
 {
+	//Anything that touched something during the step, then a last look at the rest as they stand now
+	std::vector<ProjectileHit> hits = std::move(pendingProjectileHits);
+	pendingProjectileHits.clear();
+
 	//Copies, since ProjectileHit listeners can make and remove dynamics
 	std::vector<std::shared_ptr<Dynamic>> projectiles;
 	for (unsigned int a = 0; a < pd.dynamics->size(); a++)
 	{
 		std::shared_ptr<Dynamic> dynamic = pd.dynamics->get(a);
-		if (dynamic->isProjectile)
+		if (dynamic->isProjectile && !dynamic->projectileHitRecorded)
 			projectiles.push_back(dynamic);
 	}
 
@@ -525,12 +606,24 @@ void LoopServer::updateProjectiles()
 		}
 
 		btVector3 point;
-		btRigidBody* hit = pd.physicsWorld->getFirstContact(projectile->body, projectileHitDistance, point);
+		btRigidBody* hit = pd.physicsWorld->getFirstContact(projectile->body, projectileHitDistance, point, anotherProjectile);
 		if (!hit)
 		{
 			projectile->faceVelocity();
 			continue;
 		}
+
+		projectile->projectileHitRecorded = true;
+		hits.push_back({ projectile, hit, point });
+	}
+
+	for (ProjectileHit& touched : hits)
+	{
+		std::shared_ptr<Dynamic> projectile = touched.projectile.lock();
+
+		//A listener for an earlier hit removed it
+		if (!projectile || pd.dynamics->find(projectile->getID()) != projectile)
+			continue;
 
 		if (pd.eventManager)
 		{
@@ -538,10 +631,10 @@ void LoopServer::updateProjectiles()
 			lua_settop(L, 0);
 			pd.dynamics->pushLua(L, projectile);
 			//nil for the ground
-			pushRaycastResult(L, hit);
-			lua_pushnumber(L, point.x());
-			lua_pushnumber(L, point.y());
-			lua_pushnumber(L, point.z());
+			pushRaycastResult(L, touched.hit);
+			lua_pushnumber(L, touched.point.x());
+			lua_pushnumber(L, touched.point.y());
+			lua_pushnumber(L, touched.point.z());
 			lua_pushstring(L, projectile->projectileTag.c_str());
 			pd.eventManager->callEvent(L, "ProjectileHit", 6);
 			lua_settop(L, 0);
@@ -737,6 +830,8 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	///Server just has one physics world that's started when the program starts and stays until shutdown, unlike client
 	pd.physicsWorld = std::make_shared<PhysicsWorld>();
 	SimObject::world = pd.physicsWorld;
+	pd.physicsWorld->beforeSubstep = [this](btScalar timeStep) { sweepProjectiles(timeStep); };
+	pd.physicsWorld->afterSubstep = [this](btScalar) { recordProjectileHits(); };
 
 	pd.dynamics = new ObjHolder<Dynamic>(SimObjectType::DynamicTypeId, server);
 	pd.dynamics->makeLuaMetatable(pd.luaState, "metatable_dynamic", getDynamicFunctions(pd.luaState));

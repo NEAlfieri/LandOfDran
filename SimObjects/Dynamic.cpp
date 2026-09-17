@@ -302,8 +302,11 @@ void Dynamic::faceVelocity()
 	if (velocity.length() < projectileTurnMinSpeed)
 		return;
 
+	//Our models fly along +Y, a DTS shape along -Z, see Model::projectileForward
+	glm::vec3 forward = type->getModel()->getProjectileForward();
+
 	btTransform transform = body->getWorldTransform();
-	transform.setRotation(shortestArcQuat(btVector3(0, 1, 0), velocity.normalized()));
+	transform.setRotation(shortestArcQuat(btVector3(forward.x, forward.y, forward.z), velocity.normalized()));
 	body->setWorldTransform(transform);
 	body->setAngularVelocity(btVector3(0, 0, 0));
 }

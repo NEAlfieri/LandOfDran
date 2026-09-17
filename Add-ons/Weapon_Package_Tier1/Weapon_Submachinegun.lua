@@ -23,8 +23,8 @@ registerWeapon("submachinegun", {
 	fireDelayMS = 96,
 	reloadMS = 2000,
 
-	--A real round, as in the original
-	projectile = "ttBulletRound",
+	--A real round, as in the original: the Gun's bullet, add-ons/Weapon_Gun/bullet.dts in its datablock
+	projectile = "gunBullet",
 	projectileSpeed = 200,
 	gravityScale = 0.2,
 	spread = 0.0015,
@@ -35,6 +35,19 @@ registerWeapon("submachinegun", {
 	muzzleEmitter = "TTMuzzleFlashEmitter",
 	muzzleEmitterMS = 50,
 	impactEmitter = "TTImpactEmitter",
+
+
+	--GunShellDebris out of the shape's ejectPoint along shellExitDir "1 0.1 1" at shellVelocity 5
+	casing = {
+		model = "gunShell",
+		--This shape has no ejectPoint node, so the shell comes from the hand, as Torque fell back to
+		offsetFromHand = weaponNodeFromHand(getDynamicType("submachinegun"), "ejectPoint") or {0, 0, 0},
+		exitDir = {1.0, 1.0, -0.1},
+		speed = 10,
+		variance = 10,
+		lifetimeMS = 2000,
+		gravityScale = 2
+	},
 
 	fireAnimation = "fire",
 

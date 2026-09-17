@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../LandOfDran.h"
+#include <functional>
 
 //#define BT_USE_DOUBLE_PRECISION Preferred, but will cause linking errors with currently libraries
 #include <btBulletDynamicsCommon.h>
@@ -38,10 +39,16 @@ enum RigidBodyUserIndex
 	vehicleBody = 50		//A Vehicle's bricks, see SimObjects/Vehicle.h
 };
 
+//Our own btBroadphaseProxy::CollisionFilterGroups bit, past the ones Bullet names: projectiles don't collide with one another
+static constexpr int ProjectileFilter = 64;
+
 //What a box sweep hit, body is nullptr if nothing was
 struct SweepResult
 {
 	btRigidBody* body = nullptr;
+
+	//Where on the body it was touched
+	btVector3 point = btVector3(0, 0, 0);
 
 	//0 at the start of the sweep, 1 at the end
 	btScalar fraction = 1;
@@ -67,7 +74,24 @@ class PhysicsWorld
 	btRigidBody* groundPlane = nullptr;
 	btGhostPairCallback* pairCallback = nullptr;
 
+	//Bullet's internal tick callbacks, which hand each substep to beforeSubstep and afterSubstep
+	static void substepStarting(btDynamicsWorld* world, btScalar timeStep);
+	static void substepFinished(btDynamicsWorld* world, btScalar timeStep);
+
 	public:
+
+	/*
+		Called after every fixedTimeStep substep a step() runs, still inside the step. For anything that
+		has to be seen the moment it happens rather than once the whole step is over: a projectile's
+		sweep stops it on a wall in one substep and the bounce carries it away in the next, so a check
+		after the step alone misses the touch whenever a frame covers more than one substep. Don't add
+		or remove bodies from in here
+	*/
+	std::function<void(btScalar timeStep)> afterSubstep;
+
+	//Called before every substep, still inside the step, with how long it's about to cover: for sweeping
+	//projectiles along what they're about to do. Bodies can be moved from in here, not added or removed
+	std::function<void(btScalar timeStep)> beforeSubstep;
 
 	//Bullet internally simulates in increments of this size (seconds), regardless of how much real time a step() call covers
 	//Keeping this fixed (rather than handing Bullet the raw frame delta) is what makes the simulation deterministic between server and client
@@ -82,8 +106,11 @@ class PhysicsWorld
 	btRigidBody* boxSweepTest(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore);
 
 	//Same sweep as boxSweepTest, but with how far along the sweep the hit was and its surface normal
-	//Ignores non-colliding bodies and anything the box is moving away from
-	SweepResult boxSweep(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore);
+	//Ignores non-colliding bodies and anything the box is moving away from. skip, if given, says which other bodies to pass
+	//through too, and group and mask are the sweep's own collision filter, see addBody
+	SweepResult boxSweep(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore,
+		const std::function<bool(const btCollisionObject*)>& skip = nullptr,
+		int group = btBroadphaseProxy::DefaultFilter, int mask = btBroadphaseProxy::AllFilter ^ btBroadphaseProxy::DebrisFilter);
 
 	//Bodies with an actual (penetrating) contact against the given body as of the most recent step() - cheap, since Bullet
 	//already computes these each step, just reads the dispatcher's cached manifolds rather than testing anything itself
@@ -91,7 +118,9 @@ class PhysicsWorld
 
 	//The first body that collides and was within `within` of the given body as of the most recent step(), with where on that body, or nullptr
 	//Reads the same cached manifolds as getTouching
-	btRigidBody* getFirstContact(const btRigidBody* body, btScalar within, btVector3& point) const;
+	//skip, if given, says which other bodies don't count as something to touch, like one projectile to another
+	btRigidBody* getFirstContact(const btRigidBody* body, btScalar within, btVector3& point,
+		const std::function<bool(const btRigidBody*)>& skip = nullptr) const;
 
 	//ignoreAlso skips a second body, like the vehicle a player is driving
 	btRigidBody *doRaycast(const btVector3 &start,const btVector3 &end,btRigidBody *ignore,btVector3 &hitPos,btVector3 &hitNormal, const btRigidBody* ignoreAlso = nullptr) const;

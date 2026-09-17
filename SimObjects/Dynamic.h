@@ -403,7 +403,10 @@ class Dynamic : public SimObject
 	std::weak_ptr<Dynamic> projectileShooter;
 	btRigidBody* ignoredShooterBody = nullptr;
 
-	//Server only: turns it so its model's +Y points along its velocity, with no spin, unless it's too slow to have a steady heading
+	//Server only: a touch of this projectile was already noted this frame, see LoopServer::recordProjectileHits
+	bool projectileHitRecorded = false;
+
+	//Server only: turns it so its model's forward (+Y, or -Z for a DTS shape, see Model::projectileForward) points along its velocity, with no spin, unless it's too slow to have a steady heading
 	void faceVelocity();
 
 	/*

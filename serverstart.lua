@@ -33,6 +33,9 @@ setItemHand(dranLauncherItem,0,0.2,0.1,0,0,0)
 addAnimation(dranLauncherItem,"fire",0,25,0.04,0,0)
 launcherShell = newDynamicType("launcherShell","Assets/dranlauncher/shell.txt",0.01,0.01,0.01)
 
+--The Gun add-on: the plain Blockland gun, its bullet and casing, and dropGun
+dofile("Add-ons/Weapon_Gun/Weapon_Gun.lua")
+
 --The Tier+Tactical Tier 1 add-on: its models, its weapons, and dropWeaponPackage
 dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
 

@@ -52,6 +52,33 @@ class LoopServer
 	//Removes emitters whose type's lifetime is up, or whose dynamic or brick is gone
 	void updateEmitters();
 
+	//A projectile that touched something during the physics step, and what it touched, see recordProjectileHits
+	struct ProjectileHit
+	{
+		std::weak_ptr<Dynamic> projectile;
+		btRigidBody* hit = nullptr;
+		btVector3 point;
+	};
+
+	//Hits seen during this frame's physics step, oldest first, taken by updateProjectiles
+	std::vector<ProjectileHit> pendingProjectileHits;
+
+	/*
+		Before every physics substep: sweeps each projectile's box along what the substep is about to move
+		it, and stops it on the first thing in the way, noting the hit for updateProjectiles. This is what
+		keeps a fast round from skipping through a thin brick. Bullet's own continuous collision would do
+		it, but only for convex shapes, and a dynamic's is a compound, so it silently never ran
+	*/
+	void sweepProjectiles(btScalar timeStep);
+
+	/*
+		After every physics substep: notes each projectile that is touching something, and what, for
+		updateProjectiles. A projectile is swept along its path each substep so it stops on whatever it
+		reaches, but the bounce off it carries it away again in the next substep, so a frame that runs
+		several substeps has nothing left to see by the end. Only the first touch of each is kept
+	*/
+	void recordProjectileHits();
+
 	//Fires ProjectileHit for and removes projectiles that touched something, and turns the rest the way they're going, after the physics step
 	void updateProjectiles();
 

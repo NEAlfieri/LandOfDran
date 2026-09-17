@@ -22,7 +22,8 @@ registerWeapon("sportRifle", {
 	fireDelayMS = 250,
 	reloadMS = 2000,
 
-	projectile = "ttBulletRound",
+	--Its own rifle_round.dts, where the other weapons fire the Gun's bullet
+	projectile = "ttRifleRound",
 	--190 in Blockland's units, where one unit is two studs
 	projectileSpeed = 380,
 	gravityScale = 0.02,

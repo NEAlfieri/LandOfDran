@@ -1871,13 +1871,16 @@ static int LUA_addProjectile(lua_State* L)
 	projectile->faceVelocity();
 	projectile->body->setActivationState(DISABLE_DEACTIVATION);
 
-	//Small and fast, so each step sweeps it along the way it moved instead of letting it skip through thin bricks
-	btVector3 low, high;
-	projectile->body->getCollisionShape()->getAabb(btTransform::getIdentity(), low, high);
-	btVector3 halfSize = (high - low) * 0.5;
-	btScalar thinnest = std::min(halfSize.x(), std::min(halfSize.y(), halfSize.z()));
-	projectile->body->setCcdMotionThreshold(thinnest);
-	projectile->body->setCcdSweptSphereRadius(thinnest * 0.8);
+	/*
+		Small and fast, so it's swept along what each physics substep is about to do to it and stopped on the
+		first thing in the way, see LoopServer::sweepProjectiles, rather than left to skip through a thin
+		brick. Bullet's own continuous collision can't do that for a dynamic, whose shape is a compound.
+		Projectiles also get a collision group of their own that leaves the others out, so a shotgun's
+		pellets all leave one spot without bouncing off each other
+	*/
+	SimObject::world->removeBody(projectile->body);
+	SimObject::world->addBody(projectile->body, ProjectileFilter,
+		btBroadphaseProxy::AllFilter ^ ProjectileFilter ^ btBroadphaseProxy::DebrisFilter);
 
 	if (shooter && shooter->body)
 	{

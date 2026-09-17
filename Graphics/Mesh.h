@@ -513,6 +513,14 @@ class Model
 	*/
 	bool nodeDefaultsAreRestPose = false;
 
+	/*
+		Which way the model points when it's fired as a projectile, the axis Dynamic::faceVelocity turns
+		along its velocity. Our own models are built with +Y forward. A DTS shape is built with +Y forward
+		in its own Z up world, which the loader's root turn brings round to -Z here, so a Torque bullet
+		and its trail would otherwise fly side on.
+	*/
+	glm::vec3 projectileForward = glm::vec3(0, 1, 0);
+
 	//What frame of animation should be displayed for an instance when we're not playing any animations on it
 	float animationDefaultTime = 0;
 
@@ -576,6 +584,9 @@ class Model
 	int getShirtMeshIdx() const;
 
 	glm::vec3 getEyePosition() const { return eyePosition * baseScale; }
+
+	//The model space axis a projectile of this model flies along, see projectileForward
+	glm::vec3 getProjectileForward() const { return projectileForward; }
 
 	bool isServerSide() const { return serverSide;  }
 

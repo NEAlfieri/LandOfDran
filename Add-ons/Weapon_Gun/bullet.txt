@@ -1,0 +1,5 @@
+#The Gun's bullet, with its trail left out: it's a see-through streak in Blockland, and here it could only
+#be drawn as a solid tube nine studs long. The trail still counts for nothing, the collision box comes from
+#the shape's own collision detail
+file	bullet.dts
+hide	trail

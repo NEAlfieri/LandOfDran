@@ -25,11 +25,11 @@ registerWeapon("pistol", {
 	fireDelayMS = 150,
 	reloadMS = 1020,
 
-	--Hitscan, so no projectile field. RIFLE_ROUND is fired along the shot purely to be seen
+	--Hitscan, so no projectile field. The Gun's bullet is fired along the shot purely to be seen
 	spread = 0.0009,
 	range = 200,
 	pellets = 1,
-	tracer = "ttBulletRound",
+	tracer = "gunBullet",
 
 	--The end of the barrel measured from the hand: its muzzle point node less its mount point node
 	muzzleFromHand = {0.000, 0.854, -2.372},
@@ -40,6 +40,19 @@ registerWeapon("pistol", {
 	muzzleEmitter = "TTMuzzleFlashEmitter",
 	muzzleEmitterMS = 60,
 	impactEmitter = "TTImpactEmitter",
+
+
+	--GunShellDebris out of the shape's ejectPoint along shellExitDir "1 0.1 1" at shellVelocity 5
+	casing = {
+		model = "gunShell",
+		--This shape has no ejectPoint node, so the shell comes from the hand, as Torque fell back to
+		offsetFromHand = weaponNodeFromHand(getDynamicType("pistol"), "ejectPoint") or {0, 0, 0},
+		exitDir = {1.0, 1.0, -0.1},
+		speed = 10,
+		variance = 10,
+		lifetimeMS = 2000,
+		gravityScale = 2
+	},
 
 	fireAnimation = "fire",
 

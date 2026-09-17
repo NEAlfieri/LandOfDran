@@ -26,13 +26,25 @@
 
 	Nothing takes damage yet, so landing a shot only leaves an effect.
 
+	The spots on a weapon's model come from the shape's own nodes, see weaponNodeFromHand: the muzzle
+	is its muzzlePoint measured from its mountPoint, the node the hand holds it by, and a casing
+	leaves from its ejectPoint. A weapon with a casing field throws one out after every shot, the
+	way stateEjectShell and the DebrisData datablocks did, as a short lived dynamic that bounces
+	and is cleared away after its lifetime.
+
 	A weapon with a predicted field also hands its owner's game the track for its next click, so the
 	shot is seen and heard the instant the button goes down instead of a round trip later. The server
 	still decides everything: it only pre-sends what the click looks like. See client:setClickAction
 	in LuaAPI.md, and sendClickAction below.
 
-	Loaded from Weapon_Package_Tier1.lua.
+	Loaded from Weapon_Package_Tier1.lua, and by any other add-on that shoots through it, like
+	Weapon_Gun, whichever comes first. Loading it again would empty the weapon table and double up the
+	listeners below, so it's only read once.
 ]]
+
+if registerWeapon ~= nil then
+	return
+end
 
 --Every registered weapon, by the script name of its item type
 Weapons = {}
@@ -68,6 +80,10 @@ local AMMO_PRINT_EVERY_MS = 700
 --Clients whose counter was shown too recently to show again, by client ID
 local ammoPrintBlocked = {}
 
+--Rounds still flying from weapons with a projectileLifetimeMS, by their ID, so one that has already hit
+--and been removed by the engine isn't removed again when its time runs out
+local liveShots = {}
+
 function registerWeapon(name, weapon)
 	weapon.name = name
 	Weapons[name] = weapon
@@ -101,6 +117,11 @@ end
 
 --Rounds in a particular gun, starting off with a full magazine like one picked up in Blockland
 function getMagazine(item, weapon)
+	--A gun with no magazine to run down, like the plain Gun, whose datablock had no ammo at all
+	if weapon.infiniteAmmo then
+		return math.huge
+	end
+
 	local rounds = magazines[item.id]
 	if rounds == nil then
 		rounds = weapon.magazineSize
@@ -157,10 +178,15 @@ end
 	is worked out from the player's eyes and the way they're looking, which is what Inventory.lua
 	does for the launcher's barrel too.
 
+	The hand is put where the shooter's own game draws it in first person, LoopClient's
+	firstPersonGrip: right, down, and ahead of the camera. Their predicted flash already sits on that
+	drawn gun, so the server's flash and the round itself line up with it for them. Everyone else sees
+	the gun in the player's actual hand, lower and further back, which the flash misses by a little.
+
 	Each weapon gives muzzleFromHand, the end of its barrel measured from the point the hand holds
-	it by, which is its muzzle point node less its mount point node. Held unturned, the model's +Y
-	is up out of the hand and its -Z is the way its owner faces, so those turn into the camera's up
-	and forward here.
+	it by, which is its muzzle point node less its mount point node, see weaponNodeFromHand. Held
+	unturned, the model's +Y is up out of the hand and its -Z is the way its owner faces, so those
+	turn into the camera's up and forward here.
 
 	An item:getNodePosition("muzzlepoint") in the engine would replace this guesswork with the real
 	thing, and would fix the muzzle drifting when the camera is in third person.
@@ -168,11 +194,32 @@ end
 
 --Where a player's eyes are above their position, and where their hand sits from there
 local EYE_HEIGHT = 4.8
-local HAND_RIGHT = 1.1
-local HAND_UP = -0.9
-local HAND_AHEAD = 0.7
+--A body lying down to crawl has its eyes tipped forward and down onto the floor, and the camera lifts
+--them by this much times how far it's tipped, tippedEyeLift in PlayerCamera.cpp
+local TIPPED_EYE_LIFT = 0.75
+--firstPersonGrip in LoopClient.cpp, where a player's own game draws the gun: right of, below, and ahead of their eyes
+local HAND_RIGHT = 1.5
+local HAND_UP = -1.6
+local HAND_AHEAD = 2.6
 
-function weaponMuzzlePosition(client, weapon)
+--[[
+	Where a held item is held, and which way it faces: the point the hand holds it by, then its right,
+	up, and forward as world directions. Everything on a weapon is measured from that point in the
+	item's own space, +X to its right, +Y up out of the hand, and -Z down the barrel, which is how
+	setItemHand lays a model out, so weaponPointFromHand turns one of those spots into a world position.
+]]
+--A vector turned by a quaternion, w first the way dynamic:getRotation gives it
+function rotateByQuaternion(qw, qx, qy, qz, x, y, z)
+	--t = 2 * cross(q.xyz, v), then v + w * t + cross(q.xyz, t)
+	local tx = 2 * (qy * z - qz * y)
+	local ty = 2 * (qz * x - qx * z)
+	local tz = 2 * (qx * y - qy * x)
+	return x + qw * tx + (qy * tz - qz * ty),
+	       y + qw * ty + (qz * tx - qx * tz),
+	       z + qw * tz + (qx * ty - qy * tx)
+end
+
+function weaponHandFrame(client)
 	local player = client:getControlledIdx(0)
 	if player == nil then
 		return nil
@@ -180,6 +227,14 @@ function weaponMuzzlePosition(client, weapon)
 
 	local px, py, pz = player:getPosition()
 	local dirX, dirY, dirZ = client:getCameraDirection()
+
+	--The eyes sit up the body, wherever the body is pointing: a player lying down to crawl has them out in
+	--front near the floor, which is where their camera is, rather than a standing height above their position
+	local qw, qx, qy, qz = player:getRotation()
+	local eyeX, eyeY, eyeZ = rotateByQuaternion(qw, qx, qy, qz, 0, EYE_HEIGHT, 0)
+	local _, bodyUpY = rotateByQuaternion(qw, qx, qy, qz, 0, 1, 0)
+	local tipped = math.max(0, math.min(1, 1 - bodyUpY))
+	px, py, pz = px + eyeX, py + eyeY + TIPPED_EYE_LIFT * tipped, pz + eyeZ
 
 	--The camera's right, kept level so the gun doesn't roll when looking up or down
 	local rightX, rightZ = -dirZ, dirX
@@ -192,15 +247,46 @@ function weaponMuzzlePosition(client, weapon)
 	--And its up, across the other two
 	local upX, upY, upZ = -rightZ * dirY, rightZ * dirX - rightX * dirZ, rightX * dirY
 
-	local offset = weapon.muzzleFromHand or {0, 0, 0}
-	local outRight = HAND_RIGHT + offset[1]
-	local outUp = HAND_UP + offset[2]
-	--The barrel runs down -Z, so a negative offset there is further forward
-	local outAhead = HAND_AHEAD - offset[3]
+	return px + rightX * HAND_RIGHT + upX * HAND_UP + dirX * HAND_AHEAD,
+	       py + upY * HAND_UP + dirY * HAND_AHEAD,
+	       pz + rightZ * HAND_RIGHT + upZ * HAND_UP + dirZ * HAND_AHEAD,
+	       rightX, 0, rightZ, upX, upY, upZ, dirX, dirY, dirZ
+end
 
-	return px + rightX * outRight + upX * outUp + dirX * outAhead,
-	       py + EYE_HEIGHT + upY * outUp + dirY * outAhead,
-	       pz + rightZ * outRight + upZ * outUp + dirZ * outAhead
+--A spot on a held item, given in the item's own space measured from the point it's held by
+function weaponPointFromHand(client, offset)
+	local hx, hy, hz, rx, ry, rz, ux, uy, uz, fx, fy, fz = weaponHandFrame(client)
+	if hx == nil then
+		return nil
+	end
+
+	offset = offset or {0, 0, 0}
+	--The barrel runs down -Z, so a negative offset there is further forward
+	local right, up, ahead = offset[1], offset[2], -offset[3]
+
+	return hx + rx * right + ux * up + fx * ahead,
+	       hy + ry * right + uy * up + fy * ahead,
+	       hz + rz * right + uz * up + fz * ahead
+end
+
+function weaponMuzzlePosition(client, weapon)
+	return weaponPointFromHand(client, weapon.muzzleFromHand)
+end
+
+--[[
+	Where one of an item model's nodes sits measured from its mountPoint, the node the hand holds it by,
+	as a table in the item's own space. This is how a weapon's muzzleFromHand and its casing's
+	offsetFromHand are found: a Blockland shape names the end of its barrel muzzlePoint and where its
+	shells come out ejectPoint, so nothing has to be measured by hand. Nil if the model lacks either node.
+]]
+function weaponNodeFromHand(typeID, nodeName)
+	local mountX, mountY, mountZ = getTypeNodePosition(typeID, "mountPoint")
+	local nodeX, nodeY, nodeZ = getTypeNodePosition(typeID, nodeName)
+	if mountX == nil or nodeX == nil then
+		return nil
+	end
+
+	return { nodeX - mountX, nodeY - mountY, nodeZ - mountZ }
 end
 
 --A direction knocked off course by up to spread, the way a shotgun throws its pellets apart
@@ -350,6 +436,12 @@ local function fireOneShot(client, weapon, item, player)
 			shot:setGravity(0, WORLD_GRAVITY * weapon.gravityScale, 0)
 		end
 
+		--lifetime in the originals: a round that hits nothing is cleared away rather than flying on forever
+		if shot ~= nil and weapon.projectileLifetimeMS ~= nil then
+			liveShots[shot.id] = shot
+			schedule(weapon.projectileLifetimeMS, "weaponShotExpired", shot.id)
+		end
+
 		return shot
 	end
 
@@ -383,6 +475,22 @@ local function fireOneShot(client, weapon, item, player)
 	return hit
 end
 
+--A round's lifetime ran out without it hitting anything
+function weaponShotExpired(shotID)
+	local shot = liveShots[shotID]
+	if shot ~= nil then
+		liveShots[shotID] = nil
+		shot:destroy()
+	end
+end
+
+--A casing has lain about for as long as its lifetime
+function weaponRemoveCasing(casing)
+	if casing ~= nil then
+		casing:destroy()
+	end
+end
+
 function weaponRemoveEmitter(emitter)
 	if emitter ~= nil then
 		emitter:destroy()
@@ -395,21 +503,46 @@ function weaponRemoveLight(light)
 	end
 end
 
---The puff a shot leaves where it lands
+--[[
+	What a shot leaves where it lands, the ExplosionData of the originals: a puff of dust, and for
+	weapons that had them a flash on top of it, a sound, and a light that lasts for the explosion
+]]
 function weaponImpactEffect(weapon, x, y, z)
-	if weapon.impactEmitter == nil then
-		return
+	if weapon.impactEmitter ~= nil then
+		local puff = addEmitter(weapon.impactEmitter, x, y, z)
+		if puff ~= nil then
+			schedule(weapon.impactEmitterMS or 400, "weaponRemoveEmitter", puff)
+		end
 	end
 
-	local puff = addEmitter(weapon.impactEmitter, x, y, z)
-	if puff ~= nil then
-		schedule(400, "weaponRemoveEmitter", puff)
+	if weapon.impactFlashEmitter ~= nil then
+		local flash = addEmitter(weapon.impactFlashEmitter, x, y, z)
+		if flash ~= nil then
+			schedule(weapon.impactFlashMS or 50, "weaponRemoveEmitter", flash)
+		end
+	end
+
+	if weapon.impactSound ~= nil then
+		playSound(weapon.impactSound, x, y, z)
+	end
+
+	if weapon.impactLight ~= nil then
+		local color = weapon.impactLight.color
+		local light = createLight(x, y, z, color[1], color[2], color[3],
+			weapon.impactLight.brightness, 0, weapon.impactLight.coronaWidth or 0)
+
+		if light ~= nil then
+			schedule(weapon.impactLight.forMS or 150, "weaponRemoveLight", light)
+		end
 	end
 end
 
 --Where a round lands. A tracer is only something to look at, so it leaves nothing behind; a real
 --round from one of the projectile weapons puffs where it hits. The engine removes either one
 function weaponProjectileHit(projectile, hit, x, y, z, tag)
+	--The engine removes it now, so its lifetime has nothing left to do
+	liveShots[projectile.id] = nil
+
 	if tag ~= TRACER_TAG then
 		local weapon = Weapons[tag]
 		if weapon ~= nil then
@@ -420,6 +553,93 @@ function weaponProjectileHit(projectile, hit, x, y, z, tag)
 	return projectile, hit, x, y, z, tag
 end
 registerEventListener("ProjectileHit", "weaponProjectileHit")
+
+--[[
+	Throws a spent casing out of the gun, from the DebrisData and shellExit fields of the originals.
+	It's a real dynamic for its lifetime, so it bounces off whatever it lands on for everyone to see,
+	then it's cleared away. exitDir is in the item's own space like everything else measured from the
+	hand, so Blockland's "1 -1.3 1", right, backward, and up in its Y forward world, is {1, 1, 1.3} here.
+]]
+local function ejectCasing(client, weapon, player)
+	local casing = weapon.casing
+	if casing == nil or casing.offsetFromHand == nil then
+		return
+	end
+
+	local casingType = getDynamicType(casing.model)
+	if casingType == nil then
+		return
+	end
+
+	local hx, hy, hz, rx, ry, rz, ux, uy, uz, fx, fy, fz = weaponHandFrame(client)
+	if hx == nil then
+		return
+	end
+
+	local x, y, z = weaponPointFromHand(client, casing.offsetFromHand)
+	local shell = createDynamic(casingType, x, y, z)
+	if shell == nil then
+		return
+	end
+
+	local exit = casing.exitDir or {1, 1, 1}
+	local right, up, ahead = exit[1], exit[2], -exit[3]
+	local dirX = rx * right + ux * up + fx * ahead
+	local dirY = ry * right + uy * up + fy * ahead
+	local dirZ = rz * right + uz * up + fz * ahead
+	local length = math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
+	if length < 0.0001 then
+		dirX, dirY, dirZ, length = ux, uy, uz, 1
+	end
+
+	--shellExitVariance is in degrees, and spreadDirection takes the angle the way the weapons give it
+	dirX, dirY, dirZ = spreadDirection(dirX / length, dirY / length, dirZ / length,
+		math.tan(math.rad(casing.variance or 0)) / 90)
+
+	--Thrown out at shellVelocity on top of however its owner is moving, as Torque's ejectShell did
+	local speed = casing.speed or 14
+	local velX, velY, velZ = player:getVelocity()
+	shell:setVelocity(velX + dirX * speed, velY + dirY * speed, velZ + dirZ * speed)
+
+	--minSpinSpeed to maxSpinSpeed in the originals, degrees a second around each axis
+	local minSpin, maxSpin = casing.minSpin or -400, casing.maxSpin or 200
+	shell:setAngularVelocity(
+		math.rad(minSpin + math.random() * (maxSpin - minSpin)),
+		math.rad(minSpin + math.random() * (maxSpin - minSpin)),
+		math.rad(minSpin + math.random() * (maxSpin - minSpin)))
+
+	shell:setGravity(0, WORLD_GRAVITY * (casing.gravityScale or 1), 0)
+	shell:setRestitution(casing.restitution or 0.5)
+	shell:setFriction(casing.friction or 0.2)
+	shell:activate()
+
+	schedule(casing.lifetimeMS or 2000, "weaponRemoveCasing", shell)
+end
+
+--The smoke that follows a shot out of the barrel a moment after the flash, the Smoke state of the
+--originals. It's placed where the muzzle is by then, so it isn't left behind a moving shooter
+function weaponMuzzleSmoke(clientID, weaponName)
+	local state = firing[clientID]
+	local weapon = Weapons[weaponName]
+	if state == nil or weapon == nil or weapon.muzzleSmoke == nil then
+		return
+	end
+
+	local held, item = heldWeapon(state.client)
+	if held == nil or held.name ~= weaponName then
+		return
+	end
+
+	local x, y, z = weaponMuzzlePosition(state.client, weapon)
+	if x == nil then
+		return
+	end
+
+	local smoke = addEmitter(weapon.muzzleSmoke.emitter, x, y, z)
+	if smoke ~= nil then
+		schedule(weapon.muzzleSmoke.forMS or 50, "weaponRemoveEmitter", smoke)
+	end
+end
 
 --Everything one pull of the trigger does
 local function fireOnce(client, weapon, item)
@@ -440,7 +660,9 @@ local function fireOnce(client, weapon, item)
 		return false
 	end
 
-	setMagazine(item, rounds - 1)
+	if not weapon.infiniteAmmo then
+		setMagazine(item, rounds - 1)
+	end
 
 	local muzzleX, muzzleY, muzzleZ = weaponMuzzlePosition(client, weapon)
 
@@ -487,6 +709,13 @@ local function fireOnce(client, weapon, item)
 		fireOneShot(client, weapon, item, player)
 	end
 
+	if weapon.muzzleSmoke ~= nil and weapon.muzzleSmoke.emitter ~= nil then
+		schedule(weapon.muzzleSmoke.delayMS or 0, "weaponMuzzleSmoke", client:getID(), weapon.name)
+	end
+
+	--stateEjectShell: the spent casing comes out with the shot
+	ejectCasing(client, weapon, player)
+
 	--The shove a gun gives whoever is firing it, which is all the recoil there is for now
 	if weapon.knockback ~= nil and weapon.knockback > 0 then
 		local dirX, dirY, dirZ = client:getCameraDirection()
@@ -512,6 +741,11 @@ function startReload(client, weapon, item)
 	local clientID = client:getID()
 	local state = firing[clientID]
 	if state == nil or state.reloading then
+		return
+	end
+
+	--Nothing to reload from, or into
+	if weapon.infiniteAmmo then
 		return
 	end
 

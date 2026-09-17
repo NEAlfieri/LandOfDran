@@ -27,6 +27,9 @@ PhysicsWorld::PhysicsWorld()
   //Very important to call this, forgetting to do so will massivly increase the performance impact of having static objects like bricks 
   world->setForceUpdateAllAabbs(false);
 
+  world->setInternalTickCallback(&PhysicsWorld::substepStarting, this, true);
+  world->setInternalTickCallback(&PhysicsWorld::substepFinished, this, false);
+
   planeShape = new btStaticPlaneShape(btVector3(0, 1, 0), 0);
   planeState = new btDefaultMotionState();
   btRigidBody::btRigidBodyConstructionInfo planeCon(0, planeState, planeShape);
@@ -34,6 +37,20 @@ PhysicsWorld::PhysicsWorld()
   groundPlane->setFriction(1.0);
   groundPlane->setUserIndex(RigidBodyUserIndex::groundPlane);
   world->addRigidBody(groundPlane);
+}
+
+void PhysicsWorld::substepStarting(btDynamicsWorld* world, btScalar timeStep)
+{
+  PhysicsWorld* self = (PhysicsWorld*)world->getWorldUserInfo();
+  if (self && self->beforeSubstep)
+    self->beforeSubstep(timeStep);
+}
+
+void PhysicsWorld::substepFinished(btDynamicsWorld* world, btScalar timeStep)
+{
+  PhysicsWorld* self = (PhysicsWorld*)world->getWorldUserInfo();
+  if (self && self->afterSubstep)
+    self->afterSubstep(timeStep);
 }
 
 PhysicsWorld::~PhysicsWorld()
@@ -86,7 +103,8 @@ std::vector<btRigidBody*> PhysicsWorld::getTouching(const btRigidBody* body) con
   return touching;
 }
 
-btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar within, btVector3& point) const
+btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar within, btVector3& point,
+	const std::function<bool(const btRigidBody*)>& skip) const
 {
   int numManifolds = dispatcher->getNumManifolds();
   for (int i = 0; i < numManifolds; i++)
@@ -99,6 +117,9 @@ btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar wit
 
     const btCollisionObject* other = bodyIsFirst ? manifold->getBody1() : manifold->getBody0();
     if (!other->hasContactResponse())
+      continue;
+
+    if (skip && skip((const btRigidBody*)other))
       continue;
 
     for (int c = 0; c < manifold->getNumContacts(); c++)
@@ -120,11 +141,14 @@ btRigidBody* PhysicsWorld::boxSweepTest(const btVector3& halfExtents, const btTr
     return boxSweep(halfExtents, from, to, ignore).body;
 }
 
-SweepResult PhysicsWorld::boxSweep(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore)
+SweepResult PhysicsWorld::boxSweep(const btVector3& halfExtents, const btTransform& from, const btTransform& to, btRigidBody* ignore,
+    const std::function<bool(const btCollisionObject*)>& skip, int group, int mask)
 {
     btClosestNotMeConvexResultCallback callback(ignore, from.getOrigin(), to.getOrigin(), world->getPairCache(), world->getDispatcher());
-    //Purely visual debris, like undone bricks, shouldn't block movement checks
-    callback.m_collisionFilterMask = btBroadphaseProxy::AllFilter ^ btBroadphaseProxy::DebrisFilter;
+    //The default mask leaves out purely visual debris, like undone bricks, which shouldn't block movement checks
+    callback.m_collisionFilterGroup = group;
+    callback.m_collisionFilterMask = mask;
+    callback.skip = skip;
     btBoxShape test(halfExtents);
     world->convexSweepTest(&test, from, to, callback);
 
@@ -132,6 +156,7 @@ SweepResult PhysicsWorld::boxSweep(const btVector3& halfExtents, const btTransfo
     if (callback.hasHit())
     {
         result.body = (btRigidBody*)callback.m_hitCollisionObject;
+        result.point = callback.m_hitPointWorld;
         result.fraction = callback.m_closestHitFraction;
         result.normal = callback.m_hitNormalWorld;
     }
