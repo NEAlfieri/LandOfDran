@@ -837,6 +837,12 @@ void LoopClient::placeVehicleDrivers(float deltaT)
 			rider->setDrawnTransform(b2g3(transform.getOrigin()), glm::quat(turn.w(), turn.x(), turn.y(), turn.z()));
 			rider->playWalkingAnimation = false;
 			rider->stop(0);
+
+			//Riding in a model vehicle they sit, if their model has a sit animation, and stand back up in Vehicle::releaseSeated
+			int sit = vehicle->isModelVehicle() ? rider->getType()->getModel()->getAnimationID("sit") : -1;
+			if (sit != -1)
+				rider->play(sit, true);
+
 			rider->turnHead(deltaT);
 
 			//A third person camera sees through the vehicle it rides in

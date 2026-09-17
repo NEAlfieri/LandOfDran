@@ -53,6 +53,7 @@ class Dynamic : public SimObject
 		bool angVel = false;
 		bool look = false;
 		bool oneShot = false;
+		bool loops = false;
 		//Whether the position goes out as a delta off keyframePosition rather than a full one, and what it is
 		bool positionIsDelta = false;
 		glm::vec3 positionDelta = glm::vec3(0, 0, 0);
@@ -117,9 +118,27 @@ class Dynamic : public SimObject
 	//Client: what holds its meshes' transforms and per instance render data, nullptr server side
 	ModelInstance* getModelInstance() const { return modelInstance; }
 
+	//Client: plays and stops an animation on its own instance, the walk and a vehicle's sit are done this way on each client
 	void play(int id, bool loop) { if (!modelInstance) return; modelInstance->playAnimation(id, loop); }
 
 	void stop(int id) { if (!modelInstance) return;  modelInstance->stopAnimation(id); }
+
+	/*
+		Server: starts an animation looping on it for everyone, like Lua's dynamic:playAnimation with loop, or stops one,
+		or every one of them for -1. They go into loopingAnimations, which its creation packet carries so a client
+		joining later sees them, and which the next few updates repeat after a change, see loopResends
+	*/
+	void startLoop(int id);
+	void stopLoop(int id);
+
+	//Client: plays what the server has looping that isn't yet and stops what it no longer does, leaving what this client plays itself alone
+	void syncLoops(const std::vector<unsigned char>& loops);
+
+	//Server: the animations startLoop has looping, in the order they started. Client: the ones the server last said were, see syncLoops
+	std::vector<unsigned char> loopingAnimations;
+
+	//Server only, how many more updates carry loopingAnimations, updates are unreliable so a change goes out a few times
+	int loopResends = 0;
 
 	/*
 		Plays an animation once from the start, like a player's grab

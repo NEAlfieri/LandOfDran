@@ -4,6 +4,7 @@
 brickhead = newDynamicType("brickhead","Assets/brickhead/brickhead.txt",0.02,0.02,0.02)
 addAnimation(brickhead,"walk",0,30,0.04,200,400) --For now it just uses the first added animation as the walk cycle
 addAnimation(brickhead,"grab",56,65,0.03,0,0) --Played on every left click, over the walk cycle
+addAnimation(brickhead,"sit",70,71,0.03,250,250) --One held pose, looped on anyone riding in a model vehicle like the jeep: the fades sit them down and stand them up
 
 --Different floor tile types
 smallPlate = newDynamicType("small","Assets/cube/cube.txt",0.01,0.01,0.01)
@@ -511,12 +512,49 @@ function chatCommands(client, message)
 		return client, ""
 	end
 
+	if text == "/sit" then
+		toggleSitting(client)
+		return client, ""
+	end
+
 	return client, message
 end
 registerEventListener("ClientChat","chatCommands")
 --Listed in the chat window while typing a slash command, see registerChatSuggestion in LuaAPI.md
 registerChatSuggestion("clearbricks", "/clearbricks - remove every brick you planted")
 registerChatSuggestion("clearvehicles", "/clearvehicles - remove every vehicle you made")
+registerChatSuggestion("sit", "/sit - sit down, or stand back up")
+
+--Who's sitting down by /sit, by client ID. Riders of a model vehicle sit on their own, see LuaAPI.md's Model vehicles
+sittingClients = {}
+
+function toggleSitting(client)
+	local player = client:getNumControlled() > 0 and client:getControlledIdx(0) or nil
+	if not player then
+		client:message("You don't have a player to sit down.")
+		return
+	end
+
+	if client:getVehicle() then
+		client:message("You're already sitting in a vehicle.")
+		return
+	end
+
+	if sittingClients[client:getID()] then
+		sittingClients[client:getID()] = nil
+		player:stopAnimation("sit")
+	else
+		sittingClients[client:getID()] = true
+		player:playAnimation("sit", true)
+	end
+end
+
+--Forgotten when they leave, their player goes with them
+function forgetSitting(client)
+	sittingClients[client:getID()] = nil
+	return client
+end
+registerEventListener("ClientLeave","forgetSitting")
 
 --For easy testing
 function gc()

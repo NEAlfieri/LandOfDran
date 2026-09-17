@@ -1,6 +1,7 @@
 #include "Dynamic.h"
 #include "../GameLoop/PlayerAppearance.h"
 #include <cmath>
+#include <algorithm>
 
 Dynamic::Dynamic(std::shared_ptr<DynamicType> _type, const btVector3& initialPos, const btQuaternion &initialRot)
 	: type(_type)
@@ -167,6 +168,41 @@ void Dynamic::playOneShot(int id)
 	oneShotAnimation = id;
 	oneShotCount++;
 	oneShotResends = 4;
+}
+
+void Dynamic::startLoop(int id)
+{
+	if (id < 0 || id > 255)
+		return;
+
+	if (std::find(loopingAnimations.begin(), loopingAnimations.end(), (unsigned char)id) == loopingAnimations.end())
+		loopingAnimations.push_back((unsigned char)id);
+	loopResends = 4;
+}
+
+void Dynamic::stopLoop(int id)
+{
+	size_t before = loopingAnimations.size();
+	if (id < 0)
+		loopingAnimations.clear();
+	else
+		loopingAnimations.erase(std::remove(loopingAnimations.begin(), loopingAnimations.end(), (unsigned char)id), loopingAnimations.end());
+
+	if (loopingAnimations.size() != before)
+		loopResends = 4;
+}
+
+void Dynamic::syncLoops(const std::vector<unsigned char>& loops)
+{
+	for (unsigned char id : loopingAnimations)
+		if (std::find(loops.begin(), loops.end(), id) == loops.end())
+			stop(id);
+
+	for (unsigned char id : loops)
+		if (std::find(loopingAnimations.begin(), loopingAnimations.end(), id) == loopingAnimations.end())
+			play(id, true);
+
+	loopingAnimations = loops;
 }
 
 glm::vec3 Dynamic::getMeshCenter(int meshIndex) const
@@ -408,6 +444,7 @@ void Dynamic::measurePendingUpdate()
 
 	pendingUpdate.look = sendsLook(*this);
 	pendingUpdate.oneShot = oneShotResends > 0;
+	pendingUpdate.loops = loopResends > 0;
 
 	if (!inWorld)
 		return;
@@ -453,11 +490,11 @@ void Dynamic::measurePendingUpdate()
 bool Dynamic::requiresNetUpdate() //const
 {
 	//Carried items have no position of their own to send, see Item
-	//A player on a vehicle still sends where they look and their grabs, clients stand them on it themselves, see Vehicle
+	//A player on a vehicle still sends where they look and what they play, clients stand them on it themselves, see Vehicle
 	if (!inWorld)
 	{
 		bool lookChanged = sendsLook(*this) && glm::dot(lookDirection, lastSentLook) < lookResendCosine;
-		flaggedForUpdate = getKind() == DynamicKind_Plain && getTicksMS() - lastSentTime >= 25 && (lookChanged || oneShotResends > 0);
+		flaggedForUpdate = getKind() == DynamicKind_Plain && getTicksMS() - lastSentTime >= 25 && (lookChanged || oneShotResends > 0 || loopResends > 0);
 		if (flaggedForUpdate)
 			measurePendingUpdate();
 		return flaggedForUpdate;
@@ -485,6 +522,7 @@ bool Dynamic::requiresNetUpdate() //const
 		|| restitutionUpdated
 		|| lookChanged
 		|| pendingUpdate.oneShot
+		|| pendingUpdate.loops
 		|| pendingUpdate.posRot
 		|| pendingUpdate.vel
 		|| pendingUpdate.angVel;
@@ -512,6 +550,9 @@ unsigned int Dynamic::getUpdatePacketBytes() const
 
 	if (pendingUpdate.oneShot)
 		ret += 2;
+
+	if (pendingUpdate.loops)
+		ret += 1 + loopingAnimations.size();
 
 	if (pendingUpdate.posRot)
 	{
@@ -745,10 +786,12 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 
 	bool needLook = pendingUpdate.look;
 	bool needOneShot = pendingUpdate.oneShot;
+	bool needLoops = pendingUpdate.loops;
 
 	unsigned char extraFlags = 0;
 	extraFlags |= needLook ? DynamicExtra_Look : 0;
 	extraFlags |= needOneShot ? DynamicExtra_OneShot : 0;
+	extraFlags |= needLoops ? DynamicExtra_Loops : 0;
 	dest[2] = extraFlags;
 
 	int byteIterator = 3;
@@ -824,6 +867,14 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 		dest[byteIterator + 1] = oneShotCount;
 		byteIterator += 2;
 	}
+
+	if (needLoops)
+	{
+		loopResends--;
+		dest[byteIterator] = (unsigned char)loopingAnimations.size();
+		memcpy(dest + byteIterator + 1, loopingAnimations.data(), loopingAnimations.size());
+		byteIterator += 1 + loopingAnimations.size();
+	}
 }
 
 /*
@@ -861,8 +912,11 @@ unsigned int Dynamic::getCreationPacketBytes() const
 	//1 byte for how long the name tag is, then its color and text if it has one
 	int nameTagSize = 1 + (nameTag.empty() ? 0 : (int)sizeof(float) * 3 + (int)nameTag.length());
 
-	//Buoyancy, decals, and then the name tag go last, then a DynamicKind byte and whatever that kind adds
-	return meshColorsSize + highlightSize + decalsSize + nameTagSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
+	//1 byte for how many animations are looping on it, then their IDs, see startLoop
+	int loopsSize = 1 + (int)loopingAnimations.size();
+
+	//Buoyancy, decals, the name tag, and its loops go last, then a DynamicKind byte and whatever that kind adds
+	return meshColorsSize + highlightSize + decalsSize + nameTagSize + loopsSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
 }
 
 void Dynamic::addToCreationPacket(enet_uint8* dest) const
@@ -954,6 +1008,12 @@ void Dynamic::addToCreationPacket(enet_uint8* dest) const
 		memcpy(dest + byteIterator, nameTag.data(), nameTag.length());
 		byteIterator += nameTag.length();
 	}
+
+	//Every animation looping on it, so a client joining now sees them too, see startLoop
+	dest[byteIterator] = (unsigned char)loopingAnimations.size();
+	byteIterator++;
+	memcpy(dest + byteIterator, loopingAnimations.data(), loopingAnimations.size());
+	byteIterator += loopingAnimations.size();
 
 	dest[byteIterator] = (unsigned char)getKind();
 	byteIterator++;

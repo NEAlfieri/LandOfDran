@@ -337,6 +337,19 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					}
 				}
 
+				//Animations the server has looping on it, see Dynamic::startLoop
+				std::vector<unsigned char> loops;
+				if (byteIterator < packet->dataLength)
+				{
+					unsigned int numLoops = packet->data[byteIterator];
+					byteIterator++;
+					if (byteIterator + numLoops > packet->dataLength)
+						break;
+
+					loops.assign(packet->data + byteIterator, packet->data + byteIterator + numLoops);
+					byteIterator += numLoops;
+				}
+
 				//Items are followed by who carries them and what they play, see Item::writeState
 				unsigned char kind = DynamicKind_Plain;
 				enet_uint8* itemState = nullptr;
@@ -390,6 +403,8 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 
 				if (!nameTag.empty())
 					newDynamic->setNameTag(nameTag, nameTagColor);
+
+				newDynamic->syncLoops(loops);
 
 				if (itemState)
 					std::static_pointer_cast<Item>(newDynamic)->readState(itemState, true, simulation.idealBufferSize);

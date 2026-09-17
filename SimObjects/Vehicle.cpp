@@ -1,6 +1,7 @@
 #include "Vehicle.h"
 #include "../Graphics/InstancedBrickRenderer.h"
 #include "../Bricks/BrickHolder.h"
+#include <algorithm>
 
 #include <glm/gtc/constants.hpp>
 
@@ -373,10 +374,10 @@ btTransform Vehicle::getPassengerTransform(int seatIndex, const Dynamic& rider, 
 	glm::quat rotation;
 	getBodyTransform(drawn, origin, rotation);
 
-	//Looking straight up or down, they face the way it drives
+	//Looking straight up or down, they face the way it drives, and sitting in a model vehicle they always do, only their head turns
 	glm::vec3 local = glm::inverse(rotation) * look;
 	local.y = 0.0f;
-	if (glm::length(local) < 0.001f || glm::any(glm::isnan(local)))
+	if (isModelVehicle() || glm::length(local) < 0.001f || glm::any(glm::isnan(local)))
 		local = forward;
 
 	//Player models face -Z
@@ -632,6 +633,14 @@ void Vehicle::releaseSeated(int seatIndex, float idealBufferSize)
 		return;
 
 	rider->ridingVehicle.reset();
+
+	//Stands back up out of a model vehicle, unless the server has it sitting on purpose, see LoopClient::placeVehicleDrivers
+	if (isModelVehicle())
+	{
+		int sit = rider->getType()->getModel()->getAnimationID("sit");
+		if (sit != -1 && std::find(rider->loopingAnimations.begin(), rider->loopingAnimations.end(), (unsigned char)sit) == rider->loopingAnimations.end())
+			rider->stop(sit);
+	}
 
 	if (rider->isInWorld() || rider->getKind() != DynamicKind_Plain)
 		return;

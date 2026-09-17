@@ -230,6 +230,17 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 				byteIterator += 2;
 			}
 
+			//Every animation the server has looping on it, resent in a few updates after a change, see Dynamic::startLoop
+			bool needLoops = extraFlags & DynamicExtra_Loops;
+			std::vector<unsigned char> loops;
+			if (needLoops)
+			{
+				unsigned int numLoops = packet->data[byteIterator];
+				byteIterator++;
+				loops.assign(packet->data + byteIterator, packet->data + byteIterator + numLoops);
+				byteIterator += numLoops;
+			}
+
 			//TODO: Friction, per-object gravity, and restitution are not actually sent on object creation yet so new joining players won't have the same values client-side
 			if (toUpdate)
 			{
@@ -273,21 +284,24 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 						toUpdate->body->activate();
 				}
 
-				//Our own player's head and grabs are already done locally
-				if (!toUpdate->clientControlled)
+				//Our own player's head is already turned from its camera
+				if (needLook && !toUpdate->clientControlled)
 				{
-					if (needLook)
-					{
-						toUpdate->lookDirection = look;
-						toUpdate->hasLook = true;
-					}
-
-					if (needOneShot && oneShotCount != toUpdate->oneShotCount)
-					{
-						toUpdate->oneShotCount = oneShotCount;
-						toUpdate->playOneShot(oneShotAnimation);
-					}
+					toUpdate->lookDirection = look;
+					toUpdate->hasLook = true;
 				}
+
+				//Our own player's grab is already played on the click, see LoopClient, anything else played once on it comes from here like everyone else's
+				if (needOneShot && oneShotCount != toUpdate->oneShotCount)
+				{
+					toUpdate->oneShotCount = oneShotCount;
+					if (!toUpdate->clientControlled || oneShotAnimation != toUpdate->getType()->getModel()->getAnimationID("grab"))
+						toUpdate->playOneShot(oneShotAnimation);
+				}
+
+				//Looping animations aren't predicted for anyone, our own player included
+				if (needLoops)
+					toUpdate->syncLoops(loops);
 
 				if (needGravity)
 					toUpdate->body->setGravity(g2b3(gravity));

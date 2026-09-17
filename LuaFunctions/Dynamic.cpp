@@ -1934,6 +1934,83 @@ static int LUA_dynamicIsItem(lua_State* L)
 	return 1;
 }
 
+static int LUA_dynamicPlayAnimation(lua_State* L)
+{
+	scope("(LUA) dynamic:playAnimation");
+
+	int args = lua_gettop(L);
+	if (args != 2 && args != 3)
+	{
+		error("Expected dynamic:playAnimation(name[,loop])");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	const char* name = lua_tostring(L, 2);
+	bool loop = args == 3 && lua_toboolean(L, 3);
+	lua_settop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	int id = name ? dynamic->getType()->getModel()->getAnimationID(name) : -1;
+	if (id == -1)
+	{
+		error("Dynamic type " + dynamic->getType()->scriptName + " has no animation named " + std::string(name ? name : "nil") + ", see addAnimation");
+		return 0;
+	}
+
+	if (loop)
+		dynamic->startLoop(id);
+	else
+		dynamic->playOneShot(id);
+	return 0;
+}
+
+static int LUA_dynamicStopAnimation(lua_State* L)
+{
+	scope("(LUA) dynamic:stopAnimation");
+
+	int args = lua_gettop(L);
+	if (args != 1 && args != 2)
+	{
+		error("Expected dynamic:stopAnimation([name])");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	const char* name = args == 2 ? lua_tostring(L, 2) : nullptr;
+	lua_settop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//No name stops every loop Lua started
+	int id = -1;
+	if (name)
+	{
+		id = dynamic->getType()->getModel()->getAnimationID(name);
+		if (id == -1)
+		{
+			error("Dynamic type " + dynamic->getType()->scriptName + " has no animation named " + std::string(name) + ", see addAnimation");
+			return 0;
+		}
+	}
+
+	dynamic->stopLoop(id);
+	return 0;
+}
+
 luaL_Reg* getDynamicFunctions(lua_State *L)
 {
 	//Register dynamic global functions:
@@ -1949,7 +2026,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[39];
+	luaL_Reg* regs = new luaL_Reg[41];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -1974,6 +2051,8 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "setMassProps",    LUA_dynamicSetMassProps };
 	regs[iter++] = { "setMeshColor",    LUA_dynamicSetMeshColor };
 	regs[iter++] = { "getMeshAt",    LUA_dynamicGetMeshAt };
+	regs[iter++] = { "playAnimation",    LUA_dynamicPlayAnimation };
+	regs[iter++] = { "stopAnimation",    LUA_dynamicStopAnimation };
 	regs[iter++] = { "setMeshDecal",    LUA_dynamicSetMeshDecal };
 	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
 	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };
