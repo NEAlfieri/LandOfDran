@@ -471,6 +471,19 @@ function clearBricksOwnedBy(ownerID)
 	return count
 end
 
+--Removes every vehicle the client with that net ID sliced, loaded, or was given by spawnJeep, returns how many
+function clearVehiclesOwnedBy(ownerID)
+	local count = 0
+	for i = getNumVehicles() - 1, 0, -1 do
+		local vehicle = getVehicleIdx(i)
+		if vehicle:getBuilderID() == ownerID then
+			vehicle:remove()
+			count = count + 1
+		end
+	end
+	return count
+end
+
 --Chat commands, the message arrives as "Name: text"
 function chatCommands(client, message)
 	local text = string.sub(message, string.len(client:getName()) + 3)
@@ -487,9 +500,23 @@ function chatCommands(client, message)
 		return client, ""
 	end
 
+	if text == "/clearvehicles" then
+		local count = clearVehiclesOwnedBy(client:getID())
+		if count == 0 then
+			client:message("You don't have any vehicles to clear.")
+		else
+			messageAll(client:getName() .. " cleared their " .. count .. (count == 1 and " vehicle." or " vehicles."))
+			playSound("BrickClear")
+		end
+		return client, ""
+	end
+
 	return client, message
 end
 registerEventListener("ClientChat","chatCommands")
+--Listed in the chat window while typing a slash command, see registerChatSuggestion in LuaAPI.md
+registerChatSuggestion("clearbricks", "/clearbricks - remove every brick you planted")
+registerChatSuggestion("clearvehicles", "/clearvehicles - remove every vehicle you made")
 
 --For easy testing
 function gc()

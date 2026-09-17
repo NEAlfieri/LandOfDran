@@ -24,4 +24,7 @@ std::shared_ptr<JoinedClient> popClientLua(lua_State *L);
 */
 void applyAppearance(Server const* server, ClientData& client, std::shared_ptr<Dynamic> dynamic, const PlayerAppearance* previous = nullptr);
 
+//Every registered chat suggestion, sent to a client right after their connection is accepted
+void sendChatSuggestions(const ServerProgramData* pd, JoinedClient* client);
+
 void registerClientFunctions(lua_State *L);

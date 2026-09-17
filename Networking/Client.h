@@ -8,6 +8,7 @@
 #include "PacketsFromServer/UpdateSimObjects.h"
 #include "PacketsFromServer/DeleteSimObjects.h"
 #include "PacketsFromServer/ChatMessageFromServer.h"
+#include "PacketsFromServer/ChatSuggestion.h"
 #include "PacketsFromServer/EvalLoginResponse.h"
 #include "PacketsFromServer/DisplayConsoleLine.h"
 #include "PacketsFromServer/TakeOverPhysics.h"

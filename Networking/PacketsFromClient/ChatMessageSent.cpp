@@ -24,6 +24,17 @@ void chatMessageSent(JoinedClient * source, Server const * const server, ENetPac
 		return;
 
 	std::string message = std::string((char*)packet->data + 2, messageLength);
+
+	//Slash commands are case-insensitive: the command word is lowercased before Lua compares it, its arguments are left as typed
+	if (message.length() > 1 && message[0] == '/')
+	{
+		size_t commandEnd = message.find(' ');
+		if (commandEnd == std::string::npos)
+			commandEnd = message.length();
+		for (size_t a = 1; a < commandEnd; a++)
+			message[a] = (char)tolower((unsigned char)message[a]);
+	}
+
 	message = source->name + ": " + message;
 	info(message.c_str());
 

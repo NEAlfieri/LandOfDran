@@ -135,7 +135,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 |---|---|---|
 | `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `serverstart.lua`'s `join()` creates and gives them their player dynamic here. |
 | `ClientLeave` | `function(client) ... return client end` | Fires when a client disconnects, before it's removed from the client list. Use this to clean up anything the client owned (see `PickupSystem.lua`'s `dropHeldOnLeave`). |
-| `ClientChat` | `function(client, message) ... return client, message end` | Fires when a client sends a chat message, before it's broadcast. Return a modified `message` to alter it, or an empty string to suppress it. |
+| `ClientChat` | `function(client, message) ... return client, message end` | Fires when a client sends a chat message, before it's broadcast. `message` is `"<name>: <text>"`. Return a modified `message` to alter it, or an empty string to suppress it. Slash commands are case-insensitive: when the text starts with `/`, the command word (up to the first space) is lowercased before listeners see it, so compare against lowercase names; arguments after the space keep their case. |
 | `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. |
 | `ClientAdminLogin` | `function(client) ... return client end` | Fires when a client enters the right eval console password. Not fired for the single player host, who is made admin automatically. `serverstart.lua` plays the `Admin` sound to them here. |
 | `ClientClick` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires on every mouse click. `posX/Y/Z` and `dirX/Y/Z` are the camera's position and look direction *at the moment of the click*; `mask` is the SDL mouse button mask (see Conventions). |
@@ -835,7 +835,7 @@ anything; use the events to limit that.
 | `vehicle:setDestructable(bool)` / `vehicle:isDestructable()` | bool | none / bool | Whether `radiusImpulse` breaks its bricks off. Off for a new vehicle until a script turns it on, like `serverstart.lua` does from `VehicleCreated`. |
 | `vehicle:getNumSeats()` | none | count | How many passenger seats (seat bricks, or the ones `spawnModelVehicle` was given) it has, not counting the driver's, including seats that were broken off. |
 | `vehicle:getPassenger(seat)` | 0 to `getNumSeats() - 1` | Client or `nil` | Who's riding on that seat. Use `client:exitVehicle` to get them off. |
-| `vehicle:getBuilder()` | none | Client or `nil` | Who sliced it, `nil` if Lua did or they left. |
+| `vehicle:getBuilder()` | none | Client or `nil` | Who sliced or loaded it, or the `builder` `spawnModelVehicle` was given, `nil` if Lua made it or they left. |
 | `vehicle:getBuilderID()` | none | client net ID, or `-1` | |
 | `vehicle:getMusic()` | none | sound name, volume, pitch; or `nil` | The loop playing from it. |
 | `vehicle:setMusic(soundName[, volume, pitch])` / `vehicle:setMusic(nil)` | a sound type's name; `volume` 0-1, `pitch` 0.05-10 | none | Plays the sound on a loop from the vehicle for everyone, following it, until it's changed or the vehicle is removed. Changing anything starts the loop over. |
@@ -869,6 +869,7 @@ place the wheels and seats rather than a script guessing at numbers.
 | `angularDamping` | `0.03` | The same setting a steering wheel brick has, 0 to 1. |
 | `seat` | `{0, 0, 0}` | Where the driver's model goes, which for a player model is their feet. |
 | `seats` | none | A list of at most 32 passenger seats, each `{x, y, z}` (or a table with a `position`), where that passenger stands. |
+| `builder` | none | A Client the vehicle counts as built by: `vehicle:getBuilder()` returns them and they're passed to `VehicleCreated`, like the client who sliced a brick vehicle. `spawnJeep(client)` sets it, so `/clearvehicles` in `serverstart.lua` removes a player's jeeps along with what they sliced or loaded. |
 
 A wheel's table takes `position`, `{x, y, z}` where its middle rests, and `radius` and `width` in world units (`1` each
 by default). It also takes any of the wheel settings in the table above under their own names, clamped to the same
@@ -917,8 +918,8 @@ Clients play a few sounds by name on their own when the server has registered th
 and `ClickRotate` when the ghost brick moves or turns, `Jump` when their player jumps, and
 `BrickBreak` where a removed brick pops loose. `serverstart.lua` registers these along with
 `ClickPlant`, `PlayerConnect`, `PlayerLeave`, `Admin` (played to a client who logs into the eval
-console), and `BrickClear` (played to everyone when someone types `/clearbricks` in chat to remove
-all of their own bricks). It also registers `Splash` and `ExitWater`, which the server plays by
+console), and `BrickClear` (played to everyone when someone types `/clearbricks` or `/clearvehicles` in chat to remove
+all of their own bricks or vehicles). It also registers `Splash` and `ExitWater`, which the server plays by
 name where dynamics hit or leave the water, louder the faster they're moving and lower pitched
 the bigger they are, and `LightOn` and `LightOff`, which the server plays from a player whose
 flashlight turns on or off. `Inventory.lua` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops
@@ -970,6 +971,7 @@ A "client" represents one connected player/connection.
 | `getClientIdx(index)` | 0-based index | Client | Looks up a connected client by index. |
 | `messageAll(text)` | text (max 255 chars) | none | Broadcasts a chat message from the server to every connected client, as a single packet. Empty strings are silently ignored, same as `client:message`. |
 | `centerPrintAll(text)` / `centerPrintAll(text, durationMS)` / `centerPrintAll(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Broadcasts a temporary message to the center of every connected client's screen, as a single packet. |
+| `registerChatSuggestion(commandName, suggestionText)` | command name (with or without the leading `/`, no spaces, max 64 chars, lowercased); text (max 255 chars, defaults to `/commandName` if empty) | none | Tells every client, now and as they join, about a slash command so their chat window lists it while they type one. Typing `/` plus the start of a name lists every matching command's `suggestionText` (the full name with its arguments, e.g. `"/kick <player> [reason]"`), and Up/Down write the picked command into the message bar ready for arguments. Once a space follows the command only its own line stays listed. This is only the hint: the command itself is still handled by a `ClientChat` listener. Registering a name again replaces its text. |
 
 ### `client:` methods
 

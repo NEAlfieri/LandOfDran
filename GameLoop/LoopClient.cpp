@@ -23,6 +23,8 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 		return;
 
 	pd.chatWindow->close();
+	//The next server has its own commands
+	pd.chatWindow->clearSuggestions();
 	pd.wrenchDialog->close();
 	pd.printMenu->close();
 	pd.vehicleLoader->close();

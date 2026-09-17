@@ -280,6 +280,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/BrickPrintTypes.cpp"
 "Networking/PacketsFromServer/AddSoundType.h"
 "Networking/PacketsFromServer/AddSoundType.cpp"
+"Networking/PacketsFromServer/ChatSuggestion.h"
+"Networking/PacketsFromServer/ChatSuggestion.cpp"
 "Networking/PacketsFromServer/OneShotSound.h"
 "Networking/PacketsFromServer/OneShotSound.cpp"
 "Networking/PacketsFromServer/SoundLoop.h"

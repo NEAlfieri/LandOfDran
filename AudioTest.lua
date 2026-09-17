@@ -166,6 +166,9 @@ function audioTestChat(client, message)
 	return client, message
 end
 registerEventListener("ClientChat", "audioTestChat")
+registerChatSuggestion("audiotest", "/audiotest - build the audio test rooms and stand in them")
+registerChatSuggestion("audiodoor", "/audiodoor - open or close the closed room's door")
+registerChatSuggestion("audiostop", "/audiostop - stop the audio test sounds")
 
 function setUpAudioTest()
 	buildAudioTest()

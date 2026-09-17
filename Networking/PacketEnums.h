@@ -192,6 +192,7 @@ enum FromServerPacketType : unsigned char
 	BrickPrintTypes = 40,	//The server's print IDs and names as a client joins, so it can match them to its own, see BrickPrintTypesPacket
 	SetClickAction = 41,	//What the client should play the moment they click with an item, before hearing back, see Networking/ClickAction.h
 	OpenPrintMenu = 42,		//Open the print menu for a brick, so the print gun can put a print on it, see Interface/PrintMenu.h
+	ChatSuggestion = 43,	//A slash command's name and the hint the chat window lists for it, for every one as a client joins and whenever Lua registers one, see registerChatSuggestion
 };
 
 //Flags byte of a PlayerAbilities packet

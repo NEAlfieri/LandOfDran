@@ -119,8 +119,10 @@ end
 function spawnJeep(x, y, z)
 	--spawnJeep(client): out in front of them, high enough that it lands on its wheels. A client is a
 	--table with the methods on it, so that's what one looks like from here
+	local builder = nil
 	if type(x) == "table" then
 		local client = x
+		builder = client
 		local cameraX, cameraY, cameraZ = client:getCameraPosition()
 		local lookX, _, lookZ = client:getCameraDirection()
 
@@ -180,6 +182,7 @@ function spawnJeep(x, y, z)
 		angularDamping = 0.05,
 		seat = driver,
 		seats = seats,
-		wheels = wheels
+		wheels = wheels,
+		builder = builder
 	})
 end

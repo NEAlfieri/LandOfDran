@@ -74,6 +74,16 @@ struct ServerProgramData
 	};
 	std::vector<RegisteredSound> soundTypes;
 
+	//Slash commands Lua's registerChatSuggestion told us about, so clients can list them while typing one, see ChatWindow::addSuggestion
+	struct ChatSuggestion
+	{
+		//Lowercase, without the slash
+		std::string command = "";
+		//What the client shows for it, the command's full name and its arguments, like "/kick <player> [reason]"
+		std::string text = "";
+	};
+	std::vector<ChatSuggestion> chatSuggestions;
+
 	//Looping sounds started from Lua, kept so clients who join later hear them too
 	struct ActiveSoundLoop
 	{

@@ -1138,6 +1138,103 @@ static int LUA_clientGetPaintMaterial(lua_State* L)
 	return 1;
 }
 
+/*
+	1 byte - packet type
+	1 byte - command length, then the command, lowercase without the slash
+	1 byte - suggestion text length, then the text
+*/
+static ENetPacket* makeChatSuggestionPacket(const ServerProgramData::ChatSuggestion& suggestion)
+{
+	std::vector<unsigned char> bytes;
+	bytes.push_back(ChatSuggestion);
+	bytes.push_back((unsigned char)suggestion.command.length());
+	bytes.insert(bytes.end(), suggestion.command.begin(), suggestion.command.end());
+	bytes.push_back((unsigned char)suggestion.text.length());
+	bytes.insert(bytes.end(), suggestion.text.begin(), suggestion.text.end());
+	return enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(JoinNegotiation));
+}
+
+void sendChatSuggestions(const ServerProgramData* pd, JoinedClient* client)
+{
+	for (const ServerProgramData::ChatSuggestion& suggestion : pd->chatSuggestions)
+		client->send(makeChatSuggestionPacket(suggestion), JoinNegotiation);
+}
+
+//The command is what a client types after the slash, the text is what their chat window lists for it, the full name with its arguments
+//Registering a command again replaces its text
+static int LUA_registerChatSuggestion(lua_State* L)
+{
+	scope("(LUA) registerChatSuggestion");
+
+	int args = lua_gettop(L);
+	if (args != 2 || !lua_isstring(L, 1) || !lua_isstring(L, 2))
+	{
+		error("Expected registerChatSuggestion(commandName, suggestionText)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	ServerProgramData::ChatSuggestion suggestion;
+	suggestion.command = lua_tostring(L, 1);
+	suggestion.text = lua_tostring(L, 2);
+	lua_settop(L, 0);
+
+	//Written with or without the slash, matched without it
+	if (!suggestion.command.empty() && suggestion.command[0] == '/')
+		suggestion.command = suggestion.command.substr(1);
+
+	//Commands are case-insensitive, see chatMessageSent
+	for (char& c : suggestion.command)
+		c = (char)tolower((unsigned char)c);
+
+	if (suggestion.command.empty())
+	{
+		error("Command name can't be empty");
+		return 0;
+	}
+
+	if (suggestion.command.find_first_of(" \t\r\n") != std::string::npos)
+	{
+		error("Command name " + suggestion.command + " can't contain spaces, a command ends at the first space");
+		return 0;
+	}
+
+	//Leaves room for the slash and a space in the client's 256 byte message bar
+	if (suggestion.command.length() > 64)
+	{
+		error("Command name " + suggestion.command + " is over 64 characters");
+		return 0;
+	}
+
+	if (suggestion.text.empty())
+		suggestion.text = "/" + suggestion.command;
+
+	if (suggestion.text.length() > 255)
+	{
+		error("Suggestion text for " + suggestion.command + " is over 255 characters, cutting it short");
+		suggestion.text = suggestion.text.substr(0, 255);
+	}
+
+	bool replaced = false;
+	for (ServerProgramData::ChatSuggestion& existing : LUA_pd->chatSuggestions)
+	{
+		if (existing.command == suggestion.command)
+		{
+			existing.text = suggestion.text;
+			replaced = true;
+			break;
+		}
+	}
+
+	if (!replaced)
+		LUA_pd->chatSuggestions.push_back(suggestion);
+
+	//Anyone already here, anyone who joins later gets it in sendChatSuggestions
+	LUA_server->broadcast(makeChatSuggestionPacket(suggestion), JoinNegotiation);
+
+	return 0;
+}
+
 void registerClientFunctions(lua_State* L)
 {
 	//Register client global functions:
@@ -1145,6 +1242,7 @@ void registerClientFunctions(lua_State* L)
 	lua_register(L, "getClientIdx", LUA_getClientIdx);
 	lua_register(L, "centerPrintAll", LUA_centerPrintAll);
 	lua_register(L, "messageAll", LUA_messageAll);
+	lua_register(L, "registerChatSuggestion", LUA_registerChatSuggestion);
 
 	luaL_Reg regs[] = {
 		{ "message", LUA_clientMessage},

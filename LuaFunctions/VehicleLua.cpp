@@ -1196,7 +1196,17 @@ static int LUA_spawnModelVehicle(lua_State* L)
 	}
 	lua_pop(L, 1);
 
+	//Who it counts as built by, for things like /clearvehicles, nobody unless a client is given
+	std::shared_ptr<JoinedClient> builderClient = nullptr;
+	lua_getfield(L, -1, "builder");
+	if (lua_istable(L, -1))
+		builderClient = popClientLua(L);
+	else
+		lua_pop(L, 1);
+	ClientData* builder = builderClient ? (ClientData*)builderClient->userData : nullptr;
+
 	std::shared_ptr<Vehicle> vehicle = LUA_pd->vehicles->create();
+	vehicle->builderID = builderClient ? builderClient->getNetId() : NO_ID;
 	vehicle->bodyTypeID = bodyType->getID();
 	vehicle->wheelTypeID = wheelType ? wheelType->getID() : NO_ID;
 	vehicle->bodyHalfExtents = halfExtents;
@@ -1219,13 +1229,13 @@ static int LUA_spawnModelVehicle(lua_State* L)
 		return 2;
 	}
 
-	info("Lua made model vehicle " + std::to_string(vehicle->getID()) + " out of type " + bodyType->scriptName +
+	info((builderClient ? builderClient->name : std::string("Lua")) + " made model vehicle " + std::to_string(vehicle->getID()) + " out of type " + bodyType->scriptName +
 		" with " + std::to_string(wheels.size()) + " wheels");
 
 	//Everything has been read off the settings table, and an event wants the stack to itself
 	lua_settop(L, 0);
 
-	if (!announceVehicle(vehicle, nullptr))
+	if (!announceVehicle(vehicle, builder))
 	{
 		lua_pushnil(L);
 		lua_pushstring(L, "");

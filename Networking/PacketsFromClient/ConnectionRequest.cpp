@@ -3,6 +3,7 @@
 #include "../../GameLoop/ClientData.h"
 #include "../../LuaFunctions/SoundLua.h"
 #include "../../LuaFunctions/EmitterLua.h"
+#include "../../LuaFunctions/ClientLua.h"
 
 /*	
 	Do not attempt to assign a handle to JoinedClient to other objects directly
@@ -83,6 +84,7 @@ void applyConnectionRequest(JoinedClient * source,Server const * const server, E
 
 	//Sounds, particles, and emitters first, they don't count toward the types the loading bar waits for
 	sendSoundTypes(pd, source);
+	sendChatSuggestions(pd, source);
 	pd->bricks->sendSpecialTypes(source);
 	pd->prints.sendTypes(source);
 	sendParticleEmitterTypes(pd, source);
