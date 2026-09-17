@@ -506,7 +506,7 @@ function resetCubePositions()
 	end
 end
 
-function spawnNewCubes(numCubes, spread)
+function spawnNewCubes(numCubes, spread, rest)
 	numCubes = numCubes or 20
 	spread = spread or 0
 
@@ -525,7 +525,8 @@ function spawnNewCubes(numCubes, spread)
 			x = (math.random() - 0.5) * spread
 			z = (math.random() - 0.5) * spread
 		end
-		createDynamic(getDynamicType("small"),x,50,z)
+		d = createDynamic(getDynamicType("small"),x,50,z)
+		d:setRestitution(rest)
 	end
 end
 
