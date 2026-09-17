@@ -56,12 +56,47 @@ void ClientData::setFlashlight(const ServerProgramData* pd, bool on, const glm::
 		playSoundAt("LightOff", lastPosition, 1.0f, 1.0f);
 }
 
+//A bright yellow ball of light, wide enough to spot from across the map
+static constexpr float freeCameraBrightness = 150.0f;
+static constexpr float freeCameraCoronaWidth = 6.0f;
+static const glm::vec3 freeCameraColor = glm::vec3(1.0f, 0.85f, 0.25f);
+
+glm::vec3 ClientData::getCameraPosition() const
+{
+	return controllers.empty() ? glm::vec3(0) : controllers[0].lastCameraPosition;
+}
+
+void ClientData::setFreeCamera(const ServerProgramData* pd, bool on)
+{
+	if (!pd->lights)
+		return;
+
+	freeCamera = on && freeCameraEnabled;
+
+	std::shared_ptr<Light> light = freeCameraLight.lock();
+
+	if (freeCamera)
+	{
+		if (!light)
+		{
+			light = pd->lights->create(getCameraPosition(), freeCameraColor, freeCameraBrightness, 0.0f, freeCameraCoronaWidth);
+			freeCameraLight = light;
+		}
+		return;
+	}
+
+	if (light)
+		pd->lights->destroy(light);
+	freeCameraLight.reset();
+}
+
 void ClientData::sendAbilities() const
 {
 	if (!client)
 		return;
 
-	char data[2] = { (char)PlayerAbilities, (char)((jetsEnabled ? PlayerAbility_Jets : 0) | (flashlightEnabled ? PlayerAbility_Flashlight : 0)) };
+	char data[2] = { (char)PlayerAbilities, (char)((jetsEnabled ? PlayerAbility_Jets : 0) | (flashlightEnabled ? PlayerAbility_Flashlight : 0) |
+		(freeCameraEnabled ? PlayerAbility_FreeCamera : 0)) };
 	client->send(data, 2, OtherReliable);
 }
 
@@ -70,6 +105,11 @@ void ClientData::removeEffects(const ServerProgramData* pd)
 	if (std::shared_ptr<Light> light = flashlight.lock())
 		pd->lights->destroy(light);
 	flashlight.reset();
+
+	if (std::shared_ptr<Light> light = freeCameraLight.lock())
+		pd->lights->destroy(light);
+	freeCameraLight.reset();
+	freeCamera = false;
 
 	for (PlayerController& controller : controllers)
 	{

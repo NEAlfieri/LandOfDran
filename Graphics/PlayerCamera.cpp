@@ -76,13 +76,20 @@ void Camera::setFirstPerson(bool _firstPerson)
 	firstPerson = _firstPerson;
 }   
 
+/*
+    How far the eye is lifted for a body lying flat rather than standing, world units. The near plane is half a
+    stud, and its corners reach further than that at a wide field of view, so a crawling eye half a stud off the
+    floor cuts into it looking down. This puts it about a body's thickness up instead, see Camera::render
+*/
+static constexpr float tippedEyeLift = 0.75f;
+
 void Camera::control(float deltaT,std::shared_ptr<InputMap> input)
 {
     if (!(freePosition && target.expired()))
         return;
 
-    //Test camera controls, no-clip camera
-    float speed = 0.015f;
+    //No-clip camera, which is the free camera in game (F7), so it crosses a build quickly
+    float speed = noClipSpeed / 1000.0f;
 
     if (input->isCommandKeydown(WalkForward))
         flyStraight(deltaT * speed);
@@ -230,17 +237,25 @@ void Camera::render(std::shared_ptr<ShaderManager> graphics,float deltaT,const s
     if(!target.expired())
 	{
         std::shared_ptr<Dynamic> targetLock = target.lock();
+
+        //How the body is turned, whichever of the two the eye is being placed from below
+        glm::quat bodyRotation = glm::quat(1, 0, 0, 0);
+
         if (targetLock->clientControlled)
         {
             btTransform t = targetLock->body->getWorldTransform();
             position = b2g3(t.getOrigin());
 
-            glm::vec3 eyePos = targetLock->getType()->getModel()->getEyePosition();
-            glm::vec4 homoEyePos = glm::toMat4(targetLock->interpolator.getRotation()) * glm::vec4(eyePos, 1);
-            position += glm::vec3(homoEyePos.x, homoEyePos.y, homoEyePos.z);
-
             const btQuaternion &q = t.getRotation();
             glm::quat quat = glm::quat(q.getW(), q.getX(), q.getY(), q.getZ());
+            bodyRotation = quat;
+
+            //Our own body is where physics has it, not where the interpolator is catching up to, so the eye follows it
+            //the same way. It matters once a body is turned any way but upright, like a player lying down to crawl
+            glm::vec3 eyePos = targetLock->getType()->getModel()->getEyePosition();
+            glm::vec4 homoEyePos = glm::toMat4(quat) * glm::vec4(eyePos, 1);
+            position += glm::vec3(homoEyePos.x, homoEyePos.y, homoEyePos.z);
+
             glm::vec4 homoDir = glm::toMat4(quat) * glm::vec4(0, 0, 1, 0);
             if (!freeDirection)
                 direction = glm::vec3(homoDir.x, homoDir.y, homoDir.z);
@@ -255,6 +270,7 @@ void Camera::render(std::shared_ptr<ShaderManager> graphics,float deltaT,const s
         else
         {
             position = targetLock->interpolator.getPosition();
+            bodyRotation = targetLock->interpolator.getRotation();
 
             glm::vec3 eyePos = targetLock->getType()->getModel()->getEyePosition();
             glm::vec4 homoEyePos = glm::toMat4(targetLock->interpolator.getRotation()) * glm::vec4(eyePos, 1);
@@ -271,6 +287,14 @@ void Camera::render(std::shared_ptr<ShaderManager> graphics,float deltaT,const s
             else
                 nominalUp = glm::vec3(0, 1, 0);
         }
+
+        /*
+            A body tipped onto its front, like a player crawling, puts its eye right down on the floor, where looking
+            down would push the near plane through it and show the world underneath. Lift it as far as it's tipped,
+            to about the top of the body it's lying on, which is enough to keep the near plane out of the ground
+        */
+        float tipped = std::clamp(1.0f - (bodyRotation * glm::vec3(0, 1, 0)).y, 0.0f, 1.0f);
+        position.y += tippedEyeLift * tipped;
 
         if (!firstPerson)
         {

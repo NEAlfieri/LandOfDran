@@ -56,7 +56,10 @@ enum InputCommand
     OpenInventory = 44,
     DropItem = 45,
     StartSelection = 46,
-    EndOfCommands = 47
+    Crawl = 47,
+    DropCameraAtPlayer = 48,
+    DropPlayerAtCamera = 49,
+    EndOfCommands = 50
 };
 
 //For user interface

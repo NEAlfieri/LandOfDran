@@ -30,6 +30,14 @@ void attemptEvalLogin(JoinedClient* source, Server const* const server, ENetPack
 	if (password == pd->evalPassword)
 	{
 		source->isAdmin = true;
+
+		//Admins get the free camera by default, see ClientData::freeCameraEnabled. Lua can take it back in ClientAdminLogin
+		if (std::shared_ptr<ClientData> client = pd->getClient(source->me))
+		{
+			client->freeCameraEnabled = true;
+			client->sendAbilities();
+		}
+
 		server->broadcastChat(source->name + " has logged into the eval console");
 		info(source->name + " has logged into the eval console");	
 

@@ -32,6 +32,13 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 		ret[0] = EvalLoginResponse;
 		ret[1] = 255;
 		source->send(ret, 2, OtherReliable);
+
+		//Same as logging in with the password: admins get the free camera, see ClientData::freeCameraEnabled
+		if (std::shared_ptr<ClientData> client = pd->getClient(source->me))
+		{
+			client->freeCameraEnabled = true;
+			client->sendAbilities();
+		}
 	}
 
 	//They finished loading types, now send pre-existing SimObjects
@@ -47,6 +54,10 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 	sendSoundState(pd, source);
 
 	sendSkybox(pd, source);
+
+	//What their game may do on its own: jets, the flashlight, and the free camera, which needs telling even when Lua never touched them
+	if (std::shared_ptr<ClientData> client = pd->getClient(source->me))
+		client->sendAbilities();
 
 	//Time of day and water level, instead of waiting up to a second for the regular update
 	pd->worldStateChanged = true;

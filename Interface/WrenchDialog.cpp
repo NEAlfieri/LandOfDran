@@ -185,6 +185,19 @@ bool WrenchDialog::takeSubmission(WrenchSubmission& submission)
 	return true;
 }
 
+bool WrenchDialog::getLightPreview(netIDType& brickID, netIDType& hideLightID, BrickAttachments& lightSettings) const
+{
+	//A vehicle's dialog is only its music, and a closed one has nothing to show
+	if (!opened || editing.brickID == NO_ID || editing.vehicleID != NO_ID)
+		return false;
+
+	brickID = editing.brickID;
+	hideLightID = editing.lightID;
+	lightSettings = editing.attachments;
+	lightSettings.clampValues();
+	return true;
+}
+
 bool WrenchDialog::takeRemoveRequest(netIDType& vehicleID)
 {
 	if (!removeRequested)

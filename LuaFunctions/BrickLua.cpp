@@ -145,6 +145,7 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 		1 byte		-	name length
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
+		4 bytes		-	net ID of the light the brick already has, NO_ID for none
 	*/
 	std::string name = brick->name.substr(0, 255);
 
@@ -156,6 +157,12 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 	bytes.push_back((unsigned char)name.length());
 	bytes.insert(bytes.end(), name.begin(), name.end());
 	(brick->attachments ? *brick->attachments : BrickAttachments()).write(bytes);
+
+	//So the client can leave it out while it shines the light being edited instead, see WrenchDialog::getLightPreview
+	netIDType lightID = brick->attachments ? brick->attachments->lightID : NO_ID;
+	size_t lightAt = bytes.size();
+	bytes.resize(lightAt + sizeof(netIDType));
+	memcpy(bytes.data() + lightAt, &lightID, sizeof(netIDType));
 
 	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
 	client.wrenchedBrickID = brick->netId;

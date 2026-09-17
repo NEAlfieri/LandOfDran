@@ -139,6 +139,14 @@ void LoopServer::startUpdateBudgets()
 
 		client.hasRelevancePosition = false;
 
+		//A camera off flying is where they're watching from, not the player they left behind
+		if (data->freeCamera && !data->controllers.empty())
+		{
+			client.relevancePosition = data->getCameraPosition();
+			client.hasRelevancePosition = true;
+			continue;
+		}
+
 		std::shared_ptr<Vehicle> vehicle = data->vehicle.lock();
 		if (vehicle && vehicle->body)
 		{
@@ -608,6 +616,15 @@ void LoopServer::updatePlayerAbilities()
 					jet.reset();
 				}
 			}
+		}
+
+		//The light marking a loose camera goes wherever their camera last was, which their movement packets carry
+		if (std::shared_ptr<Light> orb = client->freeCameraLight.lock())
+		{
+			if (client->freeCamera && !client->controllers.empty())
+				orb->setPosition(client->getCameraPosition());
+			else
+				client->setFreeCamera(&pd, false);
 		}
 
 		std::shared_ptr<Light> light = client->flashlight.lock();

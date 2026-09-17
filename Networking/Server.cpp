@@ -125,6 +125,11 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 			printSubmit(source, this, packet, pd);
 			return;
 		}
+		case FreeCameraRequest:
+		{
+			freeCameraRequest(source, this, packet, pd);
+			return;
+		}
 		case PlayerGrab:
 		{
 			playerGrab(source, this, packet, pd);

@@ -9,6 +9,7 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		1 byte		-	name length
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
+		4 bytes		-	net ID of the light the brick already has, NO_ID for none
 	*/
 
 	if (cmdArgs.gameState != InGame)
@@ -34,6 +35,15 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		error("Wrench dialog packet was too short");
 		return true;
 	}
+
+	//The brick's real light, which the preview stands in for while the dialog is open
+	if (at + sizeof(netIDType) > packet->dataLength)
+	{
+		error("Wrench dialog packet was too short");
+		return true;
+	}
+	memcpy(&editing.lightID, packet->data + at, sizeof(netIDType));
+	at += sizeof(netIDType);
 
 	std::string label = "Brick";
 	if (const Brick* brick = simulation.bricks ? simulation.bricks->find(editing.brickID) : nullptr)

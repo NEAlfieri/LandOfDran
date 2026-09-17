@@ -80,6 +80,10 @@ class Camera
 
 	void setUp(const glm::vec3& up);
 
+	//How fast the no-clip camera flies with the walking keys, world units a second, see control
+	static constexpr float noClipSpeed = 60.0f;
+
+	//Flies the camera with the walking keys, for a camera with no target and a free position, see LoopClient::setFreeCamera
 	void control(float deltaT,std::shared_ptr<InputMap> input);
 
 	void updateSettings(std::shared_ptr<SettingManager> settings);

@@ -41,6 +41,9 @@ struct Simulation
 	bool jetsEnabled = true;
 	bool flashlightEnabled = true;
 
+	//Whether it lets us drop the camera off our player and fly it around, which is admins only unless its Lua says otherwise
+	bool freeCameraEnabled = false;
+
 	//Only stored if we succesfully managed to log in to the server we're currently playing on
 	std::string evalPassword = "";
 

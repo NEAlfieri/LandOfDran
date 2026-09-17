@@ -108,7 +108,11 @@ void PointLights::update(const std::vector<PointLightSource>& lights, std::share
 		if (!inView)
 			continue;
 
-		if (light.coronaWidth > 0 && light.brightness > 0 && coronaInstances.size() < maxCoronae * 8)
+		//A glow drawn right where the camera is has no shape to it and would just wash the view out, which is what a
+		//light that follows a camera around (the free camera's, see ClientData::setFreeCamera) would otherwise do
+		bool coronaAtCamera = distance < 1.0f;
+
+		if (light.coronaWidth > 0 && light.brightness > 0 && !coronaAtCamera && coronaInstances.size() < maxCoronae * 8)
 		{
 			//The corona is always as bright as its brightest channel allows, dimmer lights just get fainter ones
 			float strongest = std::max(light.color.r, std::max(light.color.g, light.color.b));

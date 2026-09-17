@@ -18,6 +18,10 @@ struct WrenchSubmission
 
 	//Set instead of brickID for a vehicle, which only has music
 	netIDType vehicleID = NO_ID;
+
+	//Client only, never sent back: the brick's light as the server has it, so the dialog can leave it out
+	//while it shines the one being edited instead, see WrenchDialog::getLightPreview
+	netIDType lightID = NO_ID;
 };
 
 /*
@@ -78,6 +82,14 @@ class WrenchDialog : public Window
 
 	//True once after Apply is clicked, with what to send
 	bool takeSubmission(WrenchSubmission& submission);
+
+	/*
+		While a brick's dialog is open: the light settings as they're being edited, for the client to shine in place of
+		the brick's real one, which is what makes a change to a light show before it's applied, see LoopClient::updateLightPreview
+		brickID is the brick it belongs to, hideLightID is its real light (NO_ID if it has none), which is left out while this is up
+		False when nothing is being edited, which puts the real light back, so closing the window without applying undoes it
+	*/
+	bool getLightPreview(netIDType& brickID, netIDType& hideLightID, BrickAttachments& lightSettings) const;
 
 	//True once after a vehicle's Save is clicked with a usable name, with the vehicle and the file in Saves/Vehicles to write it to
 	bool takeSaveRequest(netIDType& vehicleID, std::string& path);

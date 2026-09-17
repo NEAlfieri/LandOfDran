@@ -346,6 +346,10 @@ void PaintMenu::renderPicker(ImGuiIO* io)
 
 void PaintMenu::render(ImGuiIO* io)
 {
+	//Nothing of the game's own HUD while the appearance editor is up, the custom color picker included
+	if (userInterface->hideGameHud)
+		return;
+
 	if (shown && SDL_GetTicks() - lastUsedMS >= hideMS)
 		shown = false;
 

@@ -894,6 +894,48 @@ static int LUA_clientGetFlashlightEnabled(lua_State* L)
 	return 1;
 }
 
+static int LUA_clientSetFreeCameraEnabled(lua_State* L)
+{
+	scope("(LUA) client:setFreeCameraEnabled");
+
+	bool enabled = lua_toboolean(L, 2);
+	std::shared_ptr<ClientData> client = popClientData(L, 2, "client:setFreeCameraEnabled(enabled)");
+	if (!client)
+		return 0;
+
+	client->freeCameraEnabled = enabled;
+	//Puts a camera that's already off flying back on their player, their game does the same when it hears the abilities
+	if (!enabled)
+		client->setFreeCamera(LUA_pd, false);
+	client->sendAbilities();
+
+	return 0;
+}
+
+static int LUA_clientGetFreeCameraEnabled(lua_State* L)
+{
+	scope("(LUA) client:getFreeCameraEnabled");
+
+	std::shared_ptr<ClientData> client = popClientData(L, 1, "client:getFreeCameraEnabled()");
+	if (!client)
+		return 0;
+
+	lua_pushboolean(L, client->freeCameraEnabled);
+	return 1;
+}
+
+static int LUA_clientGetFreeCamera(lua_State* L)
+{
+	scope("(LUA) client:getFreeCamera");
+
+	std::shared_ptr<ClientData> client = popClientData(L, 1, "client:getFreeCamera()");
+	if (!client)
+		return 0;
+
+	lua_pushboolean(L, client->freeCamera);
+	return 1;
+}
+
 void applyAppearance(Server const* server, ClientData& client, std::shared_ptr<Dynamic> dynamic, const PlayerAppearance* previous)
 {
 	client.appearanceTarget = dynamic;
@@ -1131,6 +1173,9 @@ void registerClientFunctions(lua_State* L)
 		{ "getJetsEnabled", LUA_clientGetJetsEnabled },
 		{ "setFlashlightEnabled", LUA_clientSetFlashlightEnabled },
 		{ "getFlashlightEnabled", LUA_clientGetFlashlightEnabled },
+		{ "setFreeCameraEnabled", LUA_clientSetFreeCameraEnabled },
+		{ "getFreeCameraEnabled", LUA_clientGetFreeCameraEnabled },
+		{ "getFreeCamera", LUA_clientGetFreeCamera },
 		{ "applyAppearance", LUA_clientApplyAppearance },
 		{ "openWrenchDialog", LUA_clientOpenWrenchDialog },
 		{ "openPrintMenu", LUA_clientOpenPrintMenu },

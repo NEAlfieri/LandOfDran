@@ -117,7 +117,7 @@ inline ENetPacket* makeConnectionRequest(std::string name)
 	4 bytes		-		camera y position
 	4 bytes		-		camera z position
 */
-inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump, bool jumpHeld, bool forward,bool backward,bool left,bool right, bool jet, glm::vec3 cameraDirection, glm::vec3 cameraPosition)
+inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump, bool jumpHeld, bool forward,bool backward,bool left,bool right, bool jet, bool crawl, glm::vec3 cameraDirection, glm::vec3 cameraPosition)
 {
 	//Unreliable and resent every interval regardless of whether the state changed (see PlayerController::makeMovementInputsPacket) -
 	//losing any single one just means the server acts on a stale input state for one more interval before the next resend corrects it,
@@ -132,6 +132,7 @@ inline ENetPacket* makeMovementInputs(netIDType controlledDynamicID, bool jump, 
 	movementFlags |= (right ? MovementFlag_Right : 0);
 	movementFlags |= (jumpHeld ? MovementFlag_JumpHeld : 0);
 	movementFlags |= (jet ? MovementFlag_Jet : 0);
+	movementFlags |= (crawl ? MovementFlag_Crawl : 0);
 
 	ret->data[0] = (unsigned char)MovementInputs;
 	memcpy(ret->data + 1, &controlledDynamicID, sizeof(netIDType));
@@ -242,6 +243,20 @@ inline ENetPacket* makeFlashlightPacket(bool on, glm::vec3 color)
 	ret->data[1] = on ? 1 : 0;
 	memcpy(ret->data + 2, &color[0], sizeof(float) * 3);
 
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
+	1 byte		-	1 while our camera is off flying, 0 once it's back on our player
+
+	Sent when the free camera keys drop the camera off our player or our player at the camera, see LoopClient::setFreeCamera
+*/
+inline ENetPacket* makeFreeCameraPacket(bool on)
+{
+	ENetPacket* ret = enet_packet_create(NULL, 2, getFlagsFromChannel(OtherReliable));
+	ret->data[0] = (unsigned char)FreeCameraRequest;
+	ret->data[1] = on ? 1 : 0;
 	return ret;
 }
 
