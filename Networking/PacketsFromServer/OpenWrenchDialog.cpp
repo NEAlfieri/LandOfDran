@@ -62,7 +62,7 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 	if (!editing.attachments.hasLight)
 		editing.attachments.resetLight();
 
-	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames());
+	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames(), pd.audio->getEffectNames());
 	pd.context->setMouseLock(false);
 
 	return true;

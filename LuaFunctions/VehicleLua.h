@@ -40,6 +40,21 @@ void openVehicleWrenchDialog(ClientData& client, const Vehicle& vehicle);
 //Loops music from the vehicle for everyone, replacing whatever it played, "" for none
 void setVehicleMusic(Vehicle& vehicle, const std::string& name, float volume, float pitch);
 
+//What a new vehicle honks with: the old game's Honk sound if Lua registered it, otherwise nothing
+std::string defaultVehicleHorn();
+
+//A headlight for a vehicle that hasn't got one yet, for its wrench dialog to start from: a white spotlight shining the way it drives
+BrickAttachments defaultVehicleHeadlight(const Vehicle& vehicle);
+
+/*
+	Gives the vehicle the light in settings as its headlight (only its light fields matter, hasLight false takes the headlight away),
+	switching it on so the change can be seen, see Vehicle::headlight
+*/
+void setVehicleHeadlight(Vehicle& vehicle, const BrickAttachments& settings);
+
+//Switches the vehicle's headlight on or off, making or destroying its Light, with LightOn or LightOff from the vehicle for playSounds. On does nothing without a headlight
+void setVehicleHeadlightOn(Vehicle& vehicle, bool on, bool playSounds);
+
 /*
 	The bytes of a Land of Dran save of the vehicle's bricks as they were before slicing, wheels included,
 	with its music on its steering wheel, which becomes the music of a vehicle loaded from it

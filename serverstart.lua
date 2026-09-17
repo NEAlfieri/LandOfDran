@@ -68,7 +68,7 @@ newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
 newSoundType("Launch","Assets/sound/launch.wav")
 --And PrintFire from a firing print gun
 newSoundType("PrintFire","Assets/sound/printFire.wav")
---Drivers left click to honk
+--The horn a new vehicle honks with when its driver left clicks, until its wrench dialog picks another sound
 newSoundType("Honk","Assets/sound/434878__mickthemicguy__car-honking.wav")
 --Music, which players can put on bricks by holding Insert and clicking one to open the wrench dialog
 newSoundType("After School Special","Assets/music/After_School_Special.wav",true)

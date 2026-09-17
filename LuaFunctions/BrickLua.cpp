@@ -978,7 +978,12 @@ static int LUA_brickGetLight(lua_State* L)
 		return 1;
 	}
 
-	const BrickAttachments& settings = *brick->attachments;
+	pushLightTable(L, *brick->attachments);
+	return 1;
+}
+
+void pushLightTable(lua_State* L, const BrickAttachments& settings)
+{
 	lua_newtable(L);
 
 	pushVector(L, settings.lightColor);
@@ -1002,8 +1007,6 @@ static int LUA_brickGetLight(lua_State* L)
 		lua_pushnumber(L, field.second);
 		lua_setfield(L, -2, field.first);
 	}
-
-	return 1;
 }
 
 //Reads a table of three finite numbers at index into out, false if it's anything else
@@ -1026,11 +1029,7 @@ static bool readVectorTable(lua_State* L, int index, glm::vec3& out)
 	return true;
 }
 
-/*
-	Reads the light fields in the table at index into settings, leaving the ones it doesn't have alone
-	Logs an error and returns false for an unknown field, a value of the wrong kind, or a direction of 0, 0, 0
-*/
-static bool readLightTable(lua_State* L, int index, BrickAttachments& settings)
+bool readLightTable(lua_State* L, int index, BrickAttachments& settings)
 {
 	const std::pair<const char*, glm::vec3*> vectorFields[] = {
 		{ "color", &settings.lightColor },

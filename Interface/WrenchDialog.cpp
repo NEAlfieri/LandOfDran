@@ -23,6 +23,38 @@ static void nameCombo(const char* label, std::string& picked, const std::vector<
 	ImGui::EndCombo();
 }
 
+/*
+	A light's direction as the dialog's yaw and pitch see it: for a brick that's the world, where yaw 0 is +z, and for a vehicle
+	it's turned so yaw 0 is the way the vehicle drives, in its body's space, which is the space its headlight's direction is kept in
+*/
+static glm::vec3 directionToDialog(const glm::vec3& direction, const glm::vec3& forward)
+{
+	glm::vec3 right = glm::cross(glm::vec3(0, 1, 0), forward);
+	return glm::vec3(glm::dot(direction, right), direction.y, glm::dot(direction, forward));
+}
+
+static glm::vec3 directionFromDialog(const glm::vec3& direction, const glm::vec3& forward)
+{
+	glm::vec3 right = glm::cross(glm::vec3(0, 1, 0), forward);
+	return direction.x * right + direction.y * glm::vec3(0, 1, 0) + direction.z * forward;
+}
+
+//Copies just the light fields, the ones the Light section edits
+static void copyLight(BrickAttachments& to, const BrickAttachments& from)
+{
+	to.hasLight = from.hasLight;
+	to.lightColor = from.lightColor;
+	to.lightBrightness = from.lightBrightness;
+	to.lightFlicker = from.lightFlicker;
+	to.lightBlinkSpeed = from.lightBlinkSpeed;
+	to.lightBlinkStrength = from.lightBlinkStrength;
+	to.lightCoronaWidth = from.lightCoronaWidth;
+	to.lightConeAngle = from.lightConeAngle;
+	to.lightDirection = from.lightDirection;
+	to.lightSpin = from.lightSpin;
+	to.lightOffset = from.lightOffset;
+}
+
 //A typed file name without spaces around it
 static std::string trimmedSaveName(const std::string& name)
 {
@@ -94,7 +126,10 @@ void WrenchDialog::stashCopy()
 	hasCopy = true;
 }
 
-//A vehicle's dialog is only its music, and a wheel's settings mean nothing on a brick that isn't a wheel
+/*
+	Music goes anywhere, a horn between vehicles and steering wheels, and a vehicle's light is its headlight, which only another vehicle
+	takes (a brick's light is in the world's space, a headlight's in the vehicle's). A wheel's settings mean nothing on a brick that isn't a wheel
+*/
 void WrenchDialog::applyCopy()
 {
 	const BrickAttachments& from = copied.attachments;
@@ -104,24 +139,24 @@ void WrenchDialog::applyCopy()
 	to.musicVolume = from.musicVolume;
 	to.musicPitch = from.musicPitch;
 
-	if (editing.vehicleID != NO_ID || copiedFromVehicle)
+	bool forVehicle = editing.vehicleID != NO_ID;
+	if (from.hasHorn && (forVehicle || editing.part == VehiclePart_Steering))
+	{
+		to.hasHorn = true;
+		to.hornName = from.hornName;
+	}
+
+	if (forVehicle || copiedFromVehicle)
+	{
+		if (forVehicle && copiedFromVehicle)
+			copyLight(to, from);
 		return;
+	}
 
 	editing.collides = copied.collides;
 	editing.name = copied.name;
 
-	to.hasLight = from.hasLight;
-	to.lightColor = from.lightColor;
-	to.lightBrightness = from.lightBrightness;
-	to.lightFlicker = from.lightFlicker;
-	to.lightBlinkSpeed = from.lightBlinkSpeed;
-	to.lightBlinkStrength = from.lightBlinkStrength;
-	to.lightCoronaWidth = from.lightCoronaWidth;
-	to.lightConeAngle = from.lightConeAngle;
-	to.lightDirection = from.lightDirection;
-	to.lightSpin = from.lightSpin;
-	to.lightOffset = from.lightOffset;
-
+	copyLight(to, from);
 	to.emitterName = from.emitterName;
 
 	if (editing.part == VehiclePart_Wheel && from.hasWheel)
@@ -131,7 +166,7 @@ void WrenchDialog::applyCopy()
 		to.steering = from.steering;
 }
 
-void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters)
+void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds)
 {
 	//Opening one dialog right on top of another still counts as closing the first
 	stashCopy();
@@ -144,12 +179,19 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	brickLabel = label;
 	musicNames = music;
 	emitterNames = emitters;
+	soundNames = sounds;
 
-	//Applying a wheel or steering wheel's dialog keeps its settings, even the defaults it opened with
+	//Applying a wheel or steering wheel's dialog keeps its settings, even the defaults it opened with, and the horn it shows is the one it gets
 	if (editing.part == VehiclePart_Wheel)
 		editing.attachments.hasWheel = true;
 	if (editing.part == VehiclePart_Steering)
 		editing.attachments.hasSteering = true;
+	if (editing.part == VehiclePart_Steering || editing.vehicleID != NO_ID)
+		editing.attachments.hasHorn = true;
+
+	const std::string& hornName = editing.attachments.hornName;
+	if (!hornName.empty() && std::find(soundNames.begin(), soundNames.end(), hornName) == soundNames.end())
+		soundNames.push_back(hornName);
 
 	//Applying without touching them keeps whatever Lua put on the brick
 	const std::string& musicName = editing.attachments.musicName;
@@ -160,7 +202,7 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	if (!emitterName.empty() && std::find(emitterNames.begin(), emitterNames.end(), emitterName) == emitterNames.end())
 		emitterNames.push_back(emitterName);
 
-	const glm::vec3& direction = editing.attachments.lightDirection;
+	glm::vec3 direction = directionToDialog(editing.attachments.lightDirection, editing.vehicleID != NO_ID ? editing.vehicleForward : glm::vec3(0, 0, 1));
 	lightPitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
 	lightYaw = glm::degrees(std::atan2(direction.x, direction.z));
 
@@ -185,13 +227,14 @@ bool WrenchDialog::takeSubmission(WrenchSubmission& submission)
 	return true;
 }
 
-bool WrenchDialog::getLightPreview(netIDType& brickID, netIDType& hideLightID, BrickAttachments& lightSettings) const
+bool WrenchDialog::getLightPreview(netIDType& brickID, netIDType& vehicleID, netIDType& hideLightID, BrickAttachments& lightSettings) const
 {
-	//A vehicle's dialog is only its music, and a closed one has nothing to show
-	if (!opened || editing.brickID == NO_ID || editing.vehicleID != NO_ID)
+	//A closed dialog has nothing to show
+	if (!opened || (editing.brickID == NO_ID && editing.vehicleID == NO_ID))
 		return false;
 
 	brickID = editing.brickID;
+	vehicleID = editing.vehicleID;
 	hideLightID = editing.lightID;
 	lightSettings = editing.attachments;
 	lightSettings.clampValues();
@@ -337,6 +380,9 @@ void WrenchDialog::render(ImGuiIO* io)
 
 		ImGui::Checkbox("Realistic center of mass", &steering.realisticCenterOfMass);
 		tooltip("Off, it turns around a point down near its wheels, which keeps it from flipping. On, around the middle of its bricks");
+
+		nameCombo("Horn", settings.hornName, soundNames);
+		tooltip("What the driver honks with left click");
 	}
 
 	if (sectionHeader("Music"))
@@ -356,12 +402,27 @@ void WrenchDialog::render(ImGuiIO* io)
 		}
 	}
 
-	if (!forVehicle && sectionHeader("Light"))
+	if (forVehicle && sectionHeader("Horn"))
 	{
-		ImGui::Checkbox("Has light", &settings.hasLight);
+		nameCombo("Sound", settings.hornName, soundNames);
+		tooltip("What the driver honks with left click");
+	}
+
+	if (sectionHeader(forVehicle ? "Headlight" : "Light"))
+	{
+		ImGui::Checkbox(forVehicle ? "Has headlight" : "Has light", &settings.hasLight);
+		if (forVehicle)
+			tooltip("The driver switches it on and off with their flashlight key. Applying switches it on");
 
 		if (settings.hasLight)
 		{
+			//A steering wheel's light can be the headlight of the vehicle it's sliced into, instead of a light that's always on
+			if (editing.part == VehiclePart_Steering)
+			{
+				ImGui::Checkbox("Vehicle's headlight", &settings.lightIsHeadlight);
+				tooltip("Once these bricks are sliced into a vehicle, this light is its headlight, which the driver switches with their flashlight key, rather than a light that stays on");
+			}
+
 			ImGui::ColorEdit3("Color", &settings.lightColor[0]);
 
 			ImGui::SliderFloat("Brightness", &settings.lightBrightness, 0.0f, 100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
@@ -383,7 +444,8 @@ void WrenchDialog::render(ImGuiIO* io)
 			tooltip("Width of the glow drawn at the light, 0 for none");
 
 			ImGui::DragFloat3("Offset", &settings.lightOffset[0], 0.05f, -BrickAttachments::maxLightOffset, BrickAttachments::maxLightOffset, "%.2f");
-			tooltip("Where the light is from the middle of the brick, in studs. Drag or double click to type");
+			tooltip(forVehicle ? "Where the light is from the middle of the vehicle's front, in studs, along the vehicle's own axes. Drag or double click to type"
+				: "Where the light is from the middle of the brick, in studs. Drag or double click to type");
 
 			bool spotlight = settings.lightConeAngle > 0.0f;
 			if (ImGui::Checkbox("Spotlight", &spotlight))
@@ -396,13 +458,16 @@ void WrenchDialog::render(ImGuiIO* io)
 				tooltip("Full width of the beam");
 
 				bool turned = ImGui::SliderFloat("Yaw", &lightYaw, -180.0f, 180.0f, "%.0f degrees");
+				if (forVehicle)
+					tooltip("0 points the way the vehicle drives, 180 backward");
 				turned |= ImGui::SliderFloat("Pitch##Light", &lightPitch, -80.0f, 80.0f, "%.0f degrees");
 				tooltip("-90 points straight down, 90 straight up");
 				if (turned)
 				{
 					float yaw = glm::radians(lightYaw);
 					float pitch = glm::radians(lightPitch);
-					settings.lightDirection = glm::vec3(std::cos(pitch) * std::sin(yaw), std::sin(pitch), std::cos(pitch) * std::cos(yaw));
+					glm::vec3 direction(std::cos(pitch) * std::sin(yaw), std::sin(pitch), std::cos(pitch) * std::cos(yaw));
+					settings.lightDirection = directionFromDialog(direction, forVehicle ? editing.vehicleForward : glm::vec3(0, 0, 1));
 				}
 
 				ImGui::SliderFloat("Spin", &settings.lightSpin, -720.0f, 720.0f, "%.0f degrees/s");

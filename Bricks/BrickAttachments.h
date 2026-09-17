@@ -8,6 +8,8 @@
 #define BrickAttachment_Emitter 16
 #define BrickAttachment_Wheel 32
 #define BrickAttachment_Steering 64
+//8 is a print in saves, see Bricks/BrickSaves.cpp, so the vehicle horn and headlight take the last bit
+#define BrickAttachment_Horn 128
 
 //How a wheel brick's wheel drives once its bricks are sliced into a vehicle, from the old game's wheel wrench dialog
 struct WheelSettings
@@ -90,6 +92,16 @@ struct BrickAttachments
 	bool hasSteering = false;
 	SteeringSettings steering;
 
+	/*
+		The horn a vehicle made of these bricks honks, on its steering wheel brick like its music, see Vehicle::hornName
+		hasHorn with an empty hornName is a vehicle wrenched to have no horn at all, without it a new vehicle gets the Honk sound
+		lightIsHeadlight makes the light above the vehicle's headlight once the bricks are sliced, which its driver switches
+		on and off, rather than a light that's always on. Both ride in the BrickAttachment_Horn part
+	*/
+	bool hasHorn = false;
+	std::string hornName = "";
+	bool lightIsHeadlight = false;
+
 	//Server only: the loop, light, and emitter made from the settings above, never saved or sent
 	unsigned int musicLoopID = NO_ID;
 	netIDType lightID = NO_ID;
@@ -105,11 +117,15 @@ struct BrickAttachments
 	//Every light setting back to what a newly added light starts with, in the middle of its brick, leaving hasLight alone
 	void resetLight();
 
+	//What a vehicle's headlight starts as: a white spotlight a little narrower than a player's flashlight, shining the way the vehicle drives (forward, in its body's space)
+	void resetHeadlight(const glm::vec3& forward);
+
 	/*
 		Only the parts in getFlags, passed to writeBytes as they go
 		Music: name length byte, name, volume and pitch floats
 		Light: lightFloatCount floats, color, brightness, flicker, corona width, cone angle, direction, spin, offset, blink speed, blink strength
 		Emitter: name length byte, name
+		Horn: name length byte, name, then a byte with 1 for a headlight and 2 for a horn that was set (see hasHorn)
 	*/
 	void writeParts(const std::function<void(const void*, size_t)>& writeBytes) const;
 

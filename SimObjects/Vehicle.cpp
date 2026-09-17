@@ -18,11 +18,11 @@ static constexpr float maxSuspensionForce = 10000000.0f;
 static constexpr float spawnUpwardSpeed = 20.0f;
 
 //Net ID, position, rotation, brick offset, forward, seat, exit height, brick count, driver, dirt emitter type,
-//body and wheel type, body box, wheel count
-static constexpr unsigned int creationHeaderBytes = sizeof(netIDType) + PositionBytes + QuaternionBytes + sizeof(float) * 10 + sizeof(uint16_t) + sizeof(netIDType) + sizeof(uint16_t) + sizeof(netIDType) * 2 + sizeof(float) * 6 + 1;
+//body and wheel type, body box, headlight mount, flags, wheel count
+static constexpr unsigned int creationHeaderBytes = sizeof(netIDType) + PositionBytes + QuaternionBytes + sizeof(float) * 10 + sizeof(uint16_t) + sizeof(netIDType) + sizeof(uint16_t) + sizeof(netIDType) * 2 + sizeof(float) * 9 + 1 + 1;
 
-//Milliseconds since the last update, position, rotation, velocity as full floats since cars go faster than dynamics' quantized velocity reaches
-static constexpr unsigned int updateHeaderBytes = 1 + PositionBytes + QuaternionBytes + sizeof(float) * 3;
+//Milliseconds since the last update, position, rotation, velocity as full floats since cars go faster than dynamics' quantized velocity reaches, flags
+static constexpr unsigned int updateHeaderBytes = 1 + PositionBytes + QuaternionBytes + sizeof(float) * 3 + 1;
 
 //Packet type, vehicle net ID, u16 index of the first brick, u16 count
 static constexpr unsigned int brickPacketHeaderBytes = 1 + sizeof(netIDType) + sizeof(uint16_t) * 2;
@@ -182,6 +182,18 @@ bool Vehicle::buildServer(const BrickTypes* types, const btVector3& origin)
 	btVector3 aabbMin, aabbMax;
 	shape->getAabb(btTransform::getIdentity(), aabbMin, aabbMax);
 	exitHeight = (aabbMax.y() - aabbMin.y()) * 0.5f + 0.1f;
+
+	//Its headlight hangs off the middle of its front, where it isn't buried in its own body
+	glm::vec3 low = b2g3(aabbMin);
+	glm::vec3 high = b2g3(aabbMax);
+	headlightMount = (low + high) * 0.5f;
+	for (int axis = 0; axis < 3; axis++)
+	{
+		if (forward[axis] > 0.5f)
+			headlightMount[axis] = high[axis];
+		else if (forward[axis] < -0.5f)
+			headlightMount[axis] = low[axis];
+	}
 
 	raycaster = new VehicleRaycaster(world->getDynamicsWorld(), body);
 
@@ -708,6 +720,9 @@ void Vehicle::readCreation(const enet_uint8* src)
 	take(&wheelTypeID, sizeof(netIDType));
 	take(&bodyHalfExtents[0], sizeof(float) * 3);
 	take(&bodyOffset[0], sizeof(float) * 3);
+	take(&headlightMount[0], sizeof(float) * 3);
+	readFlags(src[at]);
+	at++;
 
 	wheels.resize(src[at]);
 	at++;
@@ -746,6 +761,7 @@ void Vehicle::readUpdate(const enet_uint8* src, float idealBufferSize)
 	interpolator.addSnapshot(position, rotation, idealBufferSize, src[0]);
 
 	memcpy(&serverVelocity[0], src + 1 + PositionBytes + QuaternionBytes, sizeof(float) * 3);
+	readFlags(src[1 + PositionBytes + QuaternionBytes + sizeof(float) * 3]);
 
 	unsigned int at = updateHeaderBytes;
 	for (VehicleWheel& wheel : wheels)
@@ -808,8 +824,19 @@ bool Vehicle::requiresNetUpdate()
 		return false;
 
 	//Every tick while it moves, and now and then while it sits still so late snapshots don't leave it somewhere else
-	flaggedForUpdate = body->isActive() || getTicksMS() - lastSentTime > 1500;
+	flaggedForUpdate = body->isActive() || stateChanged || getTicksMS() - lastSentTime > 1500;
 	return flaggedForUpdate;
+}
+
+unsigned char Vehicle::getFlags() const
+{
+	return (headlight.hasLight ? flagHasHeadlight : 0) | (headlightOn ? flagHeadlightOn : 0);
+}
+
+void Vehicle::readFlags(unsigned char flags)
+{
+	hasHeadlight = flags & flagHasHeadlight;
+	headlightLit = flags & flagHeadlightOn;
 }
 
 unsigned int Vehicle::getCreationPacketBytes() const
@@ -854,6 +881,8 @@ void Vehicle::addToCreationPacket(enet_uint8* dest) const
 	put(&wheelTypeID, sizeof(netIDType));
 	put(&bodyHalfExtents[0], sizeof(float) * 3);
 	put(&bodyOffset[0], sizeof(float) * 3);
+	put(&headlightMount[0], sizeof(float) * 3);
+	dest[at++] = getFlags();
 
 	dest[at++] = (enet_uint8)wheels.size();
 
@@ -887,6 +916,8 @@ void Vehicle::addToUpdatePacket(enet_uint8* dest)
 
 	glm::vec3 velocity = b2g3(body->getLinearVelocity());
 	memcpy(dest + 1 + PositionBytes + QuaternionBytes, &velocity[0], sizeof(float) * 3);
+	dest[1 + PositionBytes + QuaternionBytes + sizeof(float) * 3] = getFlags();
+	stateChanged = false;
 
 	unsigned int at = updateHeaderBytes;
 	for (const VehicleWheel& wheel : wheels)

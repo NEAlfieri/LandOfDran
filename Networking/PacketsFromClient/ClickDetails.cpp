@@ -90,12 +90,14 @@ void clickDetails(JoinedClient* source, Server const* const server, ENetPacket c
 	}
 	else if (usable && (clickFlags & ClickFlag_LeftPress))
 	{
-		//Left click honks while driving, if Lua registered the old game's Honk sound
+		//Left click honks while driving, with whatever horn the vehicle was wrenched to have (the old game's Honk sound unless changed)
+		//The sound rides on the vehicle, so the Doppler effect leaves it alone for the driver, who moves with it, and bends it for everyone else
 		std::shared_ptr<Vehicle> vehicle = client->vehicle.lock();
 		if (vehicle && vehicle->body && client->vehicleSeat == Vehicle::driverSeat && SDL_GetTicks() - client->lastHonkMS > honkCooldownMS)
 		{
 			client->lastHonkMS = SDL_GetTicks();
-			playSoundAt("Honk", b2g3(vehicle->body->getWorldTransform().getOrigin()), 1.0f, 1.0f);
+			if (!vehicle->hornName.empty())
+				playSoundOnVehicle(vehicle->hornName, vehicle, 1.0f, 1.0f);
 		}
 		else if (!vehicle && !client->getHeldItem())
 		{

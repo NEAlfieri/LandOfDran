@@ -34,7 +34,7 @@
 #include <chrono>
 
 //Used in the titlebar for the window, and for making sure client and server version match in mutliplayer
-#define GAME_VERSION 47
+#define GAME_VERSION 48
 
 //Default port for land of dran
 #define DEFAULT_PORT 8765

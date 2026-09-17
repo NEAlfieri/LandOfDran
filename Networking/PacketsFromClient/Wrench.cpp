@@ -158,7 +158,12 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 	{
 		settings.hasSteering = current && current->hasSteering;
 		settings.steering = current ? current->steering : SteeringSettings();
+		settings.hasHorn = current && current->hasHorn;
+		settings.hornName = current ? current->hornName : "";
+		settings.lightIsHeadlight = current && current->lightIsHeadlight;
 	}
+	else if (!settings.hornName.empty() && !soundTypeExists(settings.hornName) && !(current && current->hornName == settings.hornName))
+		settings.hornName = "";
 
 	if (brick->collides != collides)
 		pd->bricks->setColliding(brick, collides);
@@ -169,7 +174,7 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 /*
 	1 byte		-	packet type
 	4 bytes		-	vehicle net ID
-	The rest	-	BrickAttachments::write, only its music is used
+	The rest	-	BrickAttachments::write, with its music, its horn, and its headlight as the light
 */
 void vehicleWrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv)
 {
@@ -207,6 +212,14 @@ void vehicleWrenchSubmit(JoinedClient* source, Server const* const server, ENetP
 	//Loops can't be changed while they play, so only a change starts it over
 	if (settings.musicName != vehicle->musicName || settings.musicVolume != vehicle->musicVolume || settings.musicPitch != vehicle->musicPitch)
 		setVehicleMusic(*vehicle, settings.musicName, settings.musicVolume, settings.musicPitch);
+
+	//Any sound the server has can be the horn, or none, and whatever Lua already gave it
+	if (settings.hasHorn && (settings.hornName.empty() || soundTypeExists(settings.hornName) || settings.hornName == vehicle->hornName))
+		vehicle->hornName = settings.hornName;
+
+	//The light is its headlight, which applying switches on, see setVehicleHeadlight
+	if (settings.hasLight || vehicle->headlight.hasLight)
+		setVehicleHeadlight(*vehicle, settings);
 }
 
 /*

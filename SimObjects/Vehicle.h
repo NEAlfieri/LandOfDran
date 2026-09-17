@@ -5,6 +5,7 @@
 #include "ParticleTypes.h"
 #include "../Bricks/Brick.h"
 #include "../Bricks/BrickTypes.h"
+#include "../Bricks/BrickAttachments.h"
 
 class InstancedBrickRenderer;
 struct ClientData;
@@ -77,6 +78,9 @@ class Vehicle : public SimObject
 	//Server: getTicksMS of the last update sent
 	unsigned int lastSentTime = 0;
 
+	//Server: something in the update packet besides where it is changed, like its headlight, so one goes out even while it sits still
+	bool stateChanged = false;
+
 	//Server: its driver is turning or braking, so fast wheels throw dirt
 	bool throwsDirt = false;
 
@@ -119,6 +123,10 @@ class Vehicle : public SimObject
 	static constexpr unsigned int wheelUpdateBytes = 3;
 	//Creation packet bytes per passenger seat: its top, who rides on it
 	static constexpr unsigned int seatCreationBytes = sizeof(float) * 3 + sizeof(netIDType);
+
+	//The flags byte in creation and update packets
+	static constexpr unsigned char flagHasHeadlight = 1;
+	static constexpr unsigned char flagHeadlightOn = 2;
 
 	/*
 		Its bricks, with positions from the min corner of the box their grid boxes fill, so every coordinate is 0 or more
@@ -197,6 +205,28 @@ class Vehicle : public SimObject
 	float musicVolume = 1.0f;
 	float musicPitch = 1.0f;
 	unsigned int musicLoopID = NO_ID;
+
+	//Server: the sound its driver honks with left click, from its wrench dialog, "" for none. A new vehicle gets Honk if there's a sound by that name
+	std::string hornName = "";
+
+	/*
+		Server: its headlight from its wrench dialog, only the light fields are used, hasLight for whether it has one at all
+		The driver switches it on and off with their flashlight key, see setVehicleHeadlightOn in LuaFunctions/VehicleLua.h
+		headlightID is the Light shining while it's on, NO_ID while it's off or it has none
+	*/
+	BrickAttachments headlight;
+	bool headlightOn = false;
+	netIDType headlightID = NO_ID;
+
+	//Where its headlight sits before its offset, in its body's space: the middle of its front, see buildServer
+	glm::vec3 headlightMount = glm::vec3(0);
+
+	//Client: whether it has a headlight and whether that's lit, from the flags byte of the server's packets
+	bool hasHeadlight = false;
+	bool headlightLit = false;
+
+	//Server: has the next update packet go out even while it sits still, for a change to its flags byte
+	void markStateChanged() { stateChanged = true; }
 
 	//Server: lights and emitters carried over from its bricks, removed with it
 	std::vector<netIDType> lightIDs;
@@ -311,6 +341,10 @@ class Vehicle : public SimObject
 	ENetPacket* makeDriverPacket() const;
 
 	virtual bool requiresNetUpdate() override;
+
+	//The flags byte of creation and update packets: server side from its headlight, client side into hasHeadlight and headlightLit
+	unsigned char getFlags() const;
+	void readFlags(unsigned char flags);
 
 	virtual unsigned int getCreationPacketBytes() const override;
 

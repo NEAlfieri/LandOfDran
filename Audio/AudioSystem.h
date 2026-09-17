@@ -251,6 +251,18 @@ public:
 		return names;
 	}
 
+	//Names of the sound types that aren't music, in ID order, for the wrench dialog's horn list
+	std::vector<std::string> getEffectNames() const
+	{
+		std::vector<std::string> names;
+		for (const SoundType& sound : sounds)
+		{
+			if (!sound.isMusic && !sound.name.empty())
+				names.push_back(sound.name);
+		}
+		return names;
+	}
+
 	void playSound(int soundID, const SoundLocation& where, float pitch = 1.0f, float volume = 1.0f);
 
 	//For sounds the client plays on its own, like brick clicks. Silent if the server didn't register one by that name

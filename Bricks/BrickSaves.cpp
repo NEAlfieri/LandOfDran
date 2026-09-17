@@ -248,7 +248,7 @@ static bool readRecordExtras(std::istream& file, bool hasAttachments, bool hasPr
 
 	if (hasAttachments)
 	{
-		if (flags & (BrickAttachment_Music | BrickAttachment_Light | BrickAttachment_Emitter | BrickAttachment_Wheel | BrickAttachment_Steering))
+		if (flags & (BrickAttachment_Music | BrickAttachment_Light | BrickAttachment_Emitter | BrickAttachment_Wheel | BrickAttachment_Steering | BrickAttachment_Horn))
 		{
 			auto read = std::make_shared<BrickAttachments>();
 			if (!read->readParts(flags, [&file](void* data, size_t count) { return (bool)file.read((char*)data, count); }, lightFloats))

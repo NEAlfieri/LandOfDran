@@ -441,7 +441,9 @@ front of their eyes if their model has no such mesh) toward where that player lo
 spotlight's, its corona only shows to people inside the beam, so its owner doesn't see their own.
 `light:getPosition()` gives the player's position, and the server keeps pointing it with
 `setDirection`. `light:setPosition` takes it out of the player's hand, and `light:destroy()`
-switches it off without the `LightOff` sound.
+switches it off without the `LightOff` sound. A vehicle's headlight (see [Vehicles](#vehicles)) is a light the same
+way while it's on, kept in the vehicle's own space like the lights carried over from its bricks; `light:destroy()`
+switches it off too, and the vehicle makes a new one when it's switched on again.
 
 ### Global functions
 
@@ -695,7 +697,8 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 Players wrench a brick to open its wrench dialog, where they can change whether it collides, its name,
 its music loop with volume and pitch, its light, and its emitter. Its print isn't here, the print gun's menu
 puts that on, see [Print menu](#print-menu). Wheel and steering wheel bricks also get a section for
-how they drive once sliced into a vehicle, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
+how they drive once sliced into a vehicle, the steering wheel's with the horn it'll honk and a checkbox making its
+light the vehicle's headlight, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
 wrench item in hand (see [Items](#items)), or holding Insert (the `Wrench` key bind) and left clicking one. Lua can
 veto or redirect the Insert way with the `ClientWrenchBrick` event, or open a dialog itself with `client:openWrenchDialog`.
 A light being edited shines while the dialog is open, changing as its settings do, in place of whatever light
@@ -764,8 +767,14 @@ over. Like the old game, the body weighs one per colliding brick, so a very smal
 flip easily.
 
 Players right click a vehicle within 30 studs of their camera to get in, standing behind its steering wheel. W and S
-run the engine, A and D steer, jump brakes, left click plays the `Honk` sound if one is registered, and right click
-gets out just above the seat. Right clicking a vehicle someone is already driving stands the player on its free seat
+run the engine, A and D steer, jump brakes, left click honks its horn, and right click
+gets out just above the seat. The horn is the `Honk` sound if one is registered, unless the vehicle's wrench dialog
+(or `vehicle:setHorn`) picks another sound or none; it plays from the vehicle, moving with it, so the driver hears it
+unbent by the Doppler effect while everyone else hears it shift as the vehicle goes by. A vehicle can also have a headlight, a light in the
+vehicle's own space that hangs off the middle of its front and shines the way it drives unless aimed otherwise, given
+in its wrench dialog or with `vehicle:setHeadlight`. While the driver's vehicle has one, their flashlight key (`]` by
+default) switches the headlight on and off instead of their own flashlight, whether or not `client:setFlashlightEnabled`
+allows them a flashlight, and holding the key doesn't cycle its color; `LightOn` and `LightOff` play from the vehicle. Right clicking a vehicle someone is already driving stands the player on its free seat
 nearest the crosshair, or center prints that every seat is taken. A passenger is locked in place on the seat's top but
 turns to face wherever they look (on a brick vehicle, a model vehicle's passengers sit facing the way it drives), uses items and clicks like normal, and right clicks to get off where they stand;
 their movement keys do nothing and jets are off. Passengers stay on when the driver gets out. A vehicle nobody drives holds its brakes. The engine stops pushing past 200 studs a second.
@@ -776,10 +785,15 @@ of the brick under them, or brown when there's no brick under them. Wheels in th
 with a position that isn't a number is removed, with an error logged.
 
 Wrenching a wheel brick before slicing adds a Wheel section to its wrench dialog, and a steering wheel brick a Vehicle
-section, which are saved with the brick by `saveBuild`. Wrenching a vehicle (with the wrench item, or Insert and left
-click) opens a dialog with its music loop and a Save section, which saves the vehicle to `Saves/Vehicles/<name>.lod` on
-the player's own computer: the server sends its bricks as they were before slicing, wheels and their settings included,
-with its music on its steering wheel. Its red Remove vehicle button, once confirmed, fires `ClientRemoveVehicle` and
+section (with the horn the vehicle will honk) and a `Vehicle's headlight` checkbox in its Light section, which makes its
+light the vehicle's headlight once sliced rather than a light that stays on. These are saved with the brick by `saveBuild`.
+Wrenching a vehicle (with the wrench item, or Insert and left click) opens a dialog with its music loop, its horn (any
+sound that isn't music, or none), its headlight (the same settings as a brick's light, aimed relative to the way the
+vehicle drives and offset from the middle of its front; applying switches it on, and the light being edited shows on
+the vehicle while the dialog is open like a brick's does), and a Save section, which saves the vehicle to
+`Saves/Vehicles/<name>.lod` on the player's own computer: the server sends its bricks as they were before slicing, wheels
+and their settings included, with its music, horn, and headlight on its steering wheel (the headlight takes the place
+of any light the steering wheel brick had). Its red Remove vehicle button, once confirmed, fires `ClientRemoveVehicle` and
 removes it. The `Saved Vehicles` window, opened from the escape menu while in a server, lists those files; picking one
 to load as a vehicle ready to drive, or as plain bricks the player owns and can undo, change, and slice again, shows a
 ghost of it at the crosshair (up to 100 studs away, 15 studs out in the air otherwise), and left clicking places it there
@@ -803,6 +817,8 @@ anything; use the events to limit that.
 | Mass | `1.5` | 1.5 to 30 | How heavy each brick is to turn or tip over. |
 | Spin damping | `0.03` | 0 to 1 | How quickly spinning slows down. |
 | Realistic center of mass | off | | Off, the vehicle turns around a point down near its wheels, which keeps it from flipping. On, around the middle of its bricks. |
+| Horn | `Honk` | any sound type that isn't music, or none | What the driver honks with left click, see `vehicle:setHorn`. |
+| Vehicle's headlight | off | | In the Light section: the brick's light becomes the vehicle's headlight once sliced, see `vehicle:setHeadlight`. |
 
 ### Global functions
 
@@ -841,6 +857,11 @@ anything; use the events to limit that.
 | `vehicle:getBuilderID()` | none | client net ID, or `-1` | |
 | `vehicle:getMusic()` | none | sound name, volume, pitch; or `nil` | The loop playing from it. |
 | `vehicle:setMusic(soundName[, volume, pitch])` / `vehicle:setMusic(nil)` | a sound type's name; `volume` 0-1, `pitch` 0.05-10 | none | Plays the sound on a loop from the vehicle for everyone, following it, until it's changed or the vehicle is removed. Changing anything starts the loop over. |
+| `vehicle:getHorn()` | none | sound name, or `nil` | What its driver honks with left click. A new vehicle's is `Honk` if there's a sound by that name, or whatever its steering wheel brick was wrenched to. |
+| `vehicle:setHorn(soundName)` / `vehicle:setHorn(nil)` | a sound type's name | none | Changes its horn, `nil` for no horn. Logs an error for a name no sound type has. |
+| `vehicle:getHeadlight()` | none | table, or `nil` | Its headlight's settings, the same fields as `brick:getLight`, with `direction` and `offset` in the vehicle's own space: `offset` from the middle of its front, `direction` where `{0, 0, -1}` on a model vehicle whose `forward` is that shines straight ahead. |
+| `vehicle:setHeadlight(table)` / `vehicle:setHeadlight(nil)` | light fields as for `brick:setLight` | none | Gives it a headlight, or changes it, and switches it on. Fields left out keep the current values, or for a new headlight a white 70 degree spotlight of brightness 150 with a 0.5 stud corona shining the way it drives from the middle of its front. `nil` takes it off. |
+| `vehicle:setHeadlightOn(bool)` / `vehicle:isHeadlightOn()` | bool | none / bool | Switches the headlight on or off, playing `LightOn` or `LightOff` from the vehicle, like the driver's flashlight key does. Logs an error switching on a vehicle with no headlight. The light shows up in `getNumLights` while it's on and is gone while it's off. |
 
 
 ### Model vehicles
@@ -848,7 +869,7 @@ anything; use the events to limit that.
 A vehicle can be one model instead of a pile of bricks, for an add-on that ships its car as a shape rather than as a
 build. `spawnModelVehicle` makes one out of a dynamic type, which can be a `.dts` straight out of a Blockland add-on
 (see [DTS models](#dts-models)). The two kinds of vehicle sit side by side in the same world: a model vehicle is driven,
-ridden, flipped upright, wrenched for its music, and pushed by `radiusImpulse` exactly like a sliced one. What it
+ridden, flipped upright, wrenched for its music, horn, and headlight, and pushed by `radiusImpulse` exactly like a sliced one. What it
 doesn't have is bricks, so `vehicle:getNumBricks` is 0, `vehicle:saveToFile` refuses it, and `radiusImpulse` has nothing
 to break off it no matter what `vehicle:setDestructable` says. `vehicle:isModelVehicle` tells the two apart.
 
@@ -878,6 +899,8 @@ can type `/sit` in chat to sit down where they stand and `/sit` again to get up,
 | `seat` | `{0, 0, 0}` | Where the driver's model goes, which for a player model is their feet. |
 | `seats` | none | A list of at most 32 passenger seats, each `{x, y, z}` (or a table with a `position`), where that passenger stands. |
 | `builder` | none | A Client the vehicle counts as built by: `vehicle:getBuilder()` returns them and they're passed to `VehicleCreated`, like the client who sliced a brick vehicle. `spawnJeep(client)` sets it, so `/clearvehicles` in `serverstart.lua` removes a player's jeeps along with what they sliced or loaded. |
+| `horn` | `"Honk"` if registered | The sound type its driver honks with, `""` for none, see `vehicle:setHorn`. |
+| `headlight` | none | A table of light fields as for `vehicle:setHeadlight`, which gives it a headlight switched on. |
 
 A wheel's table takes `position`, `{x, y, z}` where its middle rests, and `radius` and `width` in world units (`1` each
 by default). It also takes any of the wheel settings in the table above under their own names, clamped to the same
@@ -1010,7 +1033,7 @@ A "client" represents one connected player/connection.
 | `client:isTalking()` | none | bool | Whether the client is talking right now, between `ClientStartTalking` and `ClientStopTalking`. |
 | `client:setJetsEnabled(enabled)` | bool | none | Whether the client can jet, on by default. Holding right mouse cancels gravity and lifts the player from `setDefaultController` up to 30 studs a second, moving at twice walking speed while they walk, not while swimming. A player lying down (the `Crawl` key bind, Left Shift) is pushed along the way they face at up to 30 studs a second instead of being lifted, which is faster than jetting upright - crawling slows the legs, not the jets. Each foot (`Left_Foot` and `Right_Foot` meshes, or the middle of a model without them) gets a `playerJetEmitter` while they jet, if Lua added that emitter type. Turning it off mid-jet drops them and removes the flames. Not remembered if they reconnect. |
 | `client:getJetsEnabled()` | none | bool | Whether `setJetsEnabled` lets the client jet. |
-| `client:setFlashlightEnabled(enabled)` | bool | none | Whether the client can use their flashlight, on by default. Players tap their flashlight key (`]` by default) to switch it on or off, and hold it to cycle through colors starting from white. The `LightOn` and `LightOff` sounds play from their player. Turning it off switches off a flashlight that's on. Needs a player from `setDefaultController` to hold it (see Lights). Not remembered if they reconnect. |
+| `client:setFlashlightEnabled(enabled)` | bool | none | Whether the client can use their flashlight, on by default. Players tap their flashlight key (`]` by default) to switch it on or off, and hold it to cycle through colors starting from white. The `LightOn` and `LightOff` sounds play from their player. Turning it off switches off a flashlight that's on. Needs a player from `setDefaultController` to hold it (see Lights). Not remembered if they reconnect. While they drive a vehicle with a headlight, the key switches that instead, whatever this is set to, see [Vehicles](#vehicles). |
 | `client:getFlashlightEnabled()` | none | bool | Whether `setFlashlightEnabled` lets the client use a flashlight. |
 | `client:setFreeCameraEnabled(enabled)` | bool | none | Whether the client can drop their camera off their player and fly it around, **off by default for everyone but admins**, who are given it as they log in (single player's host included). With it on, their `Drop Camera At Player` key (F7) leaves their player standing where it is and flies the camera with the walking keys at 60 studs a second, through anything, and `Drop Player At Camera` (F8) teleports their player to the camera and puts the camera back on it. A yellow light with a wide corona follows the loose camera so everyone can see where it is, and their updates follow the camera rather than the player they left behind. Turning it off puts a camera that's already flying back on its player, where it is. `client:bindCamera` or `client:staticCamera` also takes the camera back. Not remembered if they reconnect. |
 | `client:getFreeCameraEnabled()` | none | bool | Whether `setFreeCameraEnabled` lets the client fly their camera. |

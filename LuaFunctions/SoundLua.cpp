@@ -52,14 +52,14 @@ static ENetPacket* makeSoundTypePacket(size_t id, const ServerProgramData::Regis
 }
 
 //Sent unreliably, a lost click isn't worth resending late
-static ENetPacket* makeOneShotPacket(int soundID, float pitch, float volume, SoundLocationKind kind, const glm::vec3& position, const std::shared_ptr<Dynamic>& dynamic)
+static ENetPacket* makeOneShotPacket(int soundID, float pitch, float volume, SoundLocationKind kind, const glm::vec3& position, const std::shared_ptr<Dynamic>& dynamic, const std::shared_ptr<Vehicle>& vehicle = nullptr)
 {
 	std::vector<unsigned char> bytes;
 	bytes.push_back(OneShotSound);
 	put(bytes, (uint16_t)soundID);
 	put(bytes, pitch);
 	put(bytes, volume);
-	putLocation(bytes, kind, position, dynamic);
+	putLocation(bytes, kind, position, dynamic, vehicle);
 	return makePacket(bytes, Unreliable);
 }
 
@@ -153,6 +153,20 @@ void playSoundOn(const std::string& name, const std::shared_ptr<Dynamic>& dynami
 	pitch = std::clamp(pitch, 0.05f, 10.0f);
 	volume = std::clamp(volume, 0.0f, 1.0f);
 	LUA_server->broadcast(makeOneShotPacket(soundID, pitch, volume, SoundLocationDynamic, glm::vec3(0), dynamic), Unreliable);
+}
+
+void playSoundOnVehicle(const std::string& name, const std::shared_ptr<Vehicle>& vehicle, float pitch, float volume)
+{
+	if (!LUA_pd || !LUA_server || !vehicle)
+		return;
+
+	int soundID = findSoundType(name);
+	if (soundID == -1)
+		return;
+
+	pitch = std::clamp(pitch, 0.05f, 10.0f);
+	volume = std::clamp(volume, 0.0f, 1.0f);
+	LUA_server->broadcast(makeOneShotPacket(soundID, pitch, volume, SoundLocationVehicle, glm::vec3(0), nullptr, vehicle), Unreliable);
 }
 
 bool soundTypeExists(const std::string& name)

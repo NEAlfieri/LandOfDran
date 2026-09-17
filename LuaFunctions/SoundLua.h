@@ -28,6 +28,9 @@ int findSoundType(const std::string& name);
 //Same, following a dynamic around while it plays
 void playSoundOn(const std::string& name, const std::shared_ptr<Dynamic>& dynamic, float pitch, float volume);
 
+//Same, following a vehicle, which also moves the sound with it for the Doppler effect, so its own driver hears it unbent
+void playSoundOnVehicle(const std::string& name, const std::shared_ptr<Vehicle>& vehicle, float pitch, float volume);
+
 //For music bricks: starts a loop of a registered sound at a position for everyone, false if there's no sound by that name
 bool startSoundLoopAt(const std::string& name, const glm::vec3& position, float pitch, float volume, unsigned int& loopID);
 

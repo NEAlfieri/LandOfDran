@@ -199,6 +199,9 @@ enum FromServerPacketType : unsigned char
 //Flags byte of a PlayerAbilities packet
 #define PlayerAbility_Jets 1
 #define PlayerAbility_Flashlight 2
+
+//The second byte of a FlashlightRequest that switches the headlight of the vehicle the client drives, rather than 0 or 1 for their own flashlight
+#define FlashlightRequest_VehicleLight 2
 #define PlayerAbility_FreeCamera 4
 
 //Second byte of a VoiceStatus packet

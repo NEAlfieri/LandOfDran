@@ -32,6 +32,15 @@ void openPrintMenu(ClientData& client, const Brick* brick);
 //Whether a brick's type has TEX:PRINT faces, so a print put on it would actually show
 bool brickCanPrint(const Brick* brick);
 
+//Pushes a table of the light fields in settings, the way brick:getLight returns them, see LuaAPI.md
+void pushLightTable(lua_State* L, const BrickAttachments& settings);
+
+/*
+	Reads the light fields in the table at index into settings, leaving the ones it doesn't have alone
+	Logs an error and returns false for an unknown field, a value of the wrong kind, or a direction of 0, 0, 0
+*/
+bool readLightTable(lua_State* L, int index, BrickAttachments& settings);
+
 /*
 	Registers global brick functions
 	Returns brick methods to be passed to BrickHolder::makeLuaMetatable, which then deletes the list

@@ -34,13 +34,14 @@ void SteeringSettings::clampValues()
 unsigned char BrickAttachments::getFlags() const
 {
 	return (musicName.empty() ? 0 : BrickAttachment_Music) | (hasLight ? BrickAttachment_Light : 0) | (emitterName.empty() ? 0 : BrickAttachment_Emitter) |
-		(hasWheel ? BrickAttachment_Wheel : 0) | (hasSteering ? BrickAttachment_Steering : 0);
+		(hasWheel ? BrickAttachment_Wheel : 0) | (hasSteering ? BrickAttachment_Steering : 0) | (hasHorn || lightIsHeadlight ? BrickAttachment_Horn : 0);
 }
 
 void BrickAttachments::clampValues()
 {
 	musicName = musicName.substr(0, maxNameLength);
 	emitterName = emitterName.substr(0, maxNameLength);
+	hornName = hornName.substr(0, maxNameLength);
 
 	//Same ranges as Lua's startSoundLoop
 	musicVolume = std::clamp(finiteOr(musicVolume, 1.0f), 0.0f, 1.0f);
@@ -85,6 +86,20 @@ void BrickAttachments::resetLight()
 	lightOffset = defaults.lightOffset;
 }
 
+//Like a player's flashlight, a little narrower
+static constexpr float headlightBrightness = 150.0f;
+static constexpr float headlightConeAngle = 70.0f;
+static constexpr float headlightCoronaWidth = 0.5f;
+
+void BrickAttachments::resetHeadlight(const glm::vec3& forward)
+{
+	resetLight();
+	lightBrightness = headlightBrightness;
+	lightConeAngle = headlightConeAngle;
+	lightCoronaWidth = headlightCoronaWidth;
+	lightDirection = glm::length(forward) > 0.0001f ? glm::normalize(forward) : glm::vec3(0, 0, 1);
+}
+
 void BrickAttachments::writeParts(const std::function<void(const void*, size_t)>& writeBytes) const
 {
 	auto writeName = [&](const std::string& name)
@@ -125,6 +140,13 @@ void BrickAttachments::writeParts(const std::function<void(const void*, size_t)>
 		writeBytes(values, sizeof(values));
 		writeBytes(&realistic, 1);
 	}
+
+	if (hasHorn || lightIsHeadlight)
+	{
+		writeName(hornName);
+		unsigned char bits = (lightIsHeadlight ? 1 : 0) | (hasHorn ? 2 : 0);
+		writeBytes(&bits, 1);
+	}
 }
 
 bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(void*, size_t)>& readBytes, size_t lightFloats)
@@ -141,6 +163,9 @@ bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(v
 
 	musicName = "";
 	emitterName = "";
+	hornName = "";
+	hasHorn = false;
+	lightIsHeadlight = false;
 	hasLight = flags & BrickAttachment_Light;
 	hasWheel = flags & BrickAttachment_Wheel;
 	hasSteering = flags & BrickAttachment_Steering;
@@ -198,6 +223,16 @@ bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(v
 		steering.mass = values[0];
 		steering.angularDamping = values[1];
 		steering.realisticCenterOfMass = realistic & 1;
+	}
+
+	if (flags & BrickAttachment_Horn)
+	{
+		unsigned char bits;
+		if (!readName(hornName) || !readBytes(&bits, 1))
+			return false;
+
+		lightIsHeadlight = hasLight && (bits & 1);
+		hasHorn = bits & 2;
 	}
 
 	return true;

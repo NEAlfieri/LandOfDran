@@ -16,14 +16,17 @@ struct WrenchSubmission
 	//A wheel or steering wheel brick gets a section for its vehicle settings
 	VehiclePart part = VehiclePart_None;
 
-	//Set instead of brickID for a vehicle, which only has music
+	//Set instead of brickID for a vehicle, which has music, a horn, and a headlight as its light
 	netIDType vehicleID = NO_ID;
+
+	//Client only, never sent back: which way the vehicle drives in its body's space, so the light's yaw and pitch are relative to that
+	glm::vec3 vehicleForward = glm::vec3(0, 0, 1);
 
 	//Client only, never sent back: whether the vehicle is made of bricks, since a vehicle save is a save of bricks
 	//and a model vehicle has none, see OpenVehicleWrenchPacket
 	bool madeOfBricks = true;
 
-	//Client only, never sent back: the brick's light as the server has it, so the dialog can leave it out
+	//Client only, never sent back: the brick's light as the server has it, or the vehicle's headlight while it's on, so the dialog can leave it out
 	//while it shines the one being edited instead, see WrenchDialog::getLightPreview
 	netIDType lightID = NO_ID;
 };
@@ -31,6 +34,7 @@ struct WrenchSubmission
 /*
 	Changes a brick's collision, name, music loop, light, and emitter. Its print isn't here, the print gun's menu
 	puts that on, see Interface/PrintMenu.h
+	For a vehicle: its music, horn, and headlight, and a steering wheel brick gets the horn and a headlight too, for once it's sliced
 	The server opens it when a player wrenches a brick, or when Lua calls client:openWrenchDialog, see OpenWrenchDialogPacket
 */
 class WrenchDialog : public Window
@@ -43,6 +47,8 @@ class WrenchDialog : public Window
 	//What the server has to pick from, plus the brick's own pick if Lua gave it one that isn't listed
 	std::vector<std::string> musicNames;
 	std::vector<std::string> emitterNames;
+	//Sounds that aren't music, for the horn
+	std::vector<std::string> soundNames;
 
 	//The spotlight's direction as sliders, in degrees, a pitch of -90 points straight down
 	float lightYaw = 0;
@@ -81,19 +87,19 @@ class WrenchDialog : public Window
 
 	public:
 
-	//Shows a brick's settings from the server, replacing anything that was being edited
-	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters);
+	//Shows a brick's settings from the server, replacing anything that was being edited. sounds are the ones that aren't music, for a horn
+	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds);
 
 	//True once after Apply is clicked, with what to send
 	bool takeSubmission(WrenchSubmission& submission);
 
 	/*
-		While a brick's dialog is open: the light settings as they're being edited, for the client to shine in place of
-		the brick's real one, which is what makes a change to a light show before it's applied, see LoopClient::updateLightPreview
-		brickID is the brick it belongs to, hideLightID is its real light (NO_ID if it has none), which is left out while this is up
+		While a brick's or vehicle's dialog is open: the light settings as they're being edited, for the client to shine in place of
+		the brick's real one or the vehicle's headlight, which is what makes a change to a light show before it's applied, see LoopClient::updateLightPreview
+		brickID or vehicleID is what it belongs to (the other NO_ID), hideLightID is its real light (NO_ID if it has none), which is left out while this is up
 		False when nothing is being edited, which puts the real light back, so closing the window without applying undoes it
 	*/
-	bool getLightPreview(netIDType& brickID, netIDType& hideLightID, BrickAttachments& lightSettings) const;
+	bool getLightPreview(netIDType& brickID, netIDType& vehicleID, netIDType& hideLightID, BrickAttachments& lightSettings) const;
 
 	//True once after a vehicle's Save is clicked with a usable name, with the vehicle and the file in Saves/Vehicles to write it to
 	bool takeSaveRequest(netIDType& vehicleID, std::string& path);

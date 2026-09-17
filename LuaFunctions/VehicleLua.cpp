@@ -1,6 +1,7 @@
 #include "VehicleLua.h"
 #include "ClientLua.h"
 #include "SoundLua.h"
+#include "BrickLua.h"
 #include "EmitterLua.h"
 #include "../Bricks/SelectionBox.h"
 #include "../Bricks/BrickSaves.h"
@@ -268,6 +269,13 @@ static std::shared_ptr<Vehicle> buildVehicle(ClientData* builder, const std::vec
 		BrickAttachments* kept = vehicle->bricks[a].attachments.get();
 		glm::vec3 center = brick->getWorldCenter();
 
+		//A steering wheel's light marked as the headlight becomes the one the driver switches, rather than shining all the time
+		if (settings.hasLight && settings.lightIsHeadlight && brick == steeringBrick)
+		{
+			vehicle->headlight = settings;
+			continue;
+		}
+
 		if (settings.hasLight && LUA_pd->lights)
 		{
 			std::shared_ptr<Light> light = LUA_pd->lights->create(center, settings.lightColor, settings.lightBrightness, settings.lightFlicker, settings.lightCoronaWidth);
@@ -293,12 +301,18 @@ static std::shared_ptr<Vehicle> buildVehicle(ClientData* builder, const std::vec
 		}
 	}
 
-	//Music on the steering wheel becomes the vehicle's, which is also how a saved vehicle keeps its music
+	//Music on the steering wheel becomes the vehicle's, which is also how a saved vehicle keeps its music, and the same for its horn
 	if (steeringBrick->attachments && !steeringBrick->attachments->musicName.empty())
 	{
 		const BrickAttachments& music = *steeringBrick->attachments;
 		setVehicleMusic(*vehicle, music.musicName, music.musicVolume, music.musicPitch);
 	}
+
+	vehicle->hornName = steeringBrick->attachments && steeringBrick->attachments->hasHorn ? steeringBrick->attachments->hornName : defaultVehicleHorn();
+
+	//The headlight a steering wheel brought along comes on with the vehicle, the way it was when it was saved
+	if (vehicle->headlight.hasLight)
+		setVehicleHeadlight(*vehicle, vehicle->headlight);
 
 	LUA_pd->vehiclesAwaitingBricks.push_back(vehicle);
 
@@ -540,6 +554,8 @@ void destroyVehicle(std::shared_ptr<Vehicle> vehicle)
 		}
 	}
 
+	setVehicleHeadlightOn(*vehicle, false, false);
+
 	for (netIDType id : vehicle->emitterIDs)
 	{
 		if (std::shared_ptr<Emitter> emitter = LUA_pd->emitters->find(id))
@@ -570,21 +586,26 @@ void openVehicleWrenchDialog(ClientData& client, const Vehicle& vehicle)
 		1 byte		-	packet type
 		4 bytes		-	vehicle net ID
 		4 bytes		-	how many bricks it has
-		The rest	-	BrickAttachments::write with just its music
+		4 bytes		-	net ID of the light its headlight is shining with, NO_ID for none
+		The rest	-	BrickAttachments::write with its music, horn, and headlight as the light
 	*/
 	netIDType id = vehicle.getID();
 	uint32_t brickCount = (uint32_t)vehicle.bricks.size();
 
-	std::vector<unsigned char> bytes(1 + sizeof(netIDType) + sizeof(uint32_t));
+	std::vector<unsigned char> bytes(1 + sizeof(netIDType) + sizeof(uint32_t) + sizeof(netIDType));
 	bytes[0] = OpenVehicleWrench;
 	memcpy(bytes.data() + 1, &id, sizeof(netIDType));
 	memcpy(bytes.data() + 1 + sizeof(netIDType), &brickCount, sizeof(uint32_t));
+	memcpy(bytes.data() + 1 + sizeof(netIDType) + sizeof(uint32_t), &vehicle.headlightID, sizeof(netIDType));
 
-	BrickAttachments music;
-	music.musicName = vehicle.musicName;
-	music.musicVolume = vehicle.musicVolume;
-	music.musicPitch = vehicle.musicPitch;
-	music.write(bytes);
+	//Without a headlight no light part goes out at all, the client starts Has headlight from the defaults itself, see OpenVehicleWrenchPacket
+	BrickAttachments settings = vehicle.headlight;
+	settings.musicName = vehicle.musicName;
+	settings.musicVolume = vehicle.musicVolume;
+	settings.musicPitch = vehicle.musicPitch;
+	settings.hasHorn = true;
+	settings.hornName = vehicle.hornName;
+	settings.write(bytes);
 
 	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
 	client.wrenchedVehicleID = id;
@@ -609,6 +630,98 @@ void setVehicleMusic(Vehicle& vehicle, const std::string& name, float volume, fl
 		vehicle.musicLoopID = loopID;
 }
 
+std::string defaultVehicleHorn()
+{
+	return soundTypeExists("Honk") ? "Honk" : "";
+}
+
+BrickAttachments defaultVehicleHeadlight(const Vehicle& vehicle)
+{
+	BrickAttachments settings;
+	settings.resetHeadlight(vehicle.forward);
+	return settings;
+}
+
+//Gives the vehicle's headlight Light the vehicle's headlight settings, on the vehicle where they say
+static void shapeHeadlight(Light& light, const std::shared_ptr<Vehicle>& vehicle)
+{
+	const BrickAttachments& settings = vehicle->headlight;
+	light.setColor(settings.lightColor);
+	light.setBrightness(settings.lightBrightness);
+	light.setFlicker(settings.lightFlicker);
+	light.setCoronaWidth(settings.lightCoronaWidth);
+	light.setConeAngle(settings.lightConeAngle);
+	light.setDirection(settings.lightDirection);
+	light.setSpin(settings.lightSpin);
+	light.setBlink(settings.lightBlinkSpeed, settings.lightBlinkStrength);
+	light.attachToVehicle(vehicle, vehicle->headlightMount + settings.lightOffset);
+}
+
+void setVehicleHeadlightOn(Vehicle& vehicle, bool on, bool playSounds)
+{
+	std::shared_ptr<Vehicle> shared = std::static_pointer_cast<Vehicle>(vehicle.getMe());
+	if (!LUA_pd || !LUA_pd->lights || !shared)
+		return;
+
+	std::shared_ptr<Light> light = vehicle.headlightID != NO_ID ? LUA_pd->lights->find(vehicle.headlightID) : nullptr;
+	if (light && light->getVehicleID() != vehicle.getID())
+		light = nullptr;
+
+	bool lit = on && vehicle.headlight.hasLight;
+	if (lit)
+	{
+		if (!light)
+		{
+			glm::vec3 position = vehicle.body ? b2g3(vehicle.body->getWorldTransform() * g2b3(vehicle.headlightMount + vehicle.headlight.lightOffset)) : vehicle.headlightMount;
+			light = LUA_pd->lights->create(position, vehicle.headlight.lightColor, vehicle.headlight.lightBrightness, vehicle.headlight.lightFlicker, vehicle.headlight.lightCoronaWidth);
+			vehicle.headlightID = light->getID();
+			if (playSounds)
+				playSoundOnVehicle("LightOn", shared, 1.0f, 1.0f);
+		}
+
+		shapeHeadlight(*light, shared);
+	}
+	else
+	{
+		if (light)
+		{
+			LUA_pd->lights->destroy(light);
+			if (playSounds)
+				playSoundOnVehicle("LightOff", shared, 1.0f, 1.0f);
+		}
+		vehicle.headlightID = NO_ID;
+	}
+
+	if (vehicle.headlightOn != lit)
+	{
+		vehicle.headlightOn = lit;
+		vehicle.markStateChanged();
+	}
+}
+
+void setVehicleHeadlight(Vehicle& vehicle, const BrickAttachments& settings)
+{
+	//Only the light travels, the rest of a BrickAttachments means nothing here
+	BrickAttachments light = settings;
+	light.clampValues();
+	light.musicName = "";
+	light.emitterName = "";
+	light.hasWheel = false;
+	light.hasSteering = false;
+	light.hasHorn = false;
+	light.hornName = "";
+	light.lightIsHeadlight = false;
+	light.musicLoopID = NO_ID;
+	light.lightID = NO_ID;
+	light.emitterID = NO_ID;
+
+	vehicle.headlight = light;
+	vehicle.markStateChanged();
+
+	//Comes on so whoever wrenched it sees what they did, and goes out for good when it's taken off
+	setVehicleHeadlightOn(vehicle, light.hasLight, false);
+}
+
 std::string makeVehicleSaveFile(const Vehicle& vehicle)
 {
 	std::vector<Brick> copies = vehicle.bricks;
@@ -623,6 +736,34 @@ std::string makeVehicleSaveFile(const Vehicle& vehicle)
 		settings->musicName = vehicle.musicName;
 		settings->musicVolume = vehicle.musicVolume;
 		settings->musicPitch = vehicle.musicPitch;
+		settings->hasHorn = true;
+		settings->hornName = vehicle.hornName;
+
+		//The headlight takes the steering wheel's light slot, so a steering wheel with its own light loses that in the save,
+		//and a headlight that was taken off since the vehicle was loaded doesn't come back as a plain light
+		if (!vehicle.headlight.hasLight && settings->lightIsHeadlight)
+		{
+			settings->hasLight = false;
+			settings->resetLight();
+		}
+		settings->lightIsHeadlight = vehicle.headlight.hasLight;
+		if (vehicle.headlight.hasLight)
+		{
+			BrickAttachments headlight = vehicle.headlight;
+			headlight.musicName = settings->musicName;
+			headlight.musicVolume = settings->musicVolume;
+			headlight.musicPitch = settings->musicPitch;
+			headlight.emitterName = settings->emitterName;
+			headlight.hasWheel = settings->hasWheel;
+			headlight.wheel = settings->wheel;
+			headlight.hasSteering = settings->hasSteering;
+			headlight.steering = settings->steering;
+			headlight.hasHorn = true;
+			headlight.hornName = settings->hornName;
+			headlight.lightIsHeadlight = true;
+			*settings = headlight;
+		}
+
 		brick.attachments = settings->isEmpty() ? nullptr : settings;
 	}
 
@@ -1228,6 +1369,29 @@ static int LUA_spawnModelVehicle(lua_State* L)
 		lua_pushstring(L, "That vehicle's body couldn't be built.");
 		return 2;
 	}
+
+	//What it honks with, and a headlight for its driver to switch on, which its wrench dialog can change like any vehicle's
+	vehicle->hornName = defaultVehicleHorn();
+	lua_getfield(L, -1, "horn");
+	if (lua_type(L, -1) == LUA_TSTRING)
+	{
+		std::string horn = lua_tostring(L, -1);
+		if (horn.empty() || soundTypeExists(horn))
+			vehicle->hornName = horn;
+		else
+			error("There's no sound type named " + horn + " for settings.horn");
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, -1, "headlight");
+	if (lua_istable(L, -1))
+	{
+		BrickAttachments headlight = defaultVehicleHeadlight(*vehicle);
+		headlight.hasLight = true;
+		if (readLightTable(L, lua_gettop(L), headlight))
+			setVehicleHeadlight(*vehicle, headlight);
+	}
+	lua_pop(L, 1);
 
 	info((builderClient ? builderClient->name : std::string("Lua")) + " made model vehicle " + std::to_string(vehicle->getID()) + " out of type " + bodyType->scriptName +
 		" with " + std::to_string(wheels.size()) + " wheels");
@@ -1842,6 +2006,145 @@ static int LUA_vehicleSetMusic(lua_State* L)
 	return 0;
 }
 
+static int LUA_vehicleGetHorn(lua_State* L)
+{
+	scope("(LUA) vehicle:getHorn");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:getHorn()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (vehicle->hornName.empty())
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, vehicle->hornName.c_str());
+	return 1;
+}
+
+static int LUA_vehicleSetHorn(lua_State* L)
+{
+	scope("(LUA) vehicle:setHorn");
+
+	const std::string usage = "vehicle:setHorn(soundName) or vehicle:setHorn(nil)";
+	if (lua_gettop(L) != 2 || !(lua_type(L, 2) == LUA_TSTRING || lua_isnil(L, 2)))
+	{
+		error("Expected " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_isnil(L, 2) ? "" : lua_tostring(L, 2);
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, usage);
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (!name.empty() && !soundTypeExists(name))
+	{
+		error("There's no sound type named " + name);
+		return 0;
+	}
+
+	vehicle->hornName = name.substr(0, BrickAttachments::maxNameLength);
+	return 0;
+}
+
+static int LUA_vehicleGetHeadlight(lua_State* L)
+{
+	scope("(LUA) vehicle:getHeadlight");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:getHeadlight()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (!vehicle->headlight.hasLight)
+		lua_pushnil(L);
+	else
+		pushLightTable(L, vehicle->headlight);
+	return 1;
+}
+
+static int LUA_vehicleSetHeadlight(lua_State* L)
+{
+	scope("(LUA) vehicle:setHeadlight");
+
+	const std::string usage = "vehicle:setHeadlight(table) or vehicle:setHeadlight(nil)";
+	if (lua_gettop(L) != 2 || !(lua_istable(L, 2) || lua_isnil(L, 2)))
+	{
+		error("Expected " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, usage);
+	if (!vehicle)
+	{
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	if (lua_isnil(L, 2))
+	{
+		BrickAttachments none;
+		none.hasLight = false;
+		setVehicleHeadlight(*vehicle, none);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	//Fields left out keep the headlight's current values, or a new headlight's
+	BrickAttachments settings = vehicle->headlight.hasLight ? vehicle->headlight : defaultVehicleHeadlight(*vehicle);
+	settings.hasLight = true;
+	if (readLightTable(L, 2, settings))
+		setVehicleHeadlight(*vehicle, settings);
+
+	lua_settop(L, 0);
+	return 0;
+}
+
+static int LUA_vehicleSetHeadlightOn(lua_State* L)
+{
+	scope("(LUA) vehicle:setHeadlightOn");
+
+	const std::string usage = "vehicle:setHeadlightOn(bool)";
+	if (lua_gettop(L) != 2 || !lua_isboolean(L, 2))
+	{
+		error("Expected " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	bool on = lua_toboolean(L, 2);
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, usage);
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (on && !vehicle->headlight.hasLight)
+	{
+		error("That vehicle has no headlight to switch on, give it one with vehicle:setHeadlight");
+		return 0;
+	}
+
+	setVehicleHeadlightOn(*vehicle, on, true);
+	return 0;
+}
+
+static int LUA_vehicleIsHeadlightOn(lua_State* L)
+{
+	scope("(LUA) vehicle:isHeadlightOn");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:isHeadlightOn()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	lua_pushboolean(L, vehicle->headlightOn);
+	return 1;
+}
+
 //Client methods, called as client:method(...)
 static std::shared_ptr<ClientData> clientOnTop(lua_State* L, const std::string& usage)
 {
@@ -1987,6 +2290,12 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "getBuilderID", LUA_vehicleGetBuilderID },
 		{ "getMusic", LUA_vehicleGetMusic },
 		{ "setMusic", LUA_vehicleSetMusic },
+		{ "getHorn", LUA_vehicleGetHorn },
+		{ "setHorn", LUA_vehicleSetHorn },
+		{ "getHeadlight", LUA_vehicleGetHeadlight },
+		{ "setHeadlight", LUA_vehicleSetHeadlight },
+		{ "setHeadlightOn", LUA_vehicleSetHeadlightOn },
+		{ "isHeadlightOn", LUA_vehicleIsHeadlightOn },
 		{ NULL, NULL }
 	};
 

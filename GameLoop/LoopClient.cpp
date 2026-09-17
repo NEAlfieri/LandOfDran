@@ -244,6 +244,18 @@ void LoopClient::updateFlashlight(float deltaT)
 	//Polled every frame so a press while it's disabled doesn't go off later, and so a tap too quick to be down on any frame still counts
 	bool pressed = pd.input->pollCommand(Flashlight);
 
+	//Driving a vehicle with a headlight, the key switches that instead of our own light, which is the vehicle's so it doesn't mind whether ours is allowed
+	//Only a tap, holding it doesn't cycle a headlight's color, that's set in the vehicle's wrench dialog
+	std::shared_ptr<Vehicle> driven = getDrivenVehicle();
+	if (driven && driven->hasHeadlight && client)
+	{
+		flashlightHeldMS = 0;
+		flashlightCycling = false;
+		if (pressed)
+			client->send(makeVehicleLightPacket(), OtherReliable);
+		return;
+	}
+
 	//The server turned it off when it disabled it
 	if (!simulation.flashlightEnabled || !client)
 	{
@@ -610,22 +622,27 @@ void LoopClient::updateLightPreview(std::vector<PointLightSource>& lights, netID
 	hiddenLightID = NO_ID;
 
 	netIDType brickID = NO_ID;
+	netIDType vehicleID = NO_ID;
 	BrickAttachments settings;
-	if (!pd.wrenchDialog || !pd.wrenchDialog->getLightPreview(brickID, hiddenLightID, settings))
+	if (!pd.wrenchDialog || !pd.wrenchDialog->getLightPreview(brickID, vehicleID, hiddenLightID, settings))
 	{
 		lightPreview = nullptr;
 		return;
 	}
 
-	//The brick's real light stays hidden either way, so unchecking Has light shows it going out
-	const Brick* brick = simulation.bricks ? simulation.bricks->find(brickID) : nullptr;
-	if (!brick || !settings.hasLight)
+	//The brick's real light, or the vehicle's headlight, stays hidden either way, so unchecking Has light shows it going out
+	const Brick* brick = brickID != NO_ID && simulation.bricks ? simulation.bricks->find(brickID) : nullptr;
+	std::shared_ptr<Vehicle> vehicle = vehicleID != NO_ID && simulation.vehicles ? simulation.vehicles->find(vehicleID) : nullptr;
+	if ((!brick && !vehicle) || !settings.hasLight)
 	{
 		lightPreview = nullptr;
 		return;
 	}
 
-	glm::vec3 position = brick->getWorldCenter() + settings.lightOffset;
+	//A headlight's settings are in the vehicle's space, where it's drawn right now, see setVehicleHeadlight
+	glm::vec3 position = brick ? brick->getWorldCenter() + settings.lightOffset : vehicle->renderedPosition + vehicle->renderedRotation * (vehicle->headlightMount + settings.lightOffset);
+	if (vehicle)
+		settings.lightDirection = vehicle->renderedRotation * settings.lightDirection;
 
 	if (!lightPreview)
 		lightPreview = Light::makeLocal(position);
@@ -2961,8 +2978,13 @@ void LoopClient::renderEverything(float deltaT)
 		hudLines.push_back("Free camera: the walking keys fly it, " + std::string(SDL_GetScancodeName(pd.input->getKeyBind(DropPlayerAtCamera))) +
 			" drops your player here. Your player stays where you left it, and a yellow light shows everyone where the camera is");
 
-	if (getDrivenVehicle())
-		hudLines.push_back("Driving: W/S drive, A/D steer, jump brakes, left click honks, right click gets out");
+	if (std::shared_ptr<Vehicle> driven = getDrivenVehicle())
+	{
+		std::string line = "Driving: W/S drive, A/D steer, jump brakes, left click honks, right click gets out";
+		if (driven->hasHeadlight)
+			line += ", " + std::string(SDL_GetScancodeName(pd.input->getKeyBind(Flashlight))) + " switches its headlight";
+		hudLines.push_back(line);
+	}
 	else if (getRiddenVehicle())
 		hudLines.push_back("Riding: right click gets off");
 

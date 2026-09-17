@@ -246,6 +246,18 @@ inline ENetPacket* makeFlashlightPacket(bool on, glm::vec3 color)
 	return ret;
 }
 
+//The same packet asking to switch the headlight of the vehicle we drive on or off, see FlashlightRequest_VehicleLight
+inline ENetPacket* makeVehicleLightPacket()
+{
+	ENetPacket* ret = enet_packet_create(NULL, 2 + sizeof(float) * 3, getFlagsFromChannel(OtherReliable));
+
+	ret->data[0] = (unsigned char)FlashlightRequest;
+	ret->data[1] = FlashlightRequest_VehicleLight;
+	memset(ret->data + 2, 0, sizeof(float) * 3);
+
+	return ret;
+}
+
 /*
 	1 byte		-	packet type
 	1 byte		-	1 while our camera is off flying, 0 once it's back on our player
@@ -333,7 +345,7 @@ inline ENetPacket* makePrintSubmitPacket(netIDType brickID, const std::string& p
 /*
 	1 byte		-	packet type
 	4 bytes		-	vehicle net ID
-	The rest	-	BrickAttachments::write, only its music matters
+	The rest	-	BrickAttachments::write with its music, horn, and headlight as the light
 */
 inline ENetPacket* makeVehicleWrenchSubmitPacket(netIDType vehicleID, const BrickAttachments& attachments)
 {
@@ -342,11 +354,13 @@ inline ENetPacket* makeVehicleWrenchSubmitPacket(netIDType vehicleID, const Bric
 	bytes.resize(1 + sizeof(netIDType));
 	memcpy(bytes.data() + 1, &vehicleID, sizeof(netIDType));
 
-	BrickAttachments music;
-	music.musicName = attachments.musicName;
-	music.musicVolume = attachments.musicVolume;
-	music.musicPitch = attachments.musicPitch;
-	music.write(bytes);
+	//Its music, horn, and headlight as the light; a vehicle has no emitter or wheel to speak of
+	BrickAttachments settings = attachments;
+	settings.emitterName = "";
+	settings.hasWheel = false;
+	settings.hasSteering = false;
+	settings.lightIsHeadlight = false;
+	settings.write(bytes);
 
 	return enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable));
 }
