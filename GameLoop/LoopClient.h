@@ -198,6 +198,12 @@ class LoopClient
 	//Rays of sunlight past whatever is between the camera and the sun, blended onto the finished scene
 	void renderGodRays();
 
+	/*
+		Copies graphics/drawdistance out of the camera, which read it as its far plane, into everything that culls
+		by distance on the CPU. Call after Camera::updateSettings, which is where the setting is actually read
+	*/
+	void applyDrawDistance();
+
 	//Sky, models, grass, and bricks from the currently uploaded camera into the currently bound frame buffer
 	void renderScene(bool clipAtWater);
 

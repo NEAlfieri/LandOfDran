@@ -388,7 +388,8 @@ class Mesh
 	public:
 
 	//A slightly quicker version of calling performMeshBufferUpdates on every single instance
-	void recompileInstances();
+	//Instances whose copy of this mesh sits further than cullDistance from cullFrom are left out, 0 for no limit, see Model::updateAll
+	void recompileInstances(const glm::vec3& cullFrom = glm::vec3(0), float cullDistance = 0);
 
 	//Render all instances of this particular mesh
 	void render(std::shared_ptr<ShaderManager> graphics, bool useMaterials = true) const;
@@ -579,9 +580,13 @@ class Model
 	//Outputs the entire hierarchy in depth to std::cout for debugging
 	void printHierarchy(Node * node = 0,int layer = 0) const;
 
-	//Calls recompileInstances on each mesh, or the equivlent of calling performMeshBufferUpdates on every instance of this model
-	//Also calculates every instances mesh transforms too
-	void updateAll(float deltaT);
+	/*
+		Calls recompileInstances on each mesh, or the equivlent of calling performMeshBufferUpdates on every instance of this model
+		Also calculates every instances mesh transforms too
+		cullDistance is graphics/drawdistance: instances further than that from cullFrom (the camera) are left out of
+		the buffers entirely, so they're drawn neither in the scene nor in any shadow pass. 0 draws all of them
+	*/
+	void updateAll(float deltaT, const glm::vec3& cullFrom = glm::vec3(0), float cullDistance = 0);
 
 	/*
 		FBX models will be loaded 100x larger than they should be

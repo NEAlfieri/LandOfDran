@@ -68,6 +68,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("audio/microphone",			"What voice chat records from, Default follows the system's default microphone");
 
 	//Graphics settings
+	settings->addInt("graphics/drawdistance",		1000, false,	"Draw Distance", 100, 1000);
+	settings->setTooltip("graphics/drawdistance",	"Nothing further than this many studs from the camera is drawn at all. 1000 is as far as the game ever draws, so it changes nothing there; lower it for frame rate on an older machine and whatever it cuts off will pop back in as you walk toward it");
 	settings->addEnum("graphics/waterquality",		1, 	 			"Water Quality",	{"No Reflection/Refraction", "Half Res Reflection/Refraction", "Full Res Reflection/Refraction"});
 	settings->addEnum("graphics/shadowresolution",	2, 	 			"Shadow Resolution", 	{"Off","2k Shadows","4k Shadows"});
 	settings->setTooltip("graphics/shadowresolution",	"Sun and moon shadows. Off leaves everything lit by them, which is the cheapest the scene gets, and doesn't affect point light shadows");
