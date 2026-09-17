@@ -1,4 +1,6 @@
-albedo	Iron-Scuffed_basecolor.png
+#A flat value is a number rather than a single colour image, see Material
+#64/255 grey, 150/255 metal, matching the Iron-Scuffed basecolor and metallic these used to name
+albedo	0.251 0.251 0.251
+metalness	0.588
 normal	Iron-Scuffed_normal.png
 roughness	Iron-Scuffed_roughness.png
-metalness	Iron-Scuffed_metallic.png

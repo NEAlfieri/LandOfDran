@@ -960,6 +960,282 @@ static int LUA_radiusImpulse(lua_State* L)
 	return 2;
 }
 
+/*
+	Reads a number out of a field of the table at the top of the stack, leaving what's the fallback alone
+	False without a number there, so a script that spells a field wrong gets the default rather than a zero
+*/
+static bool tableNumber(lua_State* L, const char* key, float& out)
+{
+	lua_getfield(L, -1, key);
+	bool found = lua_isnumber(L, -1) != 0;
+	if (found)
+		out = (float)lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	return found;
+}
+
+//Same for a {x, y, z} list, which is how a position is written in one of these tables
+static bool tableVector(lua_State* L, const char* key, glm::vec3& out)
+{
+	lua_getfield(L, -1, key);
+	if (!lua_istable(L, -1))
+	{
+		lua_pop(L, 1);
+		return false;
+	}
+
+	glm::vec3 read(0);
+	for (int a = 0; a < 3; a++)
+	{
+		lua_rawgeti(L, -1, a + 1);
+		if (!lua_isnumber(L, -1))
+		{
+			lua_pop(L, 2);
+			return false;
+		}
+		read[a] = (float)lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	}
+
+	lua_pop(L, 1);
+	out = read;
+	return true;
+}
+
+//A dynamic type by the ID newDynamicType handed out, nullptr if there isn't one
+static std::shared_ptr<DynamicType> dynamicTypeOfID(lua_Integer typeID)
+{
+	if (typeID < 0 || typeID >= (lua_Integer)LUA_pd->dynamicTypes.size())
+		return nullptr;
+	return LUA_pd->dynamicTypes[typeID];
+}
+
+//The type named by a field of the table on top of the stack, and whether the field was there at all
+static std::shared_ptr<DynamicType> tableType(lua_State* L, const char* key, bool& present)
+{
+	lua_getfield(L, -1, key);
+	present = !lua_isnil(L, -1);
+	std::shared_ptr<DynamicType> type = lua_isnumber(L, -1) ? dynamicTypeOfID(lua_tointeger(L, -1)) : nullptr;
+	lua_pop(L, 1);
+	return type;
+}
+
+static int LUA_spawnModelVehicle(lua_State* L)
+{
+	scope("(LUA) spawnModelVehicle");
+
+	if (lua_gettop(L) != 1 || !lua_istable(L, 1))
+	{
+		error("Expected 1 argument spawnModelVehicle(settings), a table, see LuaAPI.md");
+		return 0;
+	}
+
+	if (!LUA_pd || !LUA_pd->vehicles)
+	{
+		lua_pushnil(L);
+		lua_pushstring(L, "Vehicles can't be made right now.");
+		return 2;
+	}
+
+	//Everything is read off the one table, which stays at the top of the stack the whole way through
+	lua_settop(L, 1);
+
+	bool present = false;
+	std::shared_ptr<DynamicType> bodyType = tableType(L, "model", present);
+	if (!bodyType || !bodyType->getModel())
+	{
+		error("settings.model has to be a type from newDynamicType");
+		return 0;
+	}
+
+	std::shared_ptr<DynamicType> wheelType = tableType(L, "wheelModel", present);
+	if (present && !wheelType)
+	{
+		error("settings.wheelModel has to be a type from newDynamicType");
+		return 0;
+	}
+
+	glm::vec3 position(0);
+	if (!tableVector(L, "position", position))
+	{
+		error("settings.position has to be a {x, y, z} list");
+		return 0;
+	}
+
+	//Which way it drives, which Bullet's raycast vehicle needs along one of the body's own axes
+	glm::vec3 forward(0, 0, -1);
+	tableVector(L, "forward", forward);
+	forward = glm::round(glm::normalize(forward));
+	if (std::abs(glm::length(forward) - 1.0f) > 0.01f || std::abs(forward.y) > 0.01f)
+	{
+		error("settings.forward has to point along x or z, like {0, 0, -1}");
+		return 0;
+	}
+
+	//Its collision box, the model's own unless the table says otherwise: a shape's drawn bounds take in things like a roll bar
+	glm::vec3 halfExtents = bodyType->getModel()->getColHalfExtents();
+	glm::vec3 boxOffset = bodyType->getModel()->getColOffset();
+	tableVector(L, "box", halfExtents);
+	tableVector(L, "boxOffset", boxOffset);
+	halfExtents = glm::max(halfExtents, glm::vec3(0.01f));
+
+	SteeringSettings steering;
+	tableNumber(L, "angularDamping", steering.angularDamping);
+	steering.clampValues();
+
+	float mass = 40.0f;
+	tableNumber(L, "mass", mass);
+	if (!std::isfinite(mass))
+		mass = 40.0f;
+	mass = std::clamp(mass, 1.0f, 100000.0f);
+
+	glm::vec3 seat(0);
+	tableVector(L, "seat", seat);
+
+	//Its wheels, which it needs at least one of to drive anywhere
+	std::vector<VehicleWheel> wheels;
+	lua_getfield(L, -1, "wheels");
+	if (lua_istable(L, -1))
+	{
+		lua_Integer count = (lua_Integer)lua_rawlen(L, -1);
+		for (lua_Integer a = 1; a <= count && wheels.size() < Vehicle::maxWheels; a++)
+		{
+			lua_rawgeti(L, -1, (int)a);
+			if (!lua_istable(L, -1))
+			{
+				lua_pop(L, 1);
+				continue;
+			}
+
+			VehicleWheel wheel;
+			glm::vec3 resting(0);
+			tableVector(L, "position", resting);
+
+			tableNumber(L, "radius", wheel.radius);
+			tableNumber(L, "width", wheel.width);
+			if (!std::isfinite(wheel.radius))
+				wheel.radius = 1.0f;
+			if (!std::isfinite(wheel.width))
+				wheel.width = 1.0f;
+			wheel.radius = std::clamp(wheel.radius, 0.05f, 20.0f);
+			wheel.width = std::clamp(wheel.width, 0.05f, 20.0f);
+
+			WheelSettings& settings = wheel.settings;
+			tableNumber(L, "engineForce", settings.engineForce);
+			tableNumber(L, "brakeForce", settings.brakeForce);
+			tableNumber(L, "steerAngle", settings.steerAngle);
+			tableNumber(L, "suspensionLength", settings.suspensionLength);
+			tableNumber(L, "suspensionStiffness", settings.suspensionStiffness);
+			tableNumber(L, "dampingCompression", settings.dampingCompression);
+			tableNumber(L, "dampingRelaxation", settings.dampingRelaxation);
+			tableNumber(L, "frictionSlip", settings.frictionSlip);
+			tableNumber(L, "rollInfluence", settings.rollInfluence);
+			settings.clampValues();
+
+			//A wheel's spot in the table is where its middle rests, and its suspension hangs it that far below where it's bolted on
+			wheel.connection = resting + glm::vec3(0, settings.suspensionLength, 0);
+			wheel.suspension = settings.suspensionLength;
+			wheels.push_back(wheel);
+
+			lua_pop(L, 1);
+		}
+	}
+	lua_pop(L, 1);
+
+	if (wheels.empty())
+	{
+		error("settings.wheels needs at least one wheel");
+		return 0;
+	}
+
+	//And its passenger seats, which it doesn't need any of
+	std::vector<PassengerSeat> passengerSeats;
+	lua_getfield(L, -1, "seats");
+	if (lua_istable(L, -1))
+	{
+		lua_Integer count = (lua_Integer)lua_rawlen(L, -1);
+		for (lua_Integer a = 1; a <= count && passengerSeats.size() < Vehicle::maxSeats; a++)
+		{
+			lua_rawgeti(L, -1, (int)a);
+
+			glm::vec3 top(0);
+			bool read = false;
+			if (lua_istable(L, -1))
+			{
+				//Either {x, y, z} on its own or a table with a position in it, so seats can grow settings later
+				read = tableVector(L, "position", top);
+				if (!read)
+				{
+					glm::vec3 direct(0);
+					bool valid = true;
+					for (int b = 0; b < 3 && valid; b++)
+					{
+						lua_rawgeti(L, -1, b + 1);
+						valid = lua_isnumber(L, -1) != 0;
+						if (valid)
+							direct[b] = (float)lua_tonumber(L, -1);
+						lua_pop(L, 1);
+					}
+					if (valid)
+					{
+						top = direct;
+						read = true;
+					}
+				}
+			}
+
+			lua_pop(L, 1);
+
+			if (!read)
+				continue;
+
+			PassengerSeat passengerSeat;
+			passengerSeat.top = top;
+			passengerSeats.push_back(passengerSeat);
+		}
+	}
+	lua_pop(L, 1);
+
+	std::shared_ptr<Vehicle> vehicle = LUA_pd->vehicles->create();
+	vehicle->bodyTypeID = bodyType->getID();
+	vehicle->wheelTypeID = wheelType ? wheelType->getID() : NO_ID;
+	vehicle->bodyHalfExtents = halfExtents;
+	vehicle->bodyOffset = boxOffset;
+	vehicle->bodyMass = mass;
+	vehicle->forward = forward;
+	vehicle->steering = steering;
+	vehicle->seat = seat;
+	vehicle->wheels = wheels;
+	vehicle->passengerSeats = passengerSeats;
+
+	int dirtType = findEmitterTypeIndex(LUA_pd->vehicleDirtEmitter);
+	vehicle->dirtEmitterType = dirtType == -1 ? Vehicle::noEmitterType : (uint16_t)dirtType;
+
+	if (!vehicle->buildServer(&LUA_pd->brickTypes, g2b3(position)))
+	{
+		LUA_pd->vehicles->destroy(vehicle);
+		lua_pushnil(L);
+		lua_pushstring(L, "That vehicle's body couldn't be built.");
+		return 2;
+	}
+
+	info("Lua made model vehicle " + std::to_string(vehicle->getID()) + " out of type " + bodyType->scriptName +
+		" with " + std::to_string(wheels.size()) + " wheels");
+
+	//Everything has been read off the settings table, and an event wants the stack to itself
+	lua_settop(L, 0);
+
+	if (!announceVehicle(vehicle, nullptr))
+	{
+		lua_pushnil(L);
+		lua_pushstring(L, "");
+		return 2;
+	}
+
+	LUA_pd->vehicles->pushLua(L, vehicle);
+	return 1;
+}
+
 static int LUA_sliceBricks(lua_State* L)
 {
 	scope("(LUA) sliceBricks");
@@ -1162,6 +1438,14 @@ static int LUA_vehicleSaveToFile(lua_State* L)
 		return 1;
 	}
 
+	//A vehicle save is a save of bricks, which a model vehicle has none of
+	if (vehicle->isModelVehicle())
+	{
+		error("A model vehicle can't be saved, it has no bricks");
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
 	std::error_code errorCode;
 	std::filesystem::create_directories("Saves/Vehicles", errorCode);
 
@@ -1172,6 +1456,19 @@ static int LUA_vehicleSaveToFile(lua_State* L)
 		error("Couldn't write " + path);
 
 	lua_pushboolean(L, written);
+	return 1;
+}
+
+static int LUA_vehicleIsModelVehicle(lua_State* L)
+{
+	scope("(LUA) vehicle:isModelVehicle");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:isModelVehicle()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	lua_pushboolean(L, vehicle->isModelVehicle());
 	return 1;
 }
 
@@ -1629,6 +1926,7 @@ static int LUA_clientExitVehicle(lua_State* L)
 luaL_Reg* getVehicleFunctions(lua_State* L)
 {
 	lua_register(L, "sliceBricks", LUA_sliceBricks);
+	lua_register(L, "spawnModelVehicle", LUA_spawnModelVehicle);
 	lua_register(L, "loadVehicleFile", LUA_loadVehicleFile);
 	lua_register(L, "getNumVehicles", LUA_getNumVehicles);
 	lua_register(L, "getVehicleIdx", LUA_getVehicleIdx);
@@ -1657,6 +1955,7 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "destroy", LUA_vehicleDestroy },
 		{ "remove", LUA_vehicleDestroy },
 		{ "saveToFile", LUA_vehicleSaveToFile },
+		{ "isModelVehicle", LUA_vehicleIsModelVehicle },
 		{ "getNumBricks", LUA_vehicleGetNumBricks },
 		{ "getNumWheels", LUA_vehicleGetNumWheels },
 		{ "getPosition", LUA_vehicleGetPosition },

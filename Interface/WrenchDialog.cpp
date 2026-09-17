@@ -419,7 +419,8 @@ void WrenchDialog::render(ImGuiIO* io)
 			nameCombo("Type##Emitter", settings.emitterName, emitterNames);
 	}
 
-	if (forVehicle && sectionHeader("Save"))
+	//A model vehicle has no bricks to save, see WrenchSubmission::madeOfBricks
+	if (forVehicle && editing.madeOfBricks && sectionHeader("Save"))
 	{
 		ImGui::InputText("File name", &saveName);
 		tooltip("Saved to Saves/Vehicles on your computer, load it again from the Vehicles window");
@@ -460,7 +461,10 @@ void WrenchDialog::render(ImGuiIO* io)
 
 		if (ImGui::BeginPopupModal("Remove vehicle?", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
 		{
-			ImGui::TextUnformatted("Its bricks won't come back. Save it first to keep a copy.");
+			if (editing.madeOfBricks)
+				ImGui::TextUnformatted("Its bricks won't come back. Save it first to keep a copy.");
+			else
+				ImGui::TextUnformatted("It won't come back.");
 
 			if (dangerButton("Remove"))
 			{

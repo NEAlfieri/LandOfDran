@@ -1326,6 +1326,54 @@ static int LUA_addAnimation(lua_State* L)
 	return 0;
 }
 
+static int LUA_getTypeNodePosition(lua_State* L)
+{
+	scope("(LUA) getTypeNodePosition");
+
+	int args = lua_gettop(L);
+
+	if (args != 2)
+	{
+		error("Expected 2 arguments getTypeNodePosition(typeID,nodeName)");
+		return 0;
+	}
+
+	const char* nodeName = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
+	if (!nodeName)
+	{
+		error("Invalid node name passed");
+		return 0;
+	}
+
+	int typeID = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+
+	if (typeID >= (int)LUA_pd->dynamicTypes.size() || typeID < 0)
+	{
+		error("typeID out of range");
+		return 0;
+	}
+
+	std::shared_ptr<DynamicType> type = LUA_pd->dynamicTypes[typeID];
+
+	if (!type || !type->getModel())
+	{
+		error("Invalid typeID passed");
+		return 0;
+	}
+
+	glm::vec3 position;
+	if (!type->getModel()->getNodePosition(nodeName, position))
+		return 0;
+
+	lua_pushnumber(L, position.x);
+	lua_pushnumber(L, position.y);
+	lua_pushnumber(L, position.z);
+	return 3;
+}
+
 //TODO: Probably should be in other functions file cause it can return statics as well
 static int LUA_raycast(lua_State* L)
 {
@@ -1894,6 +1942,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "getDynamicIdx", LUA_getDynamicIdx);
 	lua_register(L, "getNumDynamics", LUA_getNumDynamics);
 	lua_register(L, "newDynamicType", LUA_newDynamicType);
+	lua_register(L, "getTypeNodePosition", LUA_getTypeNodePosition);
 	lua_register(L, "getDynamicType", LUA_getDynamicType);
 	lua_register(L, "addAnimation", LUA_addAnimation);
 	lua_register(L, "raycast", LUA_raycast);

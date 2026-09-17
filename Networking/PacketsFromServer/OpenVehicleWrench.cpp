@@ -3,7 +3,7 @@
 /*
 	1 byte		-	packet type
 	4 bytes		-	vehicle net ID
-	4 bytes		-	how many bricks it has
+	4 bytes		-	how many bricks it has, 0 for a model vehicle
 	The rest	-	BrickAttachments::write with just its music
 */
 bool OpenVehicleWrenchPacket::applyPacket(const ClientProgramData& pd, Simulation& simulation, const ExecutableArguments& cmdArgs)
@@ -29,7 +29,11 @@ bool OpenVehicleWrenchPacket::applyPacket(const ClientProgramData& pd, Simulatio
 		return true;
 	}
 
-	std::string label = "Vehicle, " + std::to_string(brickCount) + (brickCount == 1 ? " brick" : " bricks");
+	//A model vehicle has no bricks at all, so it gets no brick count and no Save section, see WrenchSubmission::madeOfBricks
+	editing.madeOfBricks = brickCount > 0;
+	std::string label = editing.madeOfBricks
+		? "Vehicle, " + std::to_string(brickCount) + (brickCount == 1 ? " brick" : " bricks")
+		: "Vehicle, a model";
 	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), {});
 	pd.context->setMouseLock(false);
 

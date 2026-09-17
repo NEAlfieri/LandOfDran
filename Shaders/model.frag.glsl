@@ -60,6 +60,10 @@ layout (std140) uniform BasicUniforms
 
 	//Texture coordinates of a decal's top left and bottom right corners, see Mesh::decalArea
 	vec4 DecalArea;
+
+	//What a material with no texture for them is drawn with, see Material's constant values
+	vec4 ConstantAlbedo;
+	vec4 ConstantMOR;
 };
 
 layout (std140) uniform CameraUniforms
@@ -562,7 +566,7 @@ void main()
 
 	vec3 viewVector = normalize(CameraPosition - worldPos);
 	
-	vec4 albedo_ = vec4(1,1,1,1);
+	vec4 albedo_ = ConstantAlbedo;
 	if(useAlbedo != -1)
 		albedo_ = textureGrad(PBRArray,vec3(uvs,useAlbedo),dxuv,dyuv);
 		
@@ -651,19 +655,20 @@ void main()
 	//color = vec4(normal,1);
 	//return;
 	
-	vec3 mor = vec3(0,0,0.5);
+	vec3 mor = ConstantMOR.rgb;
 	
 	int morLayer = max(max(useMetalness,useRoughness),useAO);
 		
 	if(morLayer != -1)
 		mor = textureGrad(PBRArray,vec3(uvs,morLayer),dxuv,dyuv).rgb;
 	
+	//Whichever of them the material gave a number for instead of a texture, see Material's constant values
 	if(useMetalness == -1)
-		mor.r = 0;
+		mor.r = ConstantMOR.r;
 	if(useAO == -1)
-		mor.g = 1;
+		mor.g = ConstantMOR.g;
 	if(useRoughness == -1)
-		mor.b = 0.5;
+		mor.b = ConstantMOR.b;
 
 	//Both replace the brick texture's scuffed plastic roughness, which is far too rough to reflect anything recognizable
 	if(material == MaterialPearl)

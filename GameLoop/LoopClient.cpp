@@ -868,27 +868,37 @@ void LoopClient::placeVehicleDrivers(float deltaT)
 
 void LoopClient::placeVehicleWheels()
 {
-	if (!pd.tireModel || !simulation.vehicles)
+	if (!simulation.vehicles)
 		return;
-
-	//The tire model's thinnest side is its axle and its widest is its diameter, around the middle of its bounding box
-	glm::vec3 halfExtents = pd.tireModel->getColHalfExtents();
-	int axleAxis = 0;
-	for (int axis = 1; axis < 3; axis++)
-	{
-		if (halfExtents[axis] < halfExtents[axleAxis])
-			axleAxis = axis;
-	}
-
-	glm::vec3 modelAxle(0);
-	modelAxle[axleAxis] = 1;
-	float modelRadius = std::max(halfExtents[(axleAxis + 1) % 3], halfExtents[(axleAxis + 2) % 3]);
-	modelRadius = std::max(modelRadius, 0.0001f);
-	glm::mat4 centered = glm::translate(-pd.tireModel->getColOffset());
 
 	for (unsigned int a = 0; a < simulation.vehicles->size(); a++)
 	{
 		std::shared_ptr<Vehicle> vehicle = simulation.vehicles->get(a);
+
+		//A model vehicle's body is drawn where its bricks would be, everything else about it is the same
+		if (vehicle->bodyInstance)
+			vehicle->bodyInstance->setModelTransform(vehicle->getDrawnTransform());
+
+		//Which model its wheels have is up to the vehicle, see Vehicle::finishClient
+		Model* tire = vehicle->getWheelModel();
+		if (!tire || vehicle->wheels.empty())
+			continue;
+
+		//The tire model's thinnest side is its axle and its widest is its diameter, around the middle of its bounding box
+		glm::vec3 halfExtents = tire->getColHalfExtents();
+		int axleAxis = 0;
+		for (int axis = 1; axis < 3; axis++)
+		{
+			if (halfExtents[axis] < halfExtents[axleAxis])
+				axleAxis = axis;
+		}
+
+		glm::vec3 modelAxle(0);
+		modelAxle[axleAxis] = 1;
+		float modelRadius = std::max(halfExtents[(axleAxis + 1) % 3], halfExtents[(axleAxis + 2) % 3]);
+		modelRadius = std::max(modelRadius, 0.0001f);
+		glm::mat4 centered = glm::translate(-tire->getColOffset());
+
 		glm::vec3 axle = glm::normalize(glm::cross(glm::vec3(0, -1, 0), vehicle->forward));
 		glm::mat4 align = glm::toMat4(glm::rotation(modelAxle, axle));
 
@@ -2418,14 +2428,15 @@ void LoopClient::renderEverything(float deltaT)
 	//Technically rendering related calculations based on previously inputted transform data
 	//Anything past the draw distance is left out of the instance buffers entirely, see Model::updateAll
 	glm::vec3 modelCullFrom = simulation.camera->getPosition();
+
+	//Before the loop below, since a model vehicle's body and wheels are instances of dynamic types
+	placeVehicleWheels();
+
 	for (unsigned int a = 0; a < simulation.dynamicTypes.size(); a++)
 		simulation.dynamicTypes[a]->getModel()->updateAll(deltaT, modelCullFrom, pd.drawDistance);
 
 	if (pd.tireModel)
-	{
-		placeVehicleWheels();
 		pd.tireModel->updateAll(deltaT, modelCullFrom, pd.drawDistance);
-	}
 
 	pd.environment.cycle = simulation.dayCycle;
 	pd.environment.calc(simulation.worldTimeSeconds);

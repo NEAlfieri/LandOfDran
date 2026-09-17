@@ -3,6 +3,15 @@
 
 #include <tuple>
 
+/*
+	The scuffed plastic a DTS material with nothing but a flat colour of its own is drawn with, the same as
+	the Brickhead's, so a Blockland shape looks like the plastic it is rather than like a mirror. Small on
+	purpose: every material that uses them gets its own copy of the array, and an add-on folder holds dozens
+*/
+static const std::string dtsDefaultNormal = "Assets/dts/scuffedNormal.png";
+static const std::string dtsDefaultRoughness = "Assets/dts/scuffedRoughness.png";
+static const std::string dtsDefaultOcclusion = "Assets/dts/scuffedOcclusion.png";
+
 //Used in Model::Model to read what flags we want to load our model with from a text file
 std::map<std::string, int> aiProcessMap = {
 	{"CalcTangentSpace",aiProcess_CalcTangentSpace},
@@ -91,7 +100,7 @@ void Model::addAnimation(Animation& animation,int id)
 {
 	animation.serverID = (id < 0) ? animations.size() : id;
 
-	//Server side models have no nodes, so this stays empty there
+	//A server side model has the nodes but never loads a keyframe, so nothing comes out as affected there
 	animation.affectedNodes.assign(allNodes.size(), false);
 	for (Node* node : allNodes)
 	{
@@ -122,6 +131,40 @@ void Model::addAnimation(Animation& animation,int id)
 	}
 
 	animations.push_back(std::move(animation));
+}
+
+//Walks down from a node looking for one by that name, building up the transform each node sits under as it goes
+bool Model::findNodePosition(Node const * const node, const std::string& lowerName, const glm::mat4& above, glm::vec3& position)
+{
+	//The same multiplication calculateMeshTransforms does, minus the animations a rest pose doesn't have
+	glm::mat4 here = above * node->defaultTransform;
+
+	if (lowercase(node->name) == lowerName)
+	{
+		position = glm::vec3(here[3]);
+		return true;
+	}
+
+	for (Node const * const child : node->children)
+	{
+		if (findNodePosition(child, lowerName, here, position))
+			return true;
+	}
+
+	return false;
+}
+
+bool Model::getNodePosition(const std::string& name, glm::vec3& position) const
+{
+	if (!rootNode)
+		return false;
+
+	glm::vec3 found;
+	if (!findNodePosition(rootNode, lowercase(name), glm::mat4(1.0), found))
+		return false;
+
+	position = found * baseScale;
+	return true;
 }
 
 int Model::getAnimationID(const std::string& name) const
@@ -1481,7 +1524,14 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		allMeshes.push_back(tmp);
 	}
 
-	//rootNode = new Node(scene->mRootNode, this);*/
+	/*
+		The server builds the node tree too, which costs it very little: it loads no animation channels,
+		so every node here is just a name and the rest transform the file was exported with. That's what
+		getNodePosition reads, which is how a script finds the spots an add-on's shape names, like where
+		a jeep's wheels hang, see Lua's getTypeNodePosition
+	*/
+	nodeDefaultsAreRestPose = isDtsPath(modelPath);
+	rootNode = new Node(scene->mRootNode, this);
 
 	calculateMeshBounds(scene);
 	calculateCollisionBox(scene);
@@ -1769,7 +1819,40 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 				shades of grey are all pure black differing only in how see-through they are, so its
 				alpha has to be read rather than dropped, see Texture::addLayer
 			*/
-			Material* tmp = new Material(materialName,albedoPath,normalPath,roughPath,metalPath, "",textures, isDtsPath(modelPath));
+			/*
+				A Blockland shape's textures are nearly all a single flat colour, since Torque wanted a file
+				where a number would have done. Read as a colour instead of loaded as a texture, which costs
+				nothing to draw and, more to the point, leaves the material's texture array free: every layer
+				of one has to be the same size, so a 16x16 flat colour would stop any real map joining it
+			*/
+			glm::vec4 flatAlbedo(1.0f);
+			bool albedoIsFlat = isDtsPath(modelPath) && !albedoPath.empty() && normalPath.empty()
+				&& textures->flatColor(albedoPath, true, flatAlbedo);
+
+			/*
+				Which lets a shape that brought no maps of its own be drawn as the same scuffed plastic the
+				Brickhead is, rather than as a flat colour. A perfectly flat colour with a perfectly even
+				normal turns every big panel into one smooth specular gradient, a highlight the size of the
+				panel, however rough it's set; what makes the Brickhead read as plastic is its normal map
+				breaking that up into grain, so that is what these get, with a roughness kept matte and a
+				gentle occlusion. The shape's own texture coordinates are sparse, so the grain comes out
+				coarse, which is still a long way better than a mirror. A .txt descriptor naming any of
+				these, by file or by number, still wins
+			*/
+			bool scuffed = albedoIsFlat && roughPath.empty() && metalPath.empty();
+			if (scuffed)
+			{
+				albedoPath = "";
+				normalPath = dtsDefaultNormal;
+				roughPath = dtsDefaultRoughness;
+			}
+
+			Material* tmp = new Material(materialName,albedoPath,normalPath,roughPath,metalPath,
+				scuffed ? dtsDefaultOcclusion : "",textures, isDtsPath(modelPath));
+
+			if (albedoIsFlat)
+				tmp->constantAlbedo = flatAlbedo;
+
 			allMaterials.push_back(tmp);
 
 			if (!tmp->isValid())

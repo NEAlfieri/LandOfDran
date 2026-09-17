@@ -19,6 +19,10 @@ struct WrenchSubmission
 	//Set instead of brickID for a vehicle, which only has music
 	netIDType vehicleID = NO_ID;
 
+	//Client only, never sent back: whether the vehicle is made of bricks, since a vehicle save is a save of bricks
+	//and a model vehicle has none, see OpenVehicleWrenchPacket
+	bool madeOfBricks = true;
+
 	//Client only, never sent back: the brick's light as the server has it, so the dialog can leave it out
 	//while it shines the one being edited instead, see WrenchDialog::getLightPreview
 	netIDType lightID = NO_ID;

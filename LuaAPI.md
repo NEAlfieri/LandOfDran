@@ -170,6 +170,7 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `getNumDynamics()` | none | count | How many dynamics currently exist. |
 | `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. `modelFilePath` is normally a `.txt` descriptor, but a `.dts` (the shapes Blockland add-ons ship their models in) can be given straight to it with no descriptor next to it, see [DTS models](#dts-models). |
 | `getDynamicType(scriptName)` | string | typeID | Looks up a previously-registered type's ID by its script name. |
+| `getTypeNodePosition(typeID, nodeName)` | a dynamic or item type; the name of a node in its model, case insensitive | x, y, z, or nothing | Where that node sits in the model's own space with nothing animating, the type's scale applied. Nothing at all if the model has no node by that name. Shapes name the spots an add-on cares about, so this is how a script finds them without writing the numbers down: a Blockland jeep hangs its wheels from `hub0` to `hub3` and seats its riders on `Mount0` and up, and a weapon's hand goes on its `mountPoint`. See [Model vehicles](#model-vehicles) and [DTS models](#dts-models). |
 | `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone. While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. A `.dts` model needs none of these lines: it registers every sequence it came with under its own name, see [DTS models](#dts-models). |
 | `raycast(startX, startY, startZ, endX, endY, endZ[, dynamicToIgnore])` | ray start/end points; optionally a Dynamic to exclude from the hit test | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Casts a ray through the physics world. Returns the Dynamic, Static, or Brick it hit first, then the world position of the hit, the normal of the surface it hit (pointing out of it), and the distance from the start point. If it hit the ground, which has no object, the hit object is `nil` and the rest still follow. Returns just `nil` if it hit nothing. `local hit = raycast(...)` still works if you only need the object. |
 | `addProjectile(typeID, x, y, z, velX, velY, velZ[, tag[, shooter]])` | dynamic type ID; position; velocity in studs per second; any string, `""` by default, or `nil`; a Dynamic, or `nil` | Dynamic | Fires a dynamic that falls with gravity and is turned every tick so its model's +Y points the way it's going (while faster than 8 studs a second). It never falls asleep, and is swept along each physics step so it doesn't skip through thin bricks. It passes through `shooter`, usually the player who fired it. Clients only draw it where the server has it, it never bumps into their own player. The first time it touches anything that collides, the ground included, `ProjectileHit` fires with `tag` and it's removed. Bricks and statics with collision off don't count. |
@@ -238,6 +239,11 @@ What to expect from one:
 - **Animations come with the model.** Every sequence the shape was exported with is registered under its own name, at the speed it was exported to run at, so `addAnimation` lines aren't needed: `item:playAnimation("fire")` works on a shape that has a `fire` sequence. Both sides load the same file, so the IDs line up.
 - **Only the most detailed detail level is loaded**, and its meshes are named after the objects holding them, which is what `getMeshIdx` and painting see. A mesh whose faces use several materials is split into one mesh per material, named `object_material`.
 - **Only version 24 shapes** are read, which is what Blockland's exporter writes. Anything else logs an error and loads nothing. Vertex animation, sorted meshes, and a shape's bone weights are ignored.
+- **The shape's own collision detail level is not one of them**, so a model's collision box is a box around what's drawn. For a shape whose drawn detail reaches further than its body, like a jeep with a roll bar, `spawnModelVehicle` takes a `box` of its own, see [Model vehicles](#model-vehicles).
+- **The nodes it names can be read back** with `getTypeNodePosition`, which is how a script places things on a shape the way the add-on's own `.cs` files do, by node name rather than by guessed numbers.
+- **Its materials are drawn as scuffed plastic.** A DTS material is a single flat colour with no maps, so the loader reads the colour as a number rather than loading it as a texture (which would pin the size of every other layer, see below) and gives the material the same scuffed plastic the Brickhead is drawn with: the normal, roughness and occlusion maps in `Assets/dts/`, small copies of `Assets/brickhead/scuffed-plastic-*`. A perfectly flat colour with a perfectly even normal turns every big panel into one smooth highlight however rough it's set; the normal map's grain is what breaks that up. A `.txt` descriptor that names any of these itself, by file or by number, wins over the default.
+- **It gets tangents**, worked out from how its texture coordinates run across each triangle, so a normal map works on it the way it does on an FBX that asked for `CalcTangentSpace`. A Blockland shape's texture coordinates are sparse (the jeep shares 135 of them between 1362 vertices), so on many faces the map is sampled at a single point and comes out coarse rather than fine; still a long way from a mirror.
+- **A material can be given plain numbers instead of textures.** In a material descriptor a line like `roughness 0.8`, `metalness 0.94`, `occlusion 1`, or `albedo 0.72 0.72 0.72` (one number for a shade, three for a colour) sets a flat value on the same 0 to 1 scale a texture's pixels are read on, with no image file at all. That is how a surface of one flat value should be written: every layer of a material's texture array has to be the same size, so a one pixel metalness beside a real roughness map is refused. `Assets/tools/printGunMaterial.txt` is the worked example, a DTS given a grey metal albedo and metalness as numbers and a real scuffed roughness map.
 
 ---
 
@@ -783,7 +789,7 @@ anything; use the events to limit that.
 |---|---|---|---|
 | Engine force | `200` | -2000 to 2000 | How hard the wheel drives the vehicle forward, negative backward. |
 | Brake force | `400` | 0 to 2000 | How hard it stops while the driver holds jump, and while nobody drives. |
-| Steering | `0.5` radians | -pi to pi | How far it turns while steering, 0 doesn't steer, negative turns the other way. |
+| Steering | `0.5` radians | -pi to pi | How far it turns while steering, 0 doesn't steer, negative turns the other way. A positive angle steers the way the driver asks for; this was backwards until 2026-09-17, so a vehicle saved before then was probably given a negative angle to make up for it and now wants a positive one. |
 | Suspension length | `0.7` | 0.1 to 5 | World units the wheel hangs down when resting. |
 | Stiffness | `100` | 1 to 1000 | How hard the suspension pushes back. |
 | Compression / relaxation damping | `6` / `10` | 1 to 100 | How much the suspension resists moving in and out. |
@@ -808,14 +814,16 @@ anything; use the events to limit that.
 | `radiusImpulse(x, y, z, strength)` | world position; impulse, positive pushes away and negative pulls in | objects pushed, bricks broken | Pushes every dynamic in the world (players, items on the ground, and the rest) and every vehicle whose bounding box is within reach, which is `2.5 * sqrt(abs(strength))` studs (at most 200), along the line from the position to its center, fading to nothing at the edge of its reach. It's an impulse: something weighing 1, like a player or an item, gets `strength` studs a second right at the middle, and a vehicle weighs one per brick. Carried items and players in vehicles aren't pushed themselves. Destructable vehicles (see `vehicle:setDestructable`) also lose every brick, except the steering wheel, where `abs(strength) * vehicleBrickBreakScale / (1 + distance^2)` is at least its volume in cubic studs (a plate is 0.4 tall), with the distance to the nearest part of the brick; they fly off for everyone like hammered bricks, pushed the same way, taking their lights and emitters with them, and a broken seat lets its rider off and can't be used again. The tuning constants are in `Physics/RadiusImpulse.h`. |
 | `setVehicleDirtEmitter(typeName)` / `setVehicleDirtEmitter(nil)` | an emitter type's name | none | The emitter type wheels of vehicles sliced from now on throw dirt with. `nil` for none. |
 | `loadVehicleFile(fileName, x, y, z[, asBricks])` | a name in the server's `Saves/Vehicles` without `.lod`; a grid spot in studs/plates; `asBricks` | Vehicle (or `true` as bricks) and a message, or `nil` and why | Places a vehicle save, from `vehicle:saveToFile` or one a player saved, with the middle of its bottom at the spot. As a vehicle it follows the same rules as slicing; as bricks, ones in the way of other bricks are left out. Doesn't fire `ClientLoadVehicle`. |
+| `spawnModelVehicle(settings)` | one table, see [Model vehicles](#model-vehicles) | Vehicle, or `nil` and why | Makes a vehicle whose body is a model rather than bricks, and fires `VehicleCreated`. |
 
 ### `vehicle:` methods
 
 | Method | Arguments | Returns | Description |
 |---|---|---|---|
 | `vehicle:destroy()` / `vehicle:remove()` | none | none | Lets out its driver and passengers, removes its lights, emitters, and music, and removes it. Its bricks don't come back. |
-| `vehicle:saveToFile(fileName)` | a name without `.lod` | bool | Saves it to `Saves/Vehicles/<fileName>.lod` on the server, for `loadVehicleFile`. Names can't have folders in them. |
-| `vehicle:getNumBricks()` | none | count | Bricks in its body, the steering wheel included. |
+| `vehicle:saveToFile(fileName)` | a name without `.lod` | bool | Saves it to `Saves/Vehicles/<fileName>.lod` on the server, for `loadVehicleFile`. Names can't have folders in them. A vehicle save is a save of bricks, so this fails for a model vehicle. |
+| `vehicle:isModelVehicle()` | none | bool | Whether its body is a model rather than bricks, see [Model vehicles](#model-vehicles). |
+| `vehicle:getNumBricks()` | none | count | Bricks in its body, the steering wheel included. `0` for a model vehicle. |
 | `vehicle:getNumWheels()` | none | count | |
 | `vehicle:getPosition()` / `vehicle:setPosition(x, y, z)` | world position | x, y, z / none | Its body's origin, which is near its wheels' tops unless its steering wheel asks for a realistic center of mass. |
 | `vehicle:getRotation()` / `vehicle:setRotation(w, x, y, z)` | quaternion | w, x, y, z / none | |
@@ -825,12 +833,55 @@ anything; use the events to limit that.
 | `vehicle:getDriver()` | none | Client or `nil` | Who's driving it. |
 | `vehicle:ejectDriver()` | none | none | Lets its driver out, without `ClientExitVehicle`. |
 | `vehicle:setDestructable(bool)` / `vehicle:isDestructable()` | bool | none / bool | Whether `radiusImpulse` breaks its bricks off. Off for a new vehicle until a script turns it on, like `serverstart.lua` does from `VehicleCreated`. |
-| `vehicle:getNumSeats()` | none | count | How many passenger seats (seat bricks) it has, not counting the driver's, including seats that were broken off. |
+| `vehicle:getNumSeats()` | none | count | How many passenger seats (seat bricks, or the ones `spawnModelVehicle` was given) it has, not counting the driver's, including seats that were broken off. |
 | `vehicle:getPassenger(seat)` | 0 to `getNumSeats() - 1` | Client or `nil` | Who's riding on that seat. Use `client:exitVehicle` to get them off. |
 | `vehicle:getBuilder()` | none | Client or `nil` | Who sliced it, `nil` if Lua did or they left. |
 | `vehicle:getBuilderID()` | none | client net ID, or `-1` | |
 | `vehicle:getMusic()` | none | sound name, volume, pitch; or `nil` | The loop playing from it. |
 | `vehicle:setMusic(soundName[, volume, pitch])` / `vehicle:setMusic(nil)` | a sound type's name; `volume` 0-1, `pitch` 0.05-10 | none | Plays the sound on a loop from the vehicle for everyone, following it, until it's changed or the vehicle is removed. Changing anything starts the loop over. |
+
+
+### Model vehicles
+
+A vehicle can be one model instead of a pile of bricks, for an add-on that ships its car as a shape rather than as a
+build. `spawnModelVehicle` makes one out of a dynamic type, which can be a `.dts` straight out of a Blockland add-on
+(see [DTS models](#dts-models)). The two kinds of vehicle sit side by side in the same world: a model vehicle is driven,
+ridden, flipped upright, wrenched for its music, and pushed by `radiusImpulse` exactly like a sliced one. What it
+doesn't have is bricks, so `vehicle:getNumBricks` is 0, `vehicle:saveToFile` refuses it, and `radiusImpulse` has nothing
+to break off it no matter what `vehicle:setDestructable` says. `vehicle:isModelVehicle` tells the two apart.
+
+Everything about one is measured in its model's own space, with the model's origin at the vehicle's origin, which is
+also what it turns around. `getTypeNodePosition` reads the spots the shape itself names, so an add-on's own nodes can
+place the wheels and seats rather than a script guessing at numbers.
+
+`spawnModelVehicle(settings)` takes one table and returns the Vehicle, or `nil` and why not:
+
+| Field | Default | Description |
+|---|---|---|
+| `model` | required | A type ID from `newDynamicType`, whose model is drawn as the body. |
+| `position` | required | `{x, y, z}`, where the model's origin goes. Its wheels hang below that, so it wants a little height to drop from. |
+| `wheels` | required | A list of at least one wheel, at most 24, each its own table, see below. |
+| `wheelModel` | the client's own tire | A type ID whose model every wheel is drawn with, scaled to the wheel's radius. |
+| `forward` | `{0, 0, -1}` | Which way it drives in the model's space, along x or z. |
+| `box` | the model's collision box | `{x, y, z}` half sizes of the one box it collides as, in world units. |
+| `boxOffset` | the model's collision box | `{x, y, z}` middle of that box in the model's space. |
+| `mass` | `40` | What the whole thing weighs, 1 to 100000. A brick vehicle weighs one per colliding brick. |
+| `angularDamping` | `0.03` | The same setting a steering wheel brick has, 0 to 1. |
+| `seat` | `{0, 0, 0}` | Where the driver's model goes, which for a player model is their feet. |
+| `seats` | none | A list of at most 32 passenger seats, each `{x, y, z}` (or a table with a `position`), where that passenger stands. |
+
+A wheel's table takes `position`, `{x, y, z}` where its middle rests, and `radius` and `width` in world units (`1` each
+by default). It also takes any of the wheel settings in the table above under their own names, clamped to the same
+ranges: `engineForce`, `brakeForce`, `steerAngle`, `suspensionLength`, `suspensionStiffness`, `dampingCompression`,
+`dampingRelaxation`, `frictionSlip`, and `rollInfluence`. The wheel's suspension hangs it `suspensionLength` below where
+it's bolted to the body, so `position` is where it sits with the vehicle standing still.
+
+A model vehicle fires `VehicleCreated` like any other, and is not put in the world with the upward shove a sliced
+vehicle gets to free its bricks from the ground.
+
+`Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua` is a worked example: the Blockland jeep, with its wheels read off the shape's
+`hub0` to `hub3` nodes and its seven seats off `Mount0` to `Mount6`. `spawnJeep(x, y, z)`, or `spawnJeep(client)` to
+drop one in front of somebody, puts one in the world.
 
 Vehicles also come back from `raycast()` and `client:getCursorItem`, with `type` 7.
 
