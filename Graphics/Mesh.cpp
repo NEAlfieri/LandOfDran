@@ -103,7 +103,12 @@ void Model::addAnimation(Animation& animation,int id)
 			if (time > animation.startTime && time < animation.endTime)
 				times.push_back(time);
 
-		//Rest pose is no translation or rotation, see ModelInstance::calculateNodeTransform
+		/*
+			Does the animation move this node at all, measured against a rest pose of no translation and no
+			rotation, which is what ModelInstance::calculateNodeTransform falls back to. A DTS node rests at
+			its own default instead, see Model::nodeDefaultsAreRestPose, so a sequence that holds one still
+			away from the origin counts as moving it, which costs nothing but a mix that changes nothing.
+		*/
 		for (float time : times)
 		{
 			glm::vec3 pos;
@@ -1793,6 +1798,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	for (const auto& [meshName, area] : decalAreas)
 		error("decalarea line for " + meshName + " but " + filePath + " has no mesh by that name");
 
+	//See the note on this member, it has to be known before any Node is constructed
+	nodeDefaultsAreRestPose = isDtsPath(modelPath);
+
 	rootNode = new Node(scene->mRootNode, this);
 
 	if (scene->mNumAnimations == 1)
@@ -2076,15 +2084,19 @@ Node::Node(aiNode const* const src, Model * parent)
 
 	/*
 		The same thing split into a position and a rotation, which is what ModelInstance::calculateNodeTransform
-		rebuilds a node from once it has any animation keys at all. Without this they stay at zero and identity,
-		so any node an animation touches snaps to its parent's origin the moment one plays, or as one fades.
+		rebuilds a node from once it has any animation keys at all. Left at zero and identity, any node an
+		animation touches snaps to its parent's origin the moment one plays, or as one fades, which a DTS
+		shape's slides and bolts would do because it bakes each part's rest position into its node.
 
-		It goes unnoticed on models whose animated nodes sit at the origin anyway, which is how the FBX ones
-		here are built, but a DTS shape bakes each part's rest position into its node, so its slides and bolts
-		would jump into the middle of the gun. setDefaultFrame overwrites both of these when it's used.
+		Only worth taking where the file means it as a rest pose, see Model::nodeDefaultsAreRestPose: Assimp
+		hands back an FBX node as the artist left it, which for Brickhead's right arm is a frame of the grab.
+		setDefaultFrame overwrites both of these when it's used.
 	*/
-	defaultPos = getTransformFromMatrix(defaultTransform);
-	defaultRot = getRotationFromMatrix(defaultTransform);
+	if (parent->nodeDefaultsAreRestPose)
+	{
+		defaultPos = getTransformFromMatrix(defaultTransform);
+		defaultRot = getRotationFromMatrix(defaultTransform);
+	}
 
 	//Assimp gives us meshes as indicies to an array of meshes loaded earlier
 	for (unsigned int a = 0; a < src->mNumMeshes; a++)

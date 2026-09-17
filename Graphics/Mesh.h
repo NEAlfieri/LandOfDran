@@ -501,6 +501,17 @@ class Model
 	//Was at least one node an Assimp inserted rotation pivot node
 	bool rotationPivotsApplied = false;
 
+	/*
+		Whether an animated node's defaultTransform is its rest pose, or just wherever the file happened
+		to be saved. A DTS shape gives every node a default translation and rotation of its own, apart
+		from any sequence, so it is one. An FBX node is only the scene graph as the artist left it: every
+		animated node in Brickhead.fbx sits at the origin except the right arm, which sits mid-grab
+		because that is the frame the file was saved on. So an FBX keeps no translation and no rotation
+		as the rest pose, which is what Model::addAnimation assumes when working out which nodes an
+		animation actually moves, and what ModelInstance::calculateNodeTransform falls back to.
+	*/
+	bool nodeDefaultsAreRestPose = false;
+
 	//What frame of animation should be displayed for an instance when we're not playing any animations on it
 	float animationDefaultTime = 0;
 
