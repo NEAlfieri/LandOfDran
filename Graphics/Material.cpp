@@ -1,5 +1,15 @@
 #include "Material.h"
 
+#include <filesystem>
+
+//One spelling for a file however a descriptor reached it, so tools/../brickhead/x.png and brickhead/x.png are the same file
+static std::string sameFile(const std::string& path)
+{
+	if (path.empty())
+		return path;
+	return std::filesystem::path(path).lexically_normal().generic_string();
+}
+
 void Material::finishCreation(std::string albedo, std::string normal, std::string roughness, std::string metalness, std::string occlusion, std::shared_ptr<TextureManager>  textures, bool flattenAlbedoAlpha)
 {
 	int howManyLayers = 0;
@@ -13,8 +23,16 @@ void Material::finishCreation(std::string albedo, std::string normal, std::strin
 	debug(std::to_string(howManyLayers) + " layers expected for " + name);
 
 	int currentLayer = 0;
-	
-	PBRArrayTexture = textures->createTexture(howManyLayers, name);
+
+	/*
+		The texture is kept by what's in it rather than by which material asked for it, so materials made of
+		the same files share one copy: TextureManager::createTexture hands back an existing texture of the same
+		name, and every flat coloured DTS material in an add-on folder is made of the same three scuff maps.
+		Named by material, twenty one of them loaded those maps twenty one times over
+	*/
+	std::string key = sameFile(albedo) + "|" + sameFile(normal) + "|" + sameFile(metalness) + "|"
+		+ sameFile(occlusion) + "|" + sameFile(roughness) + (flattenAlbedoAlpha ? "|flat" : "");
+	PBRArrayTexture = textures->createTexture(howManyLayers, key);
 
 	if (!PBRArrayTexture)
 	{
