@@ -1443,12 +1443,6 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			break;
 		}
 
-		case OpenChat:
-		{
-			pd.chatWindow->startTyping();
-			break;
-		}
-
 		case OpenSettings:
 		{
 			pd.settingsMenu->open();

@@ -9,7 +9,6 @@ enum EscapeButtonPressed
 	None = 0,
 	LeaveServer = 1,
 	LeaveGame = 2,
-	OpenChat = 3,
 	OpenDebugMenu = 4,
 	OpenSettings = 5,
 	JoinServer = 6,

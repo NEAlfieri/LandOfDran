@@ -55,11 +55,6 @@ void EscapeMenu::render(ImGuiIO* io)
 		lastButtonPress = EscapeButtonPressed::LeaveGame;
 		close();
 	}
-	if (ImGui::Button("Chat"))
-	{
-		lastButtonPress = EscapeButtonPressed::OpenChat;
-		close();
-	}
 	if (ImGui::Button("Appearance"))
 	{
 		lastButtonPress = EscapeButtonPressed::OpenAppearance;
