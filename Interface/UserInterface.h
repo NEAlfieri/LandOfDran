@@ -145,9 +145,6 @@ class UserInterface
 
 	bool wantsSuppression() const;
 
-	//Why ImGui has the keyboard right now (typing, a held item, a popup, or a focused window), or "none", for the log
-	std::string keyboardCaptureReason() const;
-
 	//How many windows are currently open, not counting HUD windows like chat
 	int getOpenWindowCount() const;
 
