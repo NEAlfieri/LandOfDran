@@ -435,7 +435,7 @@ bool startSoundLoopAt(const std::string& name, const glm::vec3& position, float 
 	loop.kind = SoundLocationFixed;
 	loop.position = position;
 	loop.pitch = std::clamp(pitch, 0.05f, 10.0f);
-	loop.volume = std::clamp(volume, 0.0f, 1.0f);
+	loop.volume = std::clamp(volume, 0.0f, MAX_LOOP_VOLUME);
 	LUA_pd->soundLoops.push_back(loop);
 
 	LUA_server->broadcast(makeLoopStartPacket(loop, nullptr), OtherReliable);
@@ -475,7 +475,7 @@ bool startSoundLoopOnVehicle(const std::string& name, const std::shared_ptr<Vehi
 	loop.kind = SoundLocationVehicle;
 	loop.vehicle = vehicle;
 	loop.pitch = std::clamp(pitch, 0.05f, 10.0f);
-	loop.volume = std::clamp(volume, 0.0f, 1.0f);
+	loop.volume = std::clamp(volume, 0.0f, MAX_LOOP_VOLUME);
 	LUA_pd->soundLoops.push_back(loop);
 
 	LUA_server->broadcast(makeLoopStartPacket(loop, nullptr), OtherReliable);

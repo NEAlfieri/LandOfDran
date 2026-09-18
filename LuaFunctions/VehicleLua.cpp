@@ -805,7 +805,7 @@ void setVehicleMusic(Vehicle& vehicle, const std::string& name, float volume, fl
 	vehicle.musicLoopID = NO_ID;
 
 	vehicle.musicName = name.substr(0, BrickAttachments::maxNameLength);
-	vehicle.musicVolume = std::clamp(std::isfinite(volume) ? volume : 1.0f, 0.0f, 1.0f);
+	vehicle.musicVolume = std::clamp(std::isfinite(volume) ? volume : 1.0f, 0.0f, MAX_LOOP_VOLUME);
 	vehicle.musicPitch = std::clamp(std::isfinite(pitch) ? pitch : 1.0f, 0.05f, 10.0f);
 
 	if (vehicle.musicName.empty())

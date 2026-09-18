@@ -51,7 +51,7 @@ void BrickAttachments::clampValues()
 	itemSpawnName = itemSpawnName.substr(0, maxNameLength);
 
 	//Same ranges as Lua's startSoundLoop
-	musicVolume = std::clamp(finiteOr(musicVolume, 1.0f), 0.0f, 1.0f);
+	musicVolume = std::clamp(finiteOr(musicVolume, 1.0f), 0.0f, MAX_LOOP_VOLUME);
 	musicPitch = std::clamp(finiteOr(musicPitch, 1.0f), 0.05f, 10.0f);
 
 	for (int axis = 0; axis < 3; axis++)

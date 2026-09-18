@@ -442,7 +442,8 @@ void WrenchDialog::render(ImGuiIO* io)
 
 			if (!settings.musicName.empty())
 			{
-				ImGui::SliderFloat("Volume", &settings.musicVolume, 0.0f, 1.0f, "%.2f");
+				ImGui::SliderFloat("Volume", &settings.musicVolume, 0.0f, MAX_LOOP_VOLUME, "%.2f");
+				tooltip("1 is the sound as it was recorded, up to 2 for music meant to carry further");
 				ImGui::SliderFloat("Pitch##Music", &settings.musicPitch, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
 				tooltip("Playback speed. Ctrl+click to type anything from 0.05 to 10");
 			}

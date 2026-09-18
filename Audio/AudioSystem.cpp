@@ -616,7 +616,7 @@ void AudioSystem::startLoop(unsigned int id, int soundID, const SoundLocation& w
 	loop.where = where;
 	loop.where.follow();
 	loop.pitch = std::clamp(pitch, 0.05f, 10.0f);
-	loop.volume = std::clamp(volume, 0.0f, 1.0f);
+	loop.volume = std::clamp(volume, 0.0f, MAX_LOOP_VOLUME);
 	loops.push_back(loop);
 
 	//It gets a source, if it's close enough, in update
@@ -1150,6 +1150,8 @@ AudioSystem::AudioSystem()
 	{
 		alSourcef(source, AL_REFERENCE_DISTANCE, fullVolumeDistance);
 		alSourcef(source, AL_ROLLOFF_FACTOR, distanceRolloff);
+		//OpenAL holds a source's gain to 1 unless it's told otherwise, and a loop can be set louder than that
+		alSourcef(source, AL_MAX_GAIN, MAX_LOOP_VOLUME);
 	}
 	for (ALuint source : voiceSources)
 	{
