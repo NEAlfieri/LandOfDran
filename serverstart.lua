@@ -423,14 +423,90 @@ function createFallingTiles()
 	table.insert(rights,last)
 end
 
---Where players spawn
+--Where players drop in while there's no Spawn Point brick to spawn in
 SPAWN_X, SPAWN_Y, SPAWN_Z = 0, 50, 0
+
+--The special brick type players spawn in, which only admins can plant
+SPAWN_BRICK_TYPE = "Spawn Point"
+
+--Net IDs of the Spawn Point bricks. Nothing tells Lua a brick is gone, so ones that are get dropped as pickSpawnPosition runs into them
+spawnBricks = {}
+
+--Looks through every brick for Spawn Points, since loading a save doesn't say what it added, and takes out any a player without admin owns
+function findSpawnBricks()
+	local admins = {}
+	for i = 0, getNumClients() - 1 do
+		local client = getClientIdx(i)
+		admins[client.id] = client:isAdmin()
+	end
+
+	spawnBricks = {}
+	for i = getNumBricks() - 1, 0, -1 do
+		local brick = getBrickIdx(i)
+		if brick:getTypeName() == SPAWN_BRICK_TYPE then
+			--A vehicle save loaded as bricks is its loader's, whatever is in it. Saves and Lua own theirs as -1
+			if admins[brick:getOwner()] == false then
+				brick:remove(true)
+			else
+				table.insert(spawnBricks, brick.id)
+			end
+		end
+	end
+end
+
+--A player's feet go on the plate at the bottom of a random Spawn Point, the only part of one that collides
+function pickSpawnPosition()
+	while #spawnBricks > 0 do
+		local index = math.random(#spawnBricks)
+		local brick = getBrickId(spawnBricks[index])
+
+		--A removed brick's ID can go to a new one
+		if brick and brick:getTypeName() == SPAWN_BRICK_TYPE then
+			local x, y, z = brick:getPosition()
+			local width, height, length = brick:getDimensions()
+			if brick:getAngleID() % 2 == 1 then
+				width, length = length, width
+			end
+			return x + width / 2, (y + 1) * 0.4 + 0.1, z + length / 2
+		end
+
+		spawnBricks[index] = spawnBricks[#spawnBricks]
+		table.remove(spawnBricks)
+	end
+
+	return SPAWN_X, SPAWN_Y, SPAWN_Z
+end
+
+--Registered before plantSound, which makes no sound for the nil brick a taken back Spawn Point leaves
+function plantSpawnBrick(client, brick)
+	if brick:getTypeName() ~= SPAWN_BRICK_TYPE then
+		return client, brick
+	end
+
+	if not client:isAdmin() then
+		brick:remove()
+		client:centerPrint("Only admins can plant spawn points", 2000, 1, 0.4, 0.4)
+		return client, nil
+	end
+
+	table.insert(spawnBricks, brick.id)
+	return client, brick
+end
+registerEventListener("ClientPlantBrick","plantSpawnBrick")
+
+--Both fire before anything is loaded
+function findSpawnBricksAfterLoad(client, ...)
+	schedule(100, "findSpawnBricks")
+	return client, ...
+end
+registerEventListener("ClientLoadBricks","findSpawnBricksAfterLoad")
+registerEventListener("ClientLoadVehicle","findSpawnBricksAfterLoad")
 
 --Makes a client a player and puts them in it, as they join and each time they respawn after dying, see Damage.lua
 function spawnPlayer(client)
 
 	--Create a player for the client
-	local dynamic = createDynamic(brickhead,SPAWN_X,SPAWN_Y,SPAWN_Z)
+	local dynamic = createDynamic(brickhead,pickSpawnPosition())
 	
 	--Dynamic cannot tip over
 	dynamic:setAngularFactor(0,0,0);
@@ -513,6 +589,11 @@ end
 
 --Everyone nearby hears a brick get planted, from its center
 function plantSound(client, brick)
+	--plantSpawnBrick took it back
+	if not brick then
+		return client, brick
+	end
+
 	local x, y, z = brick:getPosition()
 	local width, height, length = brick:getDimensions()
 	if brick:getAngleID() % 2 == 1 then

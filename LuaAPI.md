@@ -146,7 +146,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `serverstart.lua`'s `join()` gives them their player dynamic here with its `spawnPlayer(client)`, which `Damage.lua` calls again each time they respawn, see [Health, death, and respawning](#health-death-and-respawning). |
 | `ClientLeave` | `function(client) ... return client end` | Fires when a client disconnects, before it's removed from the client list. Use this to clean up anything the client owned (see `PickupSystem.lua`'s `dropHeldOnLeave`). |
 | `ClientChat` | `function(client, message) ... return client, message end` | Fires when a client sends a chat message, before it's broadcast. `message` is `"<name>: <text>"`. Return a modified `message` to alter it, or an empty string to suppress it. Slash commands are case-insensitive: when the text starts with `/`, the command word (up to the first space) is lowercased before listeners see it, so compare against lowercase names; arguments after the space keep their case. |
-| `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. |
+| `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. `serverstart.lua`'s `plantSpawnBrick` does that to a `Spawn Point` planted by anyone but an admin and returns `client, nil`, so listeners after it have to expect no brick. |
 | `ClientAdminLogin` | `function(client) ... return client end` | Fires when a client enters the right eval console password. Not fired for the single player host, who is made admin automatically. `serverstart.lua` plays the `Admin` sound to them here. |
 | `ClientClick` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires on every mouse click. `posX/Y/Z` and `dirX/Y/Z` are the camera's position and look direction *at the moment of the click*; `mask` is the SDL mouse button mask (see Conventions). |
 | `ClientStartTalking` | `function(client) ... return client end` | Fires when a client starts sending voice chat. Calling `client:setVoiceMuted(true)` here cuts them off before anyone hears them. |
@@ -370,7 +370,7 @@ themselves (see [Conventions](#conventions)), so any script can read or change t
 | `killPlayer(player[, attacker[, x, y, z]])` | the player; the client whose score goes up, or `nil`; where what killed them hit | none | Kills a client's player whatever health it had, see below. |
 | `setScore(client, score)` | Client; their new score | none | Sets `client.score` and puts it in the Score column of everyone's player list. |
 | `respawnPlayer(client)` | a dead client | none | Respawns them now, without waiting for the countdown or their click. |
-| `spawnPlayer(client)` | Client | Dynamic | In `serverstart.lua`: makes the client a new player at `SPAWN_X, SPAWN_Y, SPAWN_Z`, gives them control of it, binds their camera, puts their appearance and name on it, gives it health, and plays `Spawn` from it. |
+| `spawnPlayer(client)` | Client | Dynamic | In `serverstart.lua`: makes the client a new player in a random Spawn Point brick (see [Spawn points](#spawn-points)), or at `SPAWN_X, SPAWN_Y, SPAWN_Z` without one, gives them control of it, binds their camera, puts their appearance and name on it, gives it health, and plays `Spawn` from it. |
 
 What damages players so far: a shot from one of the weapon add-ons takes its weapon's `damage` field, the `directDamage` of
 its Blockland datablock (`Support_Weapons.lua`'s `hurtIfPlayer`: Gun 30, pistol 12, submachine gun 8, sport rifle 24, pump
@@ -738,6 +738,17 @@ can do. `saveBuild` writes the time alone, so its saves list
 with no name and a picture drawn from the bricks instead (each pixel the highest brick's color), which is
 also what `.bls` files and saves from older versions get. That drawing happens on the player's computer for
 their own files; the server never draws one.
+
+### Spawn points
+
+Players spawn standing in a random `Spawn Point` brick (a special brick that only collides along its bottom plate), or drop
+in at `SPAWN_X, SPAWN_Y, SPAWN_Z` while there are none. All of it is `serverstart.lua`: `pickSpawnPosition()` is where
+`spawnPlayer` puts a player, and `spawnBricks` is its list of Spawn Point net IDs. Only admins can plant one
+(`plantSpawnBrick`, a `ClientPlantBrick` listener, takes anyone else's straight back out). Nothing tells Lua a brick was
+removed, so the list drops bricks that are gone as `pickSpawnPosition` runs into them, and nothing tells it what a save
+added, so `findSpawnBricks()` looks through every brick a moment after `ClientLoadBricks` and `ClientLoadVehicle`, which
+also removes Spawn Points owned by players without admin (a vehicle save loaded as bricks). Call `findSpawnBricks()`
+yourself after `loadLodSave`, `loadBlocklandSave`, or `addSpecialBrick` adds Spawn Points from Lua.
 
 ### Brick materials
 
