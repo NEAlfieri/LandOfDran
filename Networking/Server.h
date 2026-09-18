@@ -88,3 +88,5 @@ void vehicleWrenchSubmit(JoinedClient* source, Server const* const server, ENetP
 void vehicleSaveRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void vehicleUpload(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void vehicleRemoveRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+void brickSaveRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+void brickUpload(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);

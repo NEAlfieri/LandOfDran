@@ -127,6 +127,15 @@ int findSoundType(const std::string& name)
 	return -1;
 }
 
+void playSoundFor(JoinedClient* client, const std::string& name, float pitch, float volume)
+{
+	int soundID = findSoundType(name);
+	if (soundID < 0 || !client)
+		return;
+
+	client->send(makeOneShotPacket(soundID, pitch, volume, SoundLocationFlat, glm::vec3(0), nullptr), Unreliable);
+}
+
 void playSoundAt(const std::string& name, const glm::vec3& position, float pitch, float volume)
 {
 	if (!LUA_pd || !LUA_server)

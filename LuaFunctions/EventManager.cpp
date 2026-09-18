@@ -291,6 +291,8 @@ EventManager::EventManager(lua_State* L)
     events.push_back(LuaEvent("ClientWrenchVehicle"));
     events.push_back(LuaEvent("ClientLoadVehicle"));
     events.push_back(LuaEvent("ClientRemoveVehicle"));
+    events.push_back(LuaEvent("ClientSaveBricks"));
+    events.push_back(LuaEvent("ClientLoadBricks"));
     events.push_back(LuaEvent("VehicleCreated"));
     events.push_back(LuaEvent("ProjectileHit"));
     events.push_back(LuaEvent("RadiusImpulseHit"));

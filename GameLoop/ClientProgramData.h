@@ -38,6 +38,7 @@
 #include "../Interface/WrenchDialog.h"
 #include "../Interface/PrintMenu.h"
 #include "../Interface/VehicleLoader.h"
+#include "../Interface/BrickSaveMenu.h"
 #include "../Audio/AudioSystem.h"
 #include "../Audio/AcousticProbe.h"
 #include "../Audio/VoiceChat.h"
@@ -218,6 +219,7 @@ struct ClientProgramData
 	std::shared_ptr<WrenchDialog>	wrenchDialog = nullptr;
 	std::shared_ptr<PrintMenu>		printMenu = nullptr;
 	std::shared_ptr<VehicleLoader>	vehicleLoader = nullptr;
+	std::shared_ptr<BrickSaveMenu>	brickSaveMenu = nullptr;
 
 	//File names of the images in Assets/faces, each one's index is its layer in the decal array, see LoopClient's constructor
 	std::vector<std::string> faceNames;

@@ -565,6 +565,8 @@ function takeDisplayItem(client, display)
 	if client:addItem(item) == nil then
 		item:destroy()
 		client:centerPrint("You can't carry any more items.", 2000)
+	else
+		player:playSound("Beep")
 	end
 end
 
@@ -584,6 +586,8 @@ function inventoryClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 			takeDisplayItem(client, hit)
 		elseif client:addItem(hit) == nil then
 			client:centerPrint("You can't carry any more items.", 2000)
+		else
+			playerOf(client):playSound("Beep")
 		end
 		return client, posX, posY, posZ, dirX, dirY, dirZ, mask
 	end
@@ -661,6 +665,7 @@ function throwItem(client, slot)
 	startingItems[item.id] = nil
 
 	if player ~= nil then
+		player:playSound("Beep")
 		local dirX, dirY, dirZ = client:getCameraDirection()
 		local x, y, z = player:getPosition()
 		local velX, velY, velZ = player:getVelocity()

@@ -8,6 +8,7 @@ extern "C"
 }
 
 #include "../GameLoop/ServerProgramData.h"
+#include "../Bricks/BrickSaves.h"
 
 extern ServerProgramData* LUA_pd;
 
@@ -44,6 +45,9 @@ void openPrintMenu(ClientData& client, const Brick* brick);
 
 //Whether a brick's type has TEX:PRINT faces, so a print put on it would actually show
 bool brickCanPrint(const Brick* brick);
+
+//How loadBlocklandBuild finds our lights, emitters, and music for a Blockland save's, from what Lua's addBlocklandLight and addBlocklandEmitter said
+BlocklandAttachmentLookup makeBlocklandLookup();
 
 //Pushes a table of the light fields in settings, the way brick:getLight returns them, see LuaAPI.md
 void pushLightTable(lua_State* L, const BrickAttachments& settings);

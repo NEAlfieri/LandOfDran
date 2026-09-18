@@ -1,4 +1,7 @@
 #include "LoopClient.h"
+#include "../External/stb_image_write.h"
+#include "../Bricks/BrickSaves.h"
+#include <cfloat>
 
 void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 {
@@ -32,6 +35,8 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	pd.printMenu->close();
 	pd.vehicleLoader->close();
 	pd.vehicleGhost.cancel();
+	pd.brickSaveMenu->close();
+	simulation.brickSaves.clear();
 
 	//Will need to log in again to get eval access
 	pd.debugMenu->reset();
@@ -152,6 +157,7 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 
 	if (userName.length() > 0)
 		pd.state->addString("network/username", userName);
+	joinedName = userName;
 	pd.state->addString("network/lastip", ip);
 	pd.state->addInt("network/lastport", port, true, "", 1, 65535);
 	pd.state->exportToFile(ClientProgramData::stateFilePath);
@@ -1040,6 +1046,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		}
 		else if (e.type == SDL_WINDOWEVENT)
 		{
+			//Keys stop arriving without this, so it's worth a line in the log when they seem to have gone missing
+			if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+				info("Window lost keyboard focus");
+			else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+				info("Window gained keyboard focus");
+
 			if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
 			{
 				pd.context->setSize(e.window.data1, e.window.data2);
@@ -1204,6 +1216,16 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	//Interacting with gui, don't move around in-game
 	pd.input->supressed = pd.gui->wantsSuppression();
 
+	//Every change to what's taking the keys away from the game goes in the log, with ImGui's reason while it has them
+	std::string captureReason = pd.input->supressed ? pd.gui->keyboardCaptureReason() : "";
+	if (pd.input->supressed != loggedSuppressed || pd.context->getMouseLocked() != loggedMouseLocked || captureReason != loggedCaptureReason)
+	{
+		loggedSuppressed = pd.input->supressed;
+		loggedMouseLocked = pd.context->getMouseLocked();
+		loggedCaptureReason = captureReason;
+		info(std::string("Input state: keys ") + (loggedSuppressed ? "held by gui (" + captureReason + ")" : "to game") + ", mouse " + (loggedMouseLocked ? "locked" : "free") + ", " + std::to_string(pd.gui->getOpenWindowCount()) + " windows open");
+	}
+
 	//Someone just applied setting changes
 	if (pd.settingsMenu->pollForChanges())
 	{
@@ -1312,6 +1334,53 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	if (vehicleLoaderWasOpen && !pd.vehicleLoader->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
 		pd.context->setMouseLock(true);
 	vehicleLoaderWasOpen = pd.vehicleLoader->isOpen();
+
+	//The saved bricks window: the server sends us a save of the bricks to write to our own Saves folder, with a picture we draw
+	//of them, and an admin can upload one of those for the server to load
+	pd.brickSaveMenu->setAdmin(pd.debugMenu->isAuthenticated());
+
+	std::string saveFileName;
+	if (pd.brickSaveMenu->takeSaveRequest(saveFileName) && client && cmdArgs.gameState == InGame)
+	{
+		std::string savePath = getSavePath(saveFileName);
+		if (savePath.empty())
+			pd.gui->addCenterPrint("That name can't be used for a file.", 3000, 1.0f, 0.4f, 0.4f);
+		else if (!pd.debugMenu->isAuthenticated())
+			saveBricksLocally(savePath);
+		else
+		{
+			static uint32_t nextSaveRequestID = 1;
+			uint32_t requestID = nextSaveRequestID++;
+			simulation.brickSaves[requestID] = { savePath, renderSavePreview(), "" };
+			client->send(makeBrickSaveRequestPacket(requestID), OtherReliable);
+		}
+	}
+
+	std::string loadFileName;
+	bool loadClear = false;
+	glm::ivec3 loadOffset(0);
+	if (pd.brickSaveMenu->takeLoadRequest(loadFileName, loadClear, loadOffset) && client && cmdArgs.gameState == InGame)
+	{
+		std::string loadPath = getSavePath(loadFileName);
+		std::ifstream file(loadPath, std::ios::binary);
+		std::string bytes = file.is_open() ? std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()) : "";
+		if (bytes.empty())
+			pd.gui->addCenterPrint("Couldn't read " + loadPath, 3000, 1.0f, 0.4f, 0.4f);
+		else if (bytes.size() > 16 * 1024 * 1024)
+			pd.gui->addCenterPrint(loadPath + " is too big to upload", 3000, 1.0f, 0.4f, 0.4f);
+		else
+		{
+			static uint32_t nextBrickUploadID = 1;
+			bool blockland = loadFileName.length() > 4 && lowercase(loadFileName.substr(loadFileName.length() - 4)) == ".bls";
+			for (ENetPacket* packet : makeBrickUploadPackets(nextBrickUploadID++, loadFileName, blockland, loadClear, loadOffset, bytes))
+				client->send(packet, OtherReliable);
+			pd.gui->addCenterPrint("Uploading " + loadFileName + "...", 2000, 1.0f, 1.0f, 1.0f);
+		}
+	}
+
+	if (brickSaveMenuWasOpen && !pd.brickSaveMenu->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
+		pd.context->setMouseLock(true);
+	brickSaveMenuWasOpen = pd.brickSaveMenu->isOpen();
 
 	//Applied or closed, back to playing if nothing else is open
 	if (wrenchDialogWasOpen && !pd.wrenchDialog->isOpen() && pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
@@ -1423,6 +1492,13 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		{
 			if (cmdArgs.gameState == InGame)
 				pd.vehicleLoader->openLoader();
+			break;
+		}
+
+		case OpenBrickSaves:
+		{
+			if (cmdArgs.gameState == InGame)
+				pd.brickSaveMenu->openMenu();
 			break;
 		}
 
@@ -2126,6 +2202,219 @@ void LoopClient::renderScene(bool clipAtWater)
 
 	if (timePasses)
 		pd.profiler.end();
+}
+
+void LoopClient::saveBricksLocally(const std::string& path)
+{
+	scope("LoopClient::saveBricksLocally");
+
+	if (!simulation.bricks || simulation.bricks->size() == 0)
+	{
+		pd.gui->addCenterPrint("There are no bricks to save.", 3000, 1.0f, 0.4f, 0.4f);
+		return;
+	}
+
+	std::vector<const Brick*> all;
+	all.reserve(simulation.bricks->size());
+	for (size_t a = 0; a < simulation.bricks->size(); a++)
+		all.push_back(simulation.bricks->get(a));
+
+	LodSaveInfo saveInfo;
+	saveInfo.savedBy = joinedName;
+	saveInfo.savedAt = (int64_t)time(nullptr);
+	saveInfo.thumbnail = renderSavePreview();
+
+	std::error_code errorCode;
+	std::filesystem::create_directories("Saves", errorCode);
+
+	//Our type and print IDs are our own, and we never learn who planted a brick
+	std::ofstream file(path, std::ios::binary);
+	bool written = file.is_open() && writeLodBricks(file, all, &pd.brickTypes, &pd.prints, true, &saveInfo);
+	file.close();
+
+	if (written)
+	{
+		info("Saved " + std::to_string(all.size()) + " bricks to " + path + " from what we can see of them");
+		pd.gui->addCenterPrint("Saved " + std::to_string(all.size()) + " bricks to " + path, 4000, 1.0f, 1.0f, 1.0f);
+	}
+	else
+	{
+		error("Couldn't write " + path);
+		pd.gui->addCenterPrint("Couldn't write " + path, 4000, 1.0f, 0.4f, 0.4f);
+	}
+
+	pd.brickSaveMenu->refresh();
+}
+
+//stb's JPEG writer hands out pieces of the file, appended to the string it's given
+static void appendPreviewBytes(void* context, void* data, int size)
+{
+	((std::string*)context)->append((const char*)data, size);
+}
+
+std::string LoopClient::renderSavePreview()
+{
+	scope("LoopClient::renderSavePreview");
+
+	static constexpr int previewSize = 256;
+
+	if (!simulation.bricks || simulation.bricks->size() == 0)
+		return "";
+
+	//What the bricks take up, in world units
+	glm::vec3 low(FLT_MAX), high(-FLT_MAX);
+	for (size_t a = 0; a < simulation.bricks->size(); a++)
+	{
+		const Brick* brick = simulation.bricks->get(a);
+		low = glm::min(low, glm::vec3(brick->x * STUD_SIZE, brick->y * PLATE_SIZE, brick->z * STUD_SIZE));
+		high = glm::max(high, glm::vec3((brick->x + brick->footprintWidth()) * STUD_SIZE, (brick->y + brick->height) * PLATE_SIZE, (brick->z + brick->footprintLength()) * STUD_SIZE));
+	}
+
+	glm::vec3 center = (low + high) * 0.5f;
+	float radius = glm::length(high - low) * 0.5f + 1.0f;
+
+	//Looking down at the build from above one corner, far enough back to be outside all of it
+	glm::vec3 direction = glm::normalize(glm::vec3(0.45f, -1.0f, 0.65f));
+	glm::vec3 eye = center - direction * (radius * 2.0f + 50.0f);
+	glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0, 1, 0));
+
+	//An orthographic frame fitted around the corners of the box the bricks are in, square since the picture is
+	glm::vec3 viewLow(FLT_MAX), viewHigh(-FLT_MAX);
+	for (int corner = 0; corner < 8; corner++)
+	{
+		glm::vec3 point((corner & 1) ? high.x : low.x, (corner & 2) ? high.y : low.y, (corner & 4) ? high.z : low.z);
+		glm::vec3 seen = glm::vec3(view * glm::vec4(point, 1.0f));
+		viewLow = glm::min(viewLow, seen);
+		viewHigh = glm::max(viewHigh, seen);
+	}
+	float halfWidth = std::max(viewHigh.x - viewLow.x, viewHigh.y - viewLow.y) * 0.5f * 1.08f;
+	glm::vec2 middle((viewLow.x + viewHigh.x) * 0.5f, (viewLow.y + viewHigh.y) * 0.5f);
+	//View space looks down -z, and the grass around the build reaches further back than its corners do
+	float nearPlane = std::max(-viewHigh.z - 10.0f, 0.1f);
+	float farPlane = -viewLow.z + halfWidth * 4.0f + 400.0f;
+	glm::mat4 projection = glm::ortho(middle.x - halfWidth, middle.x + halfWidth, middle.y - halfWidth, middle.y + halfWidth, nearPlane, farPlane);
+
+	RenderTarget::RenderTargetSettings settings;
+	settings.width = previewSize;
+	settings.height = previewSize;
+	settings.channels = 3;
+	settings.useColor = true;
+	settings.useDepth = false;
+	settings.useDepthBuffer = true;
+
+	//Noon, whatever time it is, so a build saved at night can still be seen in its picture
+	const SkyKeyframe& day = simulation.dayCycle.phases[DaytimePhase];
+	settings.clearColor = glm::vec4(day.fogColor, 1.0f);
+
+	RenderTarget target(settings, pd.textures);
+	if (!target.isValid())
+	{
+		error("Couldn't make a render target for the picture");
+		return "";
+	}
+
+	EnvironmentUniforms previousEnvironment = pd.shaders->environmentUniforms;
+	CameraUniforms previousCamera = pd.shaders->cameraUniforms;
+	GLint previousPointLightCount = pd.shaders->pointLightUniforms.PointLightCount;
+
+	EnvironmentUniforms& environment = pd.shaders->environmentUniforms;
+	environment.SunDirection = glm::normalize(glm::vec3(0.3f, 1.0f, 0.45f));
+	environment.LightDirection = environment.SunDirection;
+	environment.LightColor = day.lightColor;
+	environment.AmbientColor = day.ambientColor;
+	environment.SkyColor = day.skyColor;
+	environment.FogColor = day.fogColor;
+	//No fog inside the frame, and the grass reaches a little past the end of the fog, so this is also how far it goes
+	environment.FogDistanceMin = std::max(600.0f, radius * 4.0f);
+	environment.FogDistanceMax = environment.FogDistanceMin;
+	environment.ShadowStrength = 0.0f;
+	environment.RainIntensity = 0.0f;
+	environment.RainWetness = 0.0f;
+	environment.ClipPlane = glm::vec4(0.0f);
+	pd.shaders->updateEnvironmentUBO();
+
+	pd.shaders->pointLightUniforms.PointLightCount = 0;
+	pd.shaders->updatePointLightUBO();
+
+	CameraUniforms& camera = pd.shaders->cameraUniforms;
+	camera.CameraProjection = projection;
+	camera.CameraView = view;
+	camera.CameraAngle = glm::mat4(glm::mat3(view));
+	camera.CameraPosition = eye;
+	camera.CameraDirection = direction;
+	pd.shaders->updateCameraUBO();
+
+	//Nowhere near any shadow cascade, so cascadeLight finds every one out of range and returns fully lit
+	glm::mat4 noShadow = glm::translate(glm::vec3(1.0e7f, 1.0e7f, 0.0f));
+	glm::mat4 lightSpaceMatricies[3] = { noShadow, noShadow, noShadow };
+
+	//The whole build, however far the draw distance is
+	pd.brickRenderer->setDrawDistance(0);
+
+	target.use();
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	//Grass, the way renderScene draws it
+	pd.shaders->modelShader->use();
+	glUniformMatrix4fv(pd.lightSpaceMatriciesUniformModel, 3, GL_FALSE, &lightSpaceMatricies[0][0][0]);
+	glUniform1i(pd.shaders->modelShader->getUniformLocation("coloredShadows"), 0);
+	pd.shaders->basicUniforms.ScaleMatrix = glm::mat4(1.0);
+	pd.shaders->basicUniforms.TranslationMatrix = glm::mat4(1.0);
+	pd.shaders->basicUniforms.RotationMatrix = glm::mat4(1.0);
+	pd.shaders->basicUniforms.nonInstanced = 1;
+	pd.shaders->basicUniforms.cameraSpacePosition = 1;
+	pd.shaders->updateBasicUBO();
+	pd.grassMaterial->use(pd.shaders);
+	glBindVertexArray(pd.grassVao);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glBindVertexArray(0);
+
+	//Bricks, transparent ones last, without any vehicles' since they aren't saved
+	pd.shaders->brickShader->use();
+	glUniformMatrix4fv(pd.lightSpaceMatriciesUniformBrick, 3, GL_FALSE, &lightSpaceMatricies[0][0][0]);
+	glUniform1i(pd.shaders->brickShader->getUniformLocation("coloredShadows"), 0);
+	pd.brickRenderer->render(pd.shaders, false);
+	pd.brickRenderer->render(pd.shaders, true);
+
+	//A render target is made with no read buffer, since nothing else reads one back
+	std::vector<unsigned char> pixels(previewSize * previewSize * 3);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, previewSize, previewSize, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+	glPixelStorei(GL_PACK_ALIGNMENT, 4);
+
+	//Everything back the way the frame had it
+	pd.brickRenderer->setDrawDistance(pd.drawDistance);
+	pd.shaders->environmentUniforms = previousEnvironment;
+	pd.shaders->updateEnvironmentUBO();
+	pd.shaders->cameraUniforms = previousCamera;
+	pd.shaders->updateCameraUBO();
+	pd.shaders->pointLightUniforms.PointLightCount = previousPointLightCount;
+	pd.shaders->updatePointLightUBO();
+	pd.shaders->basicUniforms.nonInstanced = 0;
+	pd.shaders->basicUniforms.cameraSpacePosition = 0;
+	pd.shaders->updateBasicUBO();
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glm::vec2 resolution = pd.context->getResolution();
+	glViewport(0, 0, (GLsizei)resolution.x, (GLsizei)resolution.y);
+
+	//OpenGL reads the bottom row first, a picture starts at the top
+	std::vector<unsigned char> flipped(pixels.size());
+	for (int row = 0; row < previewSize; row++)
+		memcpy(flipped.data() + row * previewSize * 3, pixels.data() + (previewSize - 1 - row) * previewSize * 3, previewSize * 3);
+
+	std::string jpeg;
+	if (!stbi_write_jpg_to_func(appendPreviewBytes, &jpeg, previewSize, previewSize, 3, flipped.data(), 85))
+	{
+		error("Couldn't write the picture as a JPEG");
+		return "";
+	}
+
+	info("Drew a " + std::to_string(jpeg.size()) + " byte picture of " + std::to_string(simulation.bricks->size()) + " bricks for a save");
+	return jpeg;
 }
 
 void LoopClient::renderTransparent(bool clipAtWater)
@@ -3509,6 +3798,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.wrenchDialog = pd.gui->createWindow<WrenchDialog>();
 	pd.printMenu = pd.gui->createWindow<PrintMenu>(pd.textures, &pd.prints);
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
+	pd.brickSaveMenu = pd.gui->createWindow<BrickSaveMenu>(&pd.brickTypes, &pd.prints);
 	//Builds from before the state file kept the hot bar in settings.txt
 	std::shared_ptr<SettingManager> hotbarSource = pd.state;
 	if (!pd.state->getPreference("hotbar/slot1/filled") && settings->getPreference("hotbar/slot1/filled"))

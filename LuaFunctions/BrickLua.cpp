@@ -622,7 +622,52 @@ static int LUA_saveBuild(lua_State* L)
 	bool omitOwnership = args == 2 && lua_toboolean(L, 2);
 	lua_settop(L, 0);
 
-	lua_pushboolean(L, !path.empty() && saveLodBuild(*LUA_pd->bricks, &LUA_pd->prints, path, omitOwnership));
+	//No player saved it and there's no picture, but the time is known
+	LodSaveInfo info;
+	info.savedAt = (int64_t)time(nullptr);
+
+	lua_pushboolean(L, !path.empty() && saveLodBuild(*LUA_pd->bricks, &LUA_pd->prints, path, omitOwnership, &info));
+	return 1;
+}
+
+static int LUA_saveBuildPicture(lua_State* L)
+{
+	scope("(LUA) saveBuildPicture");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument saveBuildPicture(fileName)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string path = saveFileArgument(L, 1);
+	lua_settop(L, 0);
+	if (path.empty())
+	{
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	std::string jpeg = drawBricksFromAbove(*LUA_pd->bricks);
+	if (jpeg.empty())
+	{
+		error("There are no bricks to draw");
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	std::error_code errorCode;
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), errorCode);
+
+	std::ofstream file(path, std::ios::binary);
+	bool written = file.is_open() && file.write(jpeg.data(), jpeg.size());
+	if (!written)
+		error("Could not write " + path);
+	else
+		info("Drew " + std::to_string(LUA_pd->bricks->size()) + " bricks into " + path);
+
+	lua_pushboolean(L, written);
 	return 1;
 }
 
@@ -684,26 +729,34 @@ static std::string findBlocklandEmitter(const std::string& uiName)
 	return findEmitterTypeByUiName(uiName);
 }
 
+BlocklandAttachmentLookup makeBlocklandLookup()
+{
+	BlocklandAttachmentLookup lookup;
+	lookup.setLight = setBlocklandLight;
+	lookup.findEmitterType = findBlocklandEmitter;
+	lookup.findMusic = findMusicByName;
+	return lookup;
+}
+
 static int LUA_loadBlocklandSave(lua_State* L)
 {
 	scope("(LUA) loadBlocklandSave");
 
-	if (lua_gettop(L) != 1)
+	int args = lua_gettop(L);
+	if (args != 1 && args != 4)
 	{
-		error("Expected 1 argument loadBlocklandSave(fileName)");
+		error("Expected 1 or 4 arguments loadBlocklandSave(fileName[, x, y, z])");
 		lua_settop(L, 0);
 		return 0;
 	}
 
 	std::string path = saveFileArgument(L, 1);
+	int offsetX = args == 4 ? (int)floor(lua_tonumber(L, 2)) : 0;
+	int offsetY = args == 4 ? (int)floor(lua_tonumber(L, 3)) : 0;
+	int offsetZ = args == 4 ? (int)floor(lua_tonumber(L, 4)) : 0;
 	lua_settop(L, 0);
 
-	BlocklandAttachmentLookup lookup;
-	lookup.setLight = setBlocklandLight;
-	lookup.findEmitterType = findBlocklandEmitter;
-	lookup.findMusic = findMusicByName;
-
-	int loaded = path.empty() ? -1 : loadBlocklandBuild(*LUA_pd->bricks, LUA_pd->brickTypes, &LUA_pd->prints, path, lookup);
+	int loaded = path.empty() ? -1 : loadBlocklandBuild(*LUA_pd->bricks, LUA_pd->brickTypes, &LUA_pd->prints, path, makeBlocklandLookup(), offsetX, offsetY, offsetZ);
 	if (loaded < 0)
 		lua_pushnil(L);
 	else
@@ -1614,6 +1667,7 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "getBrickAt", LUA_getBrickAt);
 	lua_register(L, "clearAllBricks", LUA_clearAllBricks);
 	lua_register(L, "saveBuild", LUA_saveBuild);
+	lua_register(L, "saveBuildPicture", LUA_saveBuildPicture);
 	lua_register(L, "loadLodSave", LUA_loadLodSave);
 	lua_register(L, "loadBlocklandSave", LUA_loadBlocklandSave);
 	lua_register(L, "addBlocklandLight", LUA_addBlocklandLight);

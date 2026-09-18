@@ -185,6 +185,16 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 			vehicleRemoveRequest(source, this, packet, pd);
 			return;
 		}
+		case BrickSaveRequest:
+		{
+			brickSaveRequest(source, this, packet, pd);
+			return;
+		}
+		case BrickUpload:
+		{
+			brickUpload(source, this, packet, pd);
+			return;
+		}
 
 		case InvalidClient:
 		default:

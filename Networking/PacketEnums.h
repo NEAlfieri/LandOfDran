@@ -91,7 +91,12 @@ enum FromClientPacketType : unsigned char
 	PrintSubmit = 26,		//The print the client picked in the print menu the server last sent them, see Networking/PacketsFromClient/Print.cpp
 	FreeCameraRequest = 27,	//Whether the client's camera has come loose from their player to fly around, see Networking/PacketsFromClient/FreeCamera.cpp
 	SeatCycleRequest = 28,	//The client pressed their next seat key in a vehicle, so they move to its next free seat, see Networking/PacketsFromClient/SeatCycle.cpp
+	BrickSaveRequest = 29,	//Send the client a save of every brick to write to their own computer, see Networking/PacketsFromClient/BrickSaveFiles.cpp
+	BrickUpload = 30,		//Part of a save from the client's computer to load, admins only, in pieces like VehicleUpload
 };
+
+//Flags byte of a BrickUpload packet
+#define BrickLoadFlag_Clear 1		//Take every brick away first
 
 //Flags byte after the mask of a ClickDetails packet
 #define ClickFlag_Release 1			//A mouse button was let go rather than pressed, mask is just that button
@@ -199,6 +204,7 @@ enum FromServerPacketType : unsigned char
 	ChatSuggestion = 43,	//A slash command's name and the hint the chat window lists for it, for every one as a client joins and whenever Lua registers one, see registerChatSuggestion
 	Vignette = 44,			//A colored, wobbling vignette over the client's screen that fades out over a duration, see client:setVignette and VignettePacket
 	DynamicPart = 45,		//Put a model worn on a dynamic in one of its slots, like a hat on a player, or take it off, see Dynamic::setPart
+	BrickSaveData = 46,		//Part of a save of every brick the client asked for, see BrickSaveDataPacket
 };
 
 //Flags byte of a PlayerAbilities packet

@@ -429,6 +429,65 @@ inline std::vector<ENetPacket*> makeVehicleUploadPackets(uint32_t uploadID, bool
 
 /*
 	1 byte		-	packet type
+	4 bytes		-	request ID, a new one for each request, which the save comes back with
+
+	Asks for a save of every brick, which comes back in BrickSaveData packets to write to our own computer, see Networking/PacketsFromClient/BrickSaveFiles.cpp
+*/
+inline ENetPacket* makeBrickSaveRequestPacket(uint32_t requestID)
+{
+	ENetPacket* ret = enet_packet_create(NULL, 1 + sizeof(uint32_t), getFlagsFromChannel(OtherReliable));
+	ret->data[0] = (unsigned char)BrickSaveRequest;
+	memcpy(ret->data + 1, &requestID, sizeof(uint32_t));
+	return ret;
+}
+
+/*
+	A save from our own computer for the server to load, in pieces, each:
+	1 byte		-	packet type
+	4 bytes		-	upload ID, a new one for each file
+	4 bytes		-	size of the whole file
+	4 bytes		-	where in the file this packet's bytes go
+	1 byte		-	flags, see BrickLoadFlag_Clear
+	1 byte		-	1 for a Blockland .bls save, 0 for one of ours
+	12 bytes	-	how far from where it was saved it goes, in studs, plates, and studs
+	1 byte		-	length of the file name, then the name, just for the server's messages
+	The rest	-	file bytes
+
+	The server only loads it for admins
+*/
+inline std::vector<ENetPacket*> makeBrickUploadPackets(uint32_t uploadID, const std::string& fileName, bool blockland, bool clearFirst, const glm::ivec3& offset, const std::string& file)
+{
+	static constexpr size_t chunkBytes = 1100;
+	std::string name = fileName.substr(0, 255);
+	const int32_t offsetValues[3] = { offset.x, offset.y, offset.z };
+	size_t headerBytes = 1 + sizeof(uint32_t) * 3 + 2 + sizeof(offsetValues) + 1 + name.length();
+
+	std::vector<ENetPacket*> packets;
+	uint32_t total = (uint32_t)file.size();
+	for (size_t offsetBytes = 0; offsetBytes < file.size(); offsetBytes += chunkBytes)
+	{
+		size_t length = std::min(chunkBytes, file.size() - offsetBytes);
+		uint32_t at = (uint32_t)offsetBytes;
+
+		ENetPacket* ret = enet_packet_create(NULL, headerBytes + length, getFlagsFromChannel(OtherReliable));
+		unsigned char* data = ret->data;
+		data[0] = (unsigned char)BrickUpload;
+		memcpy(data + 1, &uploadID, sizeof(uint32_t));
+		memcpy(data + 1 + sizeof(uint32_t), &total, sizeof(uint32_t));
+		memcpy(data + 1 + sizeof(uint32_t) * 2, &at, sizeof(uint32_t));
+		data[1 + sizeof(uint32_t) * 3] = clearFirst ? BrickLoadFlag_Clear : 0;
+		data[2 + sizeof(uint32_t) * 3] = blockland ? 1 : 0;
+		memcpy(data + 3 + sizeof(uint32_t) * 3, offsetValues, sizeof(offsetValues));
+		data[3 + sizeof(uint32_t) * 3 + sizeof(offsetValues)] = (unsigned char)name.length();
+		memcpy(data + 4 + sizeof(uint32_t) * 3 + sizeof(offsetValues), name.data(), name.length());
+		memcpy(data + headerBytes, file.data() + offsetBytes, length);
+		packets.push_back(ret);
+	}
+	return packets;
+}
+
+/*
+	1 byte		-	packet type
 	4 bytes		-	vehicle net ID
 */
 inline ENetPacket* makeVehicleRemoveRequestPacket(netIDType vehicleID)

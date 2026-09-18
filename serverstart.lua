@@ -78,6 +78,11 @@ newSoundType("Launch","Assets/sound/launch.wav")
 newSoundType("PrintFire","Assets/sound/printFire.wav")
 --The horn a new vehicle honks with when its driver left clicks, until its wrench dialog picks another sound
 newSoundType("Honk","Assets/sound/434878__mickthemicguy__car-honking.wav")
+--Getting into or out of a vehicle, picking up or dropping an item, and an upload being accepted and then finished
+newSoundType("PlayerMount","Assets/sound/playerMount.wav")
+newSoundType("Beep","Assets/sound/beep.wav")
+newSoundType("UploadStart","Assets/sound/uploadStart.wav")
+newSoundType("ProcessComplete","Assets/sound/processComplete.wav")
 --Music, which players can put on bricks by holding Insert and clicking one to open the wrench dialog
 newSoundType("After School Special","Assets/music/After_School_Special.wav",true)
 newSoundType("After School Special","Assets/music/analog.wav",true)

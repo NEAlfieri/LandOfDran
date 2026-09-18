@@ -128,4 +128,14 @@ struct Simulation
 	};
 	//By vehicle net ID
 	std::map<netIDType, PendingVehicleSave> vehicleSaves;
+
+	//A save of every brick we asked for from the saved bricks window, with the picture we drew to put in it, see BrickSaveDataPacket
+	struct PendingBrickSave
+	{
+		std::string path;
+		std::string thumbnail;
+		std::string bytes;
+	};
+	//By the request ID we sent
+	std::map<uint32_t, PendingBrickSave> brickSaves;
 };

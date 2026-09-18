@@ -513,6 +513,12 @@ void exitVehicle(ClientData& client, bool callEvent)
 
 	letOut(*vehicle, player, seat);
 
+	//The old game's, if Lua registered it, the same as getting in
+	if (player)
+		playSoundOn("PlayerMount", player, 1.0f, 1.0f);
+	else
+		playSoundOnVehicle("PlayerMount", vehicle, 1.0f, 1.0f);
+
 	if (callEvent && client.client)
 		vehicleEventVetoed("ClientExitVehicle", client, vehicle, seat);
 }

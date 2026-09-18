@@ -1,6 +1,7 @@
 #include "../Server.h"
 #include "../../GameLoop/ServerProgramData.h"
 #include "../../LuaFunctions/VehicleLua.h"
+#include "../../LuaFunctions/SoundLua.h"
 
 #include <cmath>
 
@@ -121,6 +122,7 @@ void vehicleUpload(JoinedClient* source, Server const* const server, ENetPacket 
 	{
 		client->vehicleUpload.clear();
 		client->vehicleUploadID = uploadID;
+		playSoundFor(source, "UploadStart", 1.0f, 1.0f);
 	}
 	else if (uploadID != client->vehicleUploadID || offset != client->vehicleUpload.size())
 		return;
@@ -168,4 +170,6 @@ void vehicleUpload(JoinedClient* source, Server const* const server, ENetPacket 
 	bool placed = loadVehicleSave(client.get(), data, spot, asVehicle, message);
 	if (!message.empty())
 		source->sendCenterPrint(message, 4000, 1.0f, placed ? 1.0f : 0.4f, placed ? 1.0f : 0.4f);
+	if (placed)
+		playSoundFor(source, "ProcessComplete", 1.0f, 1.0f);
 }

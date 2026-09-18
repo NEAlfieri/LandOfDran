@@ -77,6 +77,26 @@ class LoopClient
 	//And the saved vehicles window
 	bool vehicleLoaderWasOpen = false;
 
+	//And the saved bricks window
+	bool brickSaveMenuWasOpen = false;
+
+	//The name we joined the current server with, written into saves made without the server's help
+	std::string joinedName;
+
+	/*
+		Writes every brick we can see to a save in our own Saves folder, with the picture from renderSavePreview
+		For when we aren't an admin: the server only sends its full save, with names and everything on each brick, to admins
+	*/
+	void saveBricksLocally(const std::string& path);
+
+	/*
+		Draws every brick from up above and to one side, all of them fitted into a 256 by 256 picture, for the save the
+		server is about to write to show in its list. Daylight with no shadows, fog, or point lights, so the picture reads
+		the same whatever the weather was, and no players, items, or vehicles, since they aren't in the save
+		Returns the picture as a JPEG, or "" with no bricks or if it couldn't be drawn
+	*/
+	std::string renderSavePreview();
+
 	//How long Ctrl+undo has been held, and since the last repeated undo, see handleInput
 	float undoHeldMS = 0;
 	float undoSinceRepeatMS = 0;
@@ -136,6 +156,11 @@ class LoopClient
 		Only if the server allows it, which is admins only unless its Lua says otherwise, see Simulation::freeCameraEnabled
 	*/
 	bool freeCamera = false;
+
+	//What the last "Input state" log line said, so only changes are logged
+	bool loggedSuppressed = false;
+	bool loggedMouseLocked = false;
+	std::string loggedCaptureReason;
 
 	//What the camera was bound to before it came loose, put back when our player is dropped at it
 	std::weak_ptr<Dynamic> cameraTargetBeforeFlying;

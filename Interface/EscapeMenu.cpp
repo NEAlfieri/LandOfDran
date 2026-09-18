@@ -25,6 +25,11 @@ void EscapeMenu::render(ImGuiIO* io)
 			lastButtonPress = EscapeButtonPressed::LeaveServer;
 			close();
 		}
+		if (ImGui::Button("Save / Load Bricks"))
+		{
+			lastButtonPress = EscapeButtonPressed::OpenBrickSaves;
+			close();
+		}
 		if (ImGui::Button("Load Saved Vehicle"))
 		{
 			lastButtonPress = EscapeButtonPressed::OpenSavedVehicles;

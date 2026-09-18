@@ -112,6 +112,14 @@ struct ClientData
 	std::string vehicleUpload;
 	uint32_t vehicleUploadID = 0;
 
+	//The same for a save of bricks they're uploading to load, see Networking/PacketsFromClient/BrickSaveFiles.cpp
+	std::string brickUpload;
+	uint32_t brickUploadID = 0;
+
+	//SDL_GetTicks of the last time they asked for a save of the bricks and loaded one they uploaded
+	unsigned int lastBrickSaveMS = 0;
+	unsigned int lastBrickLoadMS = 0;
+
 	//Puts an item that's on the ground into a slot, or the first empty one for -1. Returns the slot, or -1 if that slot is taken or none are free
 	int addItem(const ServerProgramData* pd, const std::shared_ptr<Item>& item, int slot = -1);
 

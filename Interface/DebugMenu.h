@@ -85,6 +85,9 @@ public:
 
 	void authenticate() { wantsToAuthenticate = false; autheticated = true; }
 
+	//Whether the server we're on gave us admin, by password or for hosting it ourselves
+	bool isAuthenticated() const { return autheticated; }
+
 	//Does getPassword have a password to return?
 	bool passwordSubmitted() const { return wantsToAuthenticate; }
 
