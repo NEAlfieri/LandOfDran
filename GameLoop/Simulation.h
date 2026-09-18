@@ -16,6 +16,29 @@
 
 /*
 	Client only
+	A colored vignette wobbling the picture like being under the water, from Lua's client:setVignette, see VignettePacket
+	Drawn by underwater.frag over the finished scene, alpha and strength both fade to nothing as elapsedMS reaches durationMS
+*/
+struct ScreenVignette
+{
+	glm::vec3 color = glm::vec3(1, 0, 0);
+	//How opaque the color is at the edges of the screen as the effect starts
+	float alpha = 0.0f;
+	//How hard the picture wobbles as the effect starts, 0 for none, 1 about as much as being underwater
+	float strength = 0.0f;
+	float durationMS = 0.0f;
+	float elapsedMS = 0.0f;
+
+	bool active() const { return durationMS > 0.0f && elapsedMS < durationMS; }
+
+	//1 as the effect starts, down to 0 as its duration runs out
+	float fade() const { return active() ? 1.0f - elapsedMS / durationMS : 0.0f; }
+
+	void clear() { durationMS = 0.0f; elapsedMS = 0.0f; }
+};
+
+/*
+	Client only
 	SimObjects and SimObjectTypes
 	Any in-game object that has state managed by the server
 	Created on server join, deleted when leaving server
@@ -43,6 +66,9 @@ struct Simulation
 
 	//Whether it lets us drop the camera off our player and fly it around, which is admins only unless its Lua says otherwise
 	bool freeCameraEnabled = false;
+
+	//The vignette Lua's client:setVignette has over our screen, if any, see VignettePacket
+	ScreenVignette vignette;
 
 	//Only stored if we succesfully managed to log in to the server we're currently playing on
 	std::string evalPassword = "";

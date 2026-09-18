@@ -17,6 +17,9 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	cameraTargetBeforeFlying.reset();
 	simulation.freeCameraEnabled = false;
 
+	//Whatever this server's Lua put over our screen goes with it
+	simulation.vignette.clear();
+
 	pd.serverBrowser->open();
 
 	if (!client)
@@ -2897,8 +2900,14 @@ void LoopClient::renderEverything(float deltaT)
 		glCullFace(GL_BACK);
 	}
 
-	//Blue tint, slow waves, darker edges, and the scene wobbling like light bending through moving water while the camera is under the water
-	if (simulation.waterEnabled && cameraUnderwater)
+	//Blue tint, slow waves, darker edges, and the scene wobbling like light bending through moving water while the camera is under the water,
+	//and the colored vignette from Lua's client:setVignette wobbling it the same way, both drawn in one pass over the finished scene
+	bool underwaterEffect = simulation.waterEnabled && cameraUnderwater;
+	ScreenVignette& vignette = simulation.vignette;
+	if (vignette.active())
+		vignette.elapsedMS += deltaT;
+	bool vignetteEffect = vignette.active();
+	if (underwaterEffect || vignetteEffect)
 	{
 		//The finished scene is copied out first so underwater.frag can draw it back warped
 		int screenWidth = std::max(1, (int)pd.context->getResolution().x);
@@ -2919,18 +2928,27 @@ void LoopClient::renderEverything(float deltaT)
 			pd.underwaterScene->copyFromScreen();
 			pd.underwaterSceneCopies = pd.underwaterScene->isValid() && glGetError() == GL_NO_ERROR;
 			if (!pd.underwaterSceneCopies)
-				error("Couldn't copy the screen for the underwater effect, it won't be distorted");
+				error("Couldn't copy the screen for the underwater and vignette effects, they won't be distorted");
 		}
 		else if (pd.underwaterSceneCopies)
 			pd.underwaterScene->copyFromScreen();
 
-		pd.shaders->underwaterShader->use();
-		glUniform1i(pd.shaders->underwaterShader->getUniformLocation("distort"), pd.underwaterSceneCopies);
+		//Both the color and the wobble die away together as the vignette's time runs out
+		float fade = vignette.fade();
+		glm::vec4 vignetteColor(vignette.color, vignetteEffect ? vignette.alpha * fade : 0.0f);
+		float vignetteWave = vignetteEffect ? vignette.strength * fade : 0.0f;
+
+		Program* effect = pd.shaders->underwaterShader;
+		effect->use();
+		glUniform1i(effect->getUniformLocation("distort"), pd.underwaterSceneCopies);
+		glUniform1i(effect->getUniformLocation("underwater"), underwaterEffect);
+		glUniform4fv(effect->getUniformLocation("vignetteColor"), 1, &vignetteColor[0]);
+		glUniform1f(effect->getUniformLocation("vignetteWave"), vignetteWave);
 		if (pd.underwaterSceneCopies)
 			pd.underwaterScene->bindColorResult(ScreenCopy);
 		glDisable(GL_DEPTH_TEST);
 		glDepthMask(GL_FALSE);
-		//Distorted, it redraws the whole picture itself, otherwise just the tint is blended on top
+		//Distorted, it redraws the whole picture itself, otherwise just the tints are blended on top
 		if (!pd.underwaterSceneCopies)
 		{
 			glEnable(GL_BLEND);

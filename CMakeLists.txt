@@ -282,6 +282,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/AddSoundType.cpp"
 "Networking/PacketsFromServer/ChatSuggestion.h"
 "Networking/PacketsFromServer/ChatSuggestion.cpp"
+"Networking/PacketsFromServer/Vignette.h"
+"Networking/PacketsFromServer/Vignette.cpp"
 "Networking/PacketsFromServer/OneShotSound.h"
 "Networking/PacketsFromServer/OneShotSound.cpp"
 "Networking/PacketsFromServer/SoundLoop.h"

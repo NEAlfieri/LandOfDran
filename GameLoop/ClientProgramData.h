@@ -199,9 +199,9 @@ struct ClientProgramData
 	GLint godRaySampleCountUniform = -1;
 	GLint godRayStrengthUniform = -1;
 
-	//Copy of the finished scene that underwater.frag draws back warped, made the first time the camera goes under the water
+	//Copy of the finished scene that underwater.frag draws back warped, made the first time the camera goes under the water or a vignette shows
 	std::shared_ptr<RenderTarget> underwaterScene = nullptr;
-	//False if the screen couldn't be copied into underwaterScene, then the tint is just blended over the scene
+	//False if the screen couldn't be copied into underwaterScene, then the tints are just blended over the scene
 	bool underwaterSceneCopies = false;
 
 	std::shared_ptr<RenderContext>	context = nullptr;

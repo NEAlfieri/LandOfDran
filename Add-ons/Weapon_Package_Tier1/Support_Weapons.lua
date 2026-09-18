@@ -68,6 +68,9 @@ local TRACER_SPEED = 320
 --Tracers are fired as projectiles, and this tells them apart from anything else in ProjectileHit
 local TRACER_TAG = "TT_tracer"
 
+--raycast and ProjectileHit give what was hit with this type field for a Dynamic, which a player is
+local DYNAMIC_TYPE_ID = 1
+
 --What the physics world pulls things down at, for scaling a round's drop by its gravityScale
 WORLD_GRAVITY = -70
 
@@ -456,6 +459,7 @@ local function fireOneShot(client, weapon, item, player)
 		hitX, hitY, hitZ = camX + dirX * range, camY + dirY * range, camZ + dirZ * range
 	else
 		weaponImpactEffect(weapon, hitX, hitY, hitZ)
+		hurtIfPlayer(hit, hitX, hitY, hitZ)
 	end
 
 	--The tracer starts at the barrel rather than the camera, and heads for wherever the shot landed
@@ -503,6 +507,18 @@ function weaponRemoveLight(light)
 	end
 end
 
+--A round that lands on someone's player hurts them: serverstart.lua's hurtPlayer does the pain
+--sound, the ouch particles, and the red vignette on their screen. There's still no health to take
+function hurtIfPlayer(hit, x, y, z)
+	if hit == nil or hit.type ~= DYNAMIC_TYPE_ID or hit:getNumControllers() == 0 then
+		return
+	end
+
+	if hurtPlayer ~= nil then
+		hurtPlayer(hit, x, y, z)
+	end
+end
+
 --[[
 	What a shot leaves where it lands, the ExplosionData of the originals: a puff of dust, and for
 	weapons that had them a flash on top of it, a sound, and a light that lasts for the explosion
@@ -547,6 +563,7 @@ function weaponProjectileHit(projectile, hit, x, y, z, tag)
 		local weapon = Weapons[tag]
 		if weapon ~= nil then
 			weaponImpactEffect(weapon, x, y, z)
+			hurtIfPlayer(hit, x, y, z)
 		end
 	end
 

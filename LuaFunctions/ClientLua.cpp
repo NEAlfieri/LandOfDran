@@ -720,6 +720,56 @@ static int LUA_clientCenterPrint(lua_State* L)
 	return 0;
 }
 
+/*
+	client:setVignette(red, green, blue, alpha, strength, durationMS)
+	A color drawn in from the edges of their screen, alpha being how opaque it is at the edges to start with, while the
+	picture wobbles like it does under the water, strength being how hard: 0 for none, 1 about as much as being underwater,
+	up to 10. Both fade to nothing as durationMS runs out, and a new one replaces the one showing. 0 ms clears it
+*/
+static int LUA_clientSetVignette(lua_State* L)
+{
+	scope("(LUA) client:setVignette");
+
+	const std::string usage = "client:setVignette(red, green, blue, alpha, strength, durationMS)";
+	if (lua_gettop(L) != 7)
+	{
+		error("Expected 6 arguments " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	float values[6];
+	for (int a = 0; a < 6; a++)
+	{
+		if (!lua_isnumber(L, a + 2))
+		{
+			error("Argument " + std::to_string(a + 1) + " is not a number " + usage);
+			lua_settop(L, 0);
+			return 0;
+		}
+		values[a] = (float)lua_tonumber(L, a + 2);
+	}
+	lua_settop(L, 1);
+
+	std::shared_ptr<JoinedClient> client = popClientLua(L);
+	if (!client)
+	{
+		error("Invalid client object passed to client:setVignette");
+		return 0;
+	}
+
+	float red = std::clamp(values[0], 0.0f, 1.0f);
+	float green = std::clamp(values[1], 0.0f, 1.0f);
+	float blue = std::clamp(values[2], 0.0f, 1.0f);
+	float alpha = std::clamp(values[3], 0.0f, 10.0f);
+	float strength = std::clamp(values[4], 0.0f, 10.0f);
+	unsigned int durationMS = (unsigned int)std::clamp(values[5], 0.0f, 3600000.0f);
+
+	client->sendVignette(red, green, blue, alpha, strength, durationMS);
+
+	return 0;
+}
+
 //durationMS is clamped to 60000 (60s) in JoinedClient::makeCenterPrintPacket
 static int LUA_centerPrintAll(lua_State* L)
 {
@@ -1263,6 +1313,7 @@ void registerClientFunctions(lua_State* L)
 		{ "getCursorItem", LUA_clientGetCursorItem },
 		{ "centerPrint", LUA_clientCenterPrint },
 		{ "playSound", LUA_clientPlaySound },
+		{ "setVignette", LUA_clientSetVignette },
 		{ "setAudioEffect", LUA_clientSetAudioEffect },
 		{ "setVoiceMuted", LUA_clientSetVoiceMuted },
 		{ "isVoiceMuted", LUA_clientIsVoiceMuted },

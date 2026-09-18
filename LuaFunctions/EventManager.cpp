@@ -293,6 +293,7 @@ EventManager::EventManager(lua_State* L)
     events.push_back(LuaEvent("ClientRemoveVehicle"));
     events.push_back(LuaEvent("VehicleCreated"));
     events.push_back(LuaEvent("ProjectileHit"));
+    events.push_back(LuaEvent("RadiusImpulseHit"));
 
     lua_register(L, "registerEventListener", registerEventListener);
     lua_register(L, "unregisterEventListener", unregisterEventListener);

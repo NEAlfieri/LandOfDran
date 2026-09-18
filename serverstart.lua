@@ -67,6 +67,8 @@ newSoundType("SprayLoop","Assets/sound/sprayLoop.wav")
 --Games play SprayActivate themselves as their paint palette comes out, see LoopClient::handleInput
 newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
 newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
+--And Pain from a player who was shot or caught in a radiusImpulse, see hurtPlayer
+newSoundType("Pain","Assets/sound/pain.wav")
 --And Launch from a firing launcher
 newSoundType("Launch","Assets/sound/launch.wav")
 --And PrintFire from a firing print gun
@@ -441,6 +443,44 @@ function leave(client)
 	return client
 end
 registerEventListener("ClientLeave","leave")
+
+--[[
+	What being hurt looks and sounds like, for a player shot by one of the weapon add-ons or caught in a radiusImpulse: the
+	old game's ouch particles and the Pain sound where it happened, and for whoever the player belongs to a red vignette
+	that closes in from the edges of their screen and wobbles their picture, fading away over a second
+	x, y, z is where they were hit, or nothing to put the particles at about chest height
+]]
+HURT_VIGNETTE_MS = 1000
+--How hard the picture wobbles, 1 being about as much as being underwater
+HURT_VIGNETTE_WAVE = 0.5
+
+function hurtPlayer(player, x, y, z)
+	if player == nil then
+		return
+	end
+
+	if x == nil then
+		x, y, z = player:getPosition()
+		y = y + 3
+	end
+
+	addEmitter("ouchEmitter", x, y, z)
+	player:playSound("Pain")
+
+	if player:getNumControllers() > 0 then
+		player:getControllerIdx(0):setVignette(1, 0, 0, 0.5, HURT_VIGNETTE_WAVE, HURT_VIGNETTE_MS)
+	end
+end
+
+--Anyone's player that a radiusImpulse pushes is hurt by it, like the launcher's shells
+function hurtByImpulse(dynamic, x, y, z, strength)
+	if dynamic:getNumControllers() > 0 then
+		hurtPlayer(dynamic)
+	end
+
+	return dynamic, x, y, z, strength
+end
+registerEventListener("RadiusImpulseHit", "hurtByImpulse")
 
 --Everyone nearby hears a brick get planted, from its center
 function plantSound(client, brick)

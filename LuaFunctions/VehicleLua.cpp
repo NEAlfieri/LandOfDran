@@ -1088,12 +1088,25 @@ static int LUA_radiusImpulse(lua_State* L)
 			continue;
 
 		//As a velocity, so players moving themselves get it too, like dynamic:setVelocity
+		float reached = strength * impulseFalloff(distance, radius);
 		glm::vec3 direction = impulseDirection(center, b2g3(dynamic->body->getCenterOfMassPosition()));
-		glm::vec3 change = direction * strength * impulseFalloff(distance, radius) * dynamic->body->getInvMass();
+		glm::vec3 change = direction * reached * dynamic->body->getInvMass();
 		dynamic->setVelocity(dynamic->getVelocity() + g2b3(change));
 		dynamic->forcePlayerUpdate = true;
 		dynamic->activate();
 		pushed++;
+
+		//Lua hears about each thing pushed, with the impulse it got where it stood, so a player can be hurt by it
+		if (LUA_pd->eventManager)
+		{
+			LUA_pd->dynamics->pushLua(L, dynamic);
+			lua_pushnumber(L, center.x);
+			lua_pushnumber(L, center.y);
+			lua_pushnumber(L, center.z);
+			lua_pushnumber(L, reached);
+			LUA_pd->eventManager->callEvent(L, "RadiusImpulseHit", 5);
+			lua_settop(L, 0);
+		}
 	}
 
 	lua_pushinteger(L, pushed);

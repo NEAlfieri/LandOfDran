@@ -46,6 +46,19 @@ void JoinedClient::sendCenterPrint(std::string text, unsigned int durationMS, fl
 	send(makeCenterPrintPacket(std::move(text), durationMS, red, green, blue), OtherReliable);
 }
 
+void JoinedClient::sendVignette(float red, float green, float blue, float alpha, float strength, unsigned int durationMS) const
+{
+	//See VignettePacket for the layout
+	char data[1 + sizeof(float) * 5 + sizeof(unsigned int)];
+	data[0] = (char)Vignette;
+
+	float values[5] = { red, green, blue, alpha, strength };
+	memcpy(data + 1, values, sizeof(values));
+	memcpy(data + 1 + sizeof(values), &durationMS, sizeof(unsigned int));
+
+	send(data, sizeof(data), OtherReliable);
+}
+
 void JoinedClient::send(ENetPacket* packet, PacketChannel channel) const
 {
 	if (!peer)

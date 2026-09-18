@@ -126,6 +126,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new ChatSuggestionPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case Vignette:
+					packets.push_back(new VignettePacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case EvalLoginResponse:
 					packets.push_back(new EvalLoginResponsePacket(packetHoldTime, event.packet));
 					return NotKicked;

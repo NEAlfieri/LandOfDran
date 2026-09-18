@@ -70,6 +70,9 @@ public:
 
 	void sendCenterPrint(std::string text, unsigned int durationMS, float red, float green, float blue) const;
 
+	//Puts a colored vignette over their screen that wobbles the picture and fades out over durationMS, see Lua's client:setVignette
+	void sendVignette(float red, float green, float blue, float alpha, float strength, unsigned int durationMS) const;
+
 	//Similar to the destructor, but can be called before it to specify a reason
 	void kick(KickReason reason);
 

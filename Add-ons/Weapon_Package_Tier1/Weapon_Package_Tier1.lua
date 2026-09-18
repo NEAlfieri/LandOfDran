@@ -18,8 +18,9 @@
 	the one exception: its datablock fires its own rifle_round.dts.
 
 	What doesn't, yet: nothing takes damage, since the engine has no health system. A shot that
-	lands only leaves a puff. Support_Weapons.lua's fireOneShot is where damage would go once
-	there's something to damage. Ammo pickups aren't wired up either, so the AMMO_*.dts models are
+	lands on someone hurts them (Support_Weapons.lua's hurtIfPlayer calls serverstart.lua's
+	hurtPlayer: the Pain sound, ouch particles, and a red vignette on their screen) but takes
+	nothing off them. fireOneShot is where damage would go once there's something to damage. Ammo pickups aren't wired up either, so the AMMO_*.dts models are
 	loaded as scenery and clients start with the spare ammo set below.
 ]]
 
