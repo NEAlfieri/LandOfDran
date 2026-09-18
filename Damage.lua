@@ -375,8 +375,10 @@ end
 
 --Every player a radiusImpulse pushes is damaged by how hard it pushed them. A pull doesn't hurt
 --Whoever set the impulse off is blamed if they said so in impulseAttacker first, see Inventory.lua's launcherShellHit
+--A blast that does its own damage sets impulseHarmless around its radiusImpulse instead, so its push only pushes, like
+--the Rocket Launcher add-on's
 function damageByImpulse(dynamic, x, y, z, strength)
-	if strength > 0 then
+	if strength > 0 and not impulseHarmless then
 		damagePlayer(dynamic, strength * strength * IMPULSE_DAMAGE_SCALE, impulseAttacker)
 	end
 	return dynamic, x, y, z, strength

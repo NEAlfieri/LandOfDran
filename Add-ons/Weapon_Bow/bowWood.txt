@@ -1,0 +1,6 @@
+#The brown of BowItem's colorShiftColor over the scuffed plastic every DTS material is drawn with
+#A number here instead of a file name is a flat value, see Material
+albedo	0.4 0.196 0.0
+normal	../../Assets/dts/scuffedNormal.png
+roughness	../../Assets/dts/scuffedRoughness.png
+occlusion	../../Assets/dts/scuffedOcclusion.png

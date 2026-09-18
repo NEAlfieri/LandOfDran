@@ -1189,12 +1189,16 @@ bool getCollisionTransformMatrix(const aiScene* scene,const aiNode* node, aiMatr
 }
 
 //Grows minPos and maxPos to hold every vertex of every mesh under node, moved into model space by the node transforms above them
-static void growToMeshes(const aiScene* scene, const aiNode* node, aiMatrix4x4 transform, aiVector3D& minPos, aiVector3D& maxPos)
+//Meshes whose index into the scene's meshes is in skip are left out
+static void growToMeshes(const aiScene* scene, const aiNode* node, aiMatrix4x4 transform, aiVector3D& minPos, aiVector3D& maxPos, const std::set<unsigned int>& skip)
 {
 	transform = transform * node->mTransformation;
 
 	for (unsigned int a = 0; a < node->mNumMeshes; a++)
 	{
+		if (skip.count(node->mMeshes[a]))
+			continue;
+
 		const aiMesh* mesh = scene->mMeshes[node->mMeshes[a]];
 		for (unsigned int v = 0; v < mesh->mNumVertices; v++)
 		{
@@ -1209,7 +1213,7 @@ static void growToMeshes(const aiScene* scene, const aiNode* node, aiMatrix4x4 t
 	}
 
 	for (unsigned int a = 0; a < node->mNumChildren; a++)
-		growToMeshes(scene, node->mChildren[a], transform, minPos, maxPos);
+		growToMeshes(scene, node->mChildren[a], transform, minPos, maxPos, skip);
 }
 
 //The same walk as growToMeshes, except each mesh gets its own box rather than one around the lot of them
@@ -1309,10 +1313,24 @@ void Model::calculateCollisionBox(const aiScene* scene)
 
 	if (!colMesh)
 	{
-		//No collision mesh, a box around everything the model has instead
+		/*
+			No collision mesh, a box around everything the model draws instead. Not around a mesh a hide line
+			took out: that's a part that can't be drawn the way it was meant, like the flame behind a Blockland
+			rocket, which would otherwise make the rocket collide as a box sixteen studs long. allMeshes is in
+			the same order as the scene's meshes
+		*/
+		std::set<unsigned int> hidden;
+		for (unsigned int a = 0; a < allMeshes.size() && a < scene->mNumMeshes; a++)
+			if (allMeshes[a]->nonRenderingMesh)
+				hidden.insert(a);
+
 		aiVector3D maxPos = aiVector3D(-9999, -9999, -9999);
 		aiVector3D minPos = aiVector3D(9999, 9999, 9999);
-		growToMeshes(scene, scene->mRootNode, aiMatrix4x4(), minPos, maxPos);
+		growToMeshes(scene, scene->mRootNode, aiMatrix4x4(), minPos, maxPos, hidden);
+
+		//Every mesh it has is hidden, so there's nothing else to go by
+		if (maxPos.x < minPos.x)
+			growToMeshes(scene, scene->mRootNode, aiMatrix4x4(), minPos, maxPos, {});
 
 		if (maxPos.x < minPos.x)
 		{
@@ -1633,9 +1651,10 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	std::map<std::string, glm::vec4> decalAreas;
 
 	/*
-		Lower case names of meshes the descriptor's hide lines ask not to draw. They're loaded and still
-		count for the collision box, they're just never drawn, like the Collision mesh. For a part of a
-		model that can't be drawn the way it was meant, like the see-through trail on a Blockland bullet
+		Lower case names of meshes the descriptor's hide lines ask not to draw. They're loaded, just never
+		drawn, like the Collision mesh, and a model with no Collision mesh is boxed around the rest of it,
+		see calculateCollisionBox. For a part of a model that can't be drawn the way it was meant, like
+		the see-through trail on a Blockland bullet
 	*/
 	std::set<std::string> hiddenMeshes;
 

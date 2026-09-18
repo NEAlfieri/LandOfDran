@@ -1,0 +1,1 @@
+exec("./weapon_bow.cs");

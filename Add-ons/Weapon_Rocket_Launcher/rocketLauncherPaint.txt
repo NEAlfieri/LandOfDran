@@ -1,0 +1,6 @@
+#The green of rocketLauncherItem's colorShiftColor over the scuffed plastic every DTS material is drawn with
+#A number here instead of a file name is a flat value, see Material
+albedo	0.1 0.5 0.25
+normal	../../Assets/dts/scuffedNormal.png
+roughness	../../Assets/dts/scuffedRoughness.png
+occlusion	../../Assets/dts/scuffedOcclusion.png

@@ -1,0 +1,5 @@
+#The rocket, with the glow around its tail (cone) and the flame behind it (trail) left out: both are see-through
+#in Blockland, and here they could only be drawn solid. The trail emitter and the light it carries do that job
+file	rocketprojectile.dts
+hide	cone
+hide	trail

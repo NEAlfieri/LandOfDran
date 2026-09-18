@@ -45,6 +45,12 @@ dofile("Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua")
 --The Grapple Rope add-on: a hook that swings its holder from wherever it lands, and dropGrappleRope
 dofile("Add-ons/Tool_GrappleRope/Tool_GrappleRope.lua")
 
+--The Bow add-on: arrows that arc, stick where they land, and dropBow
+dofile("Add-ons/Weapon_Bow/Weapon_Bow.lua")
+
+--The Rocket Launcher add-on: rockets whose blast hurts and throws whoever is near, and dropRocketLauncher
+dofile("Add-ons/Weapon_Rocket_Launcher/Weapon_Rocket_Launcher.lua")
+
 --Sounds, with the old game's names and file names. Clients play ClickMove, ClickRotate, Jump, and BrickBreak on their own
 --when the server has sounds by those names. A file that isn't in Assets/sound/ logs an error and is skipped
 newSoundType("ClickMove","Assets/sound/clickMove.wav")

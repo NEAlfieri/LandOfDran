@@ -1,0 +1,7 @@
+#The Rocket Launcher, with its colorShiftColor, "0.100 0.500 0.250 1.000", on the parts Blockland tinted: the
+#ones textured with blank, which is white. Its trail mesh is the blast out of the back of the tube, a see-through
+#cone the fire sequence showed for a moment; nothing here blends or reads visibility tracks, so it would be a
+#solid yellow cone stuck on the back for good, and is left out
+file	rocketlauncher.dts
+material	blank	rocketLauncherPaint.txt
+hide	trail

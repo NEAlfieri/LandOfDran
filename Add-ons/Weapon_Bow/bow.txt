@@ -1,0 +1,4 @@
+#The Bow, with its colorShiftColor, "0.400 0.196 0 1.000", on the parts Blockland tinted: the ones
+#textured with blank, which is white. The string and grip keep their own greys
+file	bow.dts
+material	blank	bowWood.txt

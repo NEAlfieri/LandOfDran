@@ -1,0 +1,3 @@
+Title: Rocket Launcher
+Author: Eric Hartman
+Basic rocket launcher weapon.

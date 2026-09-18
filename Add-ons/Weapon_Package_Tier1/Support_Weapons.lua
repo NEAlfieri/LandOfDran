@@ -38,6 +38,12 @@
 	still decides everything: it only pre-sends what the click looks like. See client:setClickAction
 	in LuaAPI.md, and sendClickAction below.
 
+	Beyond the fields the guns use, a round can carry a trailEmitter and a flightSound loop with it, and a
+	weapon can give functions for the moments a table can't describe: onFire(client, weapon, item) after each
+	shot, onShot(weapon, shot, client) for each round as it leaves, onHit(weapon, projectile, hit, x, y, z)
+	where one lands, after the impact effects and damage, and onExpire(weapon, shot, x, y, z) where one's
+	projectileLifetimeMS runs out. The Bow and the Rocket Launcher are the ones that use them.
+
 	Loaded from Weapon_Package_Tier1.lua, and by any other add-on that shoots through it, like
 	Weapon_Gun, whichever comes first. Loading it again would empty the weapon table and double up the
 	listeners below, so it's only read once.
@@ -440,15 +446,33 @@ local function fireOneShot(client, weapon, item, player)
 			shot.shooterClient = client
 		end
 
+		--particleEmitter in the originals, what streams out behind the round, gone along with it
+		if shot ~= nil and weapon.trailEmitter ~= nil then
+			local trail = addEmitter(weapon.trailEmitter, muzzleX, muzzleY, muzzleZ)
+			if trail ~= nil then
+				trail:attachToDynamic(shot)
+			end
+		end
+
+		--sound in the originals, a loop that flies along with the round and stops when it does
+		if shot ~= nil and weapon.flightSound ~= nil then
+			shot:startSoundLoop(weapon.flightSound)
+		end
+
 		--gravityMod in the originals, how much of normal gravity the round feels on its way out
 		if shot ~= nil and weapon.gravityScale ~= nil then
 			shot:setGravity(0, WORLD_GRAVITY * weapon.gravityScale, 0)
 		end
 
+		--Anything else the weapon wants of its round as it leaves, like a rocket's light
+		if shot ~= nil and weapon.onShot ~= nil then
+			weapon.onShot(weapon, shot, client)
+		end
+
 		--lifetime in the originals: a round that hits nothing is cleared away rather than flying on forever
 		if shot ~= nil and weapon.projectileLifetimeMS ~= nil then
 			liveShots[shot.id] = shot
-			schedule(weapon.projectileLifetimeMS, "weaponShotExpired", shot.id)
+			schedule(weapon.projectileLifetimeMS, "weaponShotExpired", shot.id, weapon.name)
 		end
 
 		return shot
@@ -486,10 +510,18 @@ local function fireOneShot(client, weapon, item, player)
 end
 
 --A round's lifetime ran out without it hitting anything
-function weaponShotExpired(shotID)
+function weaponShotExpired(shotID, weaponName)
 	local shot = liveShots[shotID]
 	if shot ~= nil then
 		liveShots[shotID] = nil
+
+		--explodeOnDeath in the originals: what a round does where its time ran out, like an arrow's puff
+		local weapon = Weapons[weaponName]
+		if weapon ~= nil and weapon.onExpire ~= nil then
+			local x, y, z = shot:getPosition()
+			weapon.onExpire(weapon, shot, x, y, z)
+		end
+
 		shot:destroy()
 	end
 end
@@ -574,6 +606,11 @@ function weaponProjectileHit(projectile, hit, x, y, z, tag)
 		if weapon ~= nil then
 			weaponImpactEffect(weapon, x, y, z)
 			hurtIfPlayer(hit, x, y, z, weapon, projectile.shooterClient)
+
+			--Anything else the weapon does where its round lands, like a rocket's blast or an arrow sticking in
+			if weapon.onHit ~= nil then
+				weapon.onHit(weapon, projectile, hit, x, y, z)
+			end
 		end
 	end
 
@@ -663,6 +700,13 @@ function weaponMuzzleSmoke(clientID, weaponName)
 	end
 
 	local smoke = addEmitter(weapon.muzzleSmoke.emitter, x, y, z)
+
+	--An emitter at a spot ejects around straight up, where a Torque state emitter ejected down the barrel.
+	--aimed sends the smoke the way its shooter looks instead
+	if smoke ~= nil and weapon.muzzleSmoke.aimed and state.client:getNumControlled() > 0 then
+		smoke:aimWith(state.client:getControlledIdx(0), 1000)
+	end
+
 	if smoke ~= nil then
 		schedule(weapon.muzzleSmoke.forMS or 50, "weaponRemoveEmitter", smoke)
 	end

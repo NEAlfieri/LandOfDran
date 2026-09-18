@@ -38,8 +38,12 @@ if weaponPointFromHand == nil then
 	dofile("Add-ons/Weapon_Package_Tier1/Support_Weapons.lua")
 end
 
---stateSound on Fire: bowFireSound
-newSoundType("BowFire", folder .. "bowFire.wav")
+--stateSound on Fire: bowFireSound. The Bow ships the same bowFire.wav under the same name, and a name
+--can only be registered once, so whichever add-on loads first registers it
+if not bowFireSoundAdded then
+	newSoundType("BowFire", folder .. "bowFire.wav")
+	bowFireSoundAdded = true
+end
 
 --[[
 	The rope's links, ChainTrailParticle and ChainTrailEmitter: a dark dot every millisecond,
