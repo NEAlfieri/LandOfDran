@@ -54,7 +54,9 @@ registerWeapon("submachinegun", {
 		gravityScale = 2
 	},
 
-	fireAnimation = "fire",
+	--The shape's own fire sequence moves nothing: it slides a joint its exporter left nothing attached to. So it
+	--gets the kick every item can play instead, in place of the plant thread the original ran on its owner's arm
+	fireAnimation = "kick",
 
 	sounds = {
 		fire = "TTSubmachinegunFire",

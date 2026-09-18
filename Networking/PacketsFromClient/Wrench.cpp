@@ -165,7 +165,8 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 	else if (!settings.hornName.empty() && !soundTypeExists(settings.hornName) && !(current && current->hornName == settings.hornName))
 		settings.hornName = "";
 
-	//A vehicle only goes on a Vehicle Spawn brick, and only one Lua registered, and an item has to be an item type, though again whatever Lua put there can stay
+	//A vehicle only goes on a Vehicle Spawn brick, and only one Lua registered, and an item has to be an item type with a name,
+	//the ones the dialog lists, though again whatever Lua put there can stay
 	if (!brickIsVehicleSpawn(brick) || (!settings.vehicleSpawnName.empty() && !vehicleSpawnExists(settings.vehicleSpawnName) && !(current && current->vehicleSpawnName == settings.vehicleSpawnName)))
 		settings.vehicleSpawnName = current ? current->vehicleSpawnName : "";
 
@@ -173,7 +174,7 @@ void wrenchSubmit(JoinedClient* source, Server const* const server, ENetPacket c
 	{
 		bool isItemType = false;
 		for (const std::shared_ptr<DynamicType>& type : pd->dynamicTypes)
-			isItemType = isItemType || (type->isItemType && type->scriptName == settings.itemSpawnName);
+			isItemType = isItemType || (type->isItemType && !type->itemName.empty() && type->scriptName == settings.itemSpawnName);
 
 		if (!isItemType)
 			settings.itemSpawnName = "";

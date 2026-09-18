@@ -7,9 +7,13 @@ struct ClientData;
 //How many items a client can carry at once, see ClientData::inventory
 constexpr int inventorySize = 5;
 
-//Animations an item plays besides its model's own, which go by their server IDs: none, and the swing every item has
+//Animations an item plays besides its model's own, which go by their server IDs: none, and the swing and kick every item has
 constexpr int itemNoAnimation = -1;
 constexpr int itemSwingAnimation = -2;
+constexpr int itemKickAnimation = -3;
+
+//What a click action's animation step carries for the kick, see Networking/ClickAction.h. A model's own go by their IDs below it
+constexpr int clickStepKickAnimation = 255;
 
 /*
 	Tools like the hammer: dynamics players can carry in their inventory
@@ -31,7 +35,12 @@ class Item : public Dynamic
 	bool swinging = false;
 	bool swingLooping = false;
 
-	//Client: starts or stops one of its animations on the model, or the swing
+	//Client: milliseconds into a kick, the jolt of a gun going off, and whether it's kicking and keeps on kicking
+	float kickMS = 0;
+	bool kicking = false;
+	bool kickLooping = false;
+
+	//Client: starts or stops one of its animations on the model, the swing, or the kick
 	void startClientAnimation(int id, bool loop);
 	void stopClientAnimation(int id);
 
@@ -127,9 +136,12 @@ class Item : public Dynamic
 	//Client: applies writeState's bytes, creating is true for the state in its creation packet, which doesn't replay the last one shot animation
 	void readState(enet_uint8* src, bool creating, float idealBufferSize);
 
-	//Client: moves the swing along, once per frame
+	//Client: moves the swing and the kick along, once per frame
 	void updateSwing(float deltaT);
 
 	//Client: how far the swing tips it forward right now in radians around its right, 0 at rest and negative toward the ground
 	float getSwingAngle() const;
+
+	//Client: how far the kick has it right now, from 0 at rest to 1 at its sharpest, see LoopClient::placeHeldItems
+	float getKickAmount() const;
 };

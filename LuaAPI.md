@@ -322,7 +322,7 @@ puts it in the first empty slot, or center prints that they can't carry any more
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
-| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ, uiName, iconPath)` | same as `newDynamicType`; the name shown in the item bar; an image for its slot, relative to the game folder, or `""` for none, which shows the name instead | typeID | Registers a kind of item. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. A `.dts` model works here too, see [DTS models](#dts-models). |
+| `newItemType(scriptName, modelFilePath, scaleX, scaleY, scaleZ[, uiName[, iconPath]])` | same as `newDynamicType`; the name shown in the item bar, `""` by default; an image for its slot, relative to the game folder, or `""` (the default) for none | typeID | Registers a kind of item. A type with no `uiName` is left out of the [wrench dialog](#wrench-dialog-and-brick-attachments)'s list of items a brick can offer, and its slot in the item bar shows its script name. The type ID works anywhere a dynamic type's does, like `addAnimation` and `getDynamicType`. Call it at startup, before anyone joins. An icon that isn't a file in the game folder logs an error and the type gets none. Clients load the icon from their own game folder. A model with no `Collision` mesh collides as a box around the whole model. A `.dts` model works here too, see [DTS models](#dts-models). |
 | `setItemHand(typeID, gripX, gripY, gripZ, pitch, yaw, roll)` | item type ID; the point on the model that goes in the hand, in world units after scaling; degrees around the x, y, and z axes | none | How items of a type sit in a hand. Unturned, the model's +Y points up out of the hand and its -Z the way its holder faces, and a negative pitch leans its top forward. Call it at startup, before anyone joins. By default the model's origin is in the hand, unturned. |
 | `createItem(typeID, x, y, z)` | item type ID from `newItemType`; position | Item | Spawns an item on the ground. Logs an error for a type that isn't an item type. |
 | `getNumItems()` | none | count | How many items exist, carried or not. |
@@ -338,9 +338,9 @@ Along with every `dynamic:` method.
 | `item:getHolder()` | none | Client or `nil` | The client carrying it. |
 | `item:getSlot()` | none | slot or `nil` | Which of its carrier's slots it's in, 0-4. |
 | `item:isEquipped()` | none | bool | Whether it's in its carrier's hand: their items are out with its slot picked. |
-| `item:playAnimation(name[, loop])` | `"swing"`, or the name of an animation `addAnimation` gave its type; `loop` defaults to false | none | Plays the animation for everyone, once or over and over. Every item can `"swing"`, tipping forward around its grip until its top points 90 degrees further toward the ground and back, a bit over a fifth of a second each time. Only one animation loops at a time, starting a loop replaces the last. Logs an error for an animation it doesn't have. |
+| `item:playAnimation(name[, loop])` | `"swing"`, `"kick"`, or the name of an animation `addAnimation` gave its type; `loop` defaults to false | none | Plays the animation for everyone, once or over and over. Every item can `"swing"`, tipping forward around its grip until its top points 90 degrees further toward the ground and back, a bit over a fifth of a second each time, and `"kick"`, the jolt of a gun going off: shoved 0.3 studs back toward its holder with its barrel tipped 7 degrees up in under 20 ms, then easing home, 90 ms in all, for a gun whose model has no fire animation of its own. A kick played again starts over, so an automatic weapon kicks once a shot. Games from before the kick ignore it. Only one animation loops at a time, starting a loop replaces the last. Logs an error for an animation it doesn't have. |
 | `item:stopAnimation([name])` | animation name, or nothing | none | Stops the looping animation if it's the one named, or whatever loops without a name. A swing finishes the one it's partway through. |
-| `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`. |
+| `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`, or `""` for a type that was given none. |
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
 | `item:isDisplay()` | none | bool | Whether it's a display item: the copy floating over a brick wrenched to offer an item, see [Wrench dialog](#wrench-dialog-and-brick-attachments). It spins in place, never falls or moves, collides with nothing (rays and clicks still hit it, and it's outlined on a player's screen while their crosshair is on it within 10 studs), and `client:addItem` refuses it. `Inventory.lua` hands whoever clicks one a new item of the same type instead. `radiusImpulse` and water leave it alone. |
 | `item:getDisplayBrick()` | none | Brick or `nil` | The brick a display item floats over. |
@@ -465,7 +465,7 @@ emitter, or a light, by which of those fields it has:
 |---|---|
 | `at` | Milliseconds after the click, `0` for right away. |
 | `sound` | A sound type name, with optional `pitch` and `volume`. It follows the item. |
-| `animation` | The name of one of the item model's animations, played once. |
+| `animation` | The name of one of the item model's animations, or `"kick"`, played once. |
 | `emitter` | An emitter type name. Ejects for `forMS`. |
 | `light` | `{r, g, b}`, with `brightness`, `coronaWidth` and `forMS`. Lights and casts shadows like any other light. |
 | `forMS` | How long an emitter or light lasts. |
@@ -844,8 +844,11 @@ The music loop, light, and emitter are real sound loops, lights, and emitters: t
 and are removed along with the brick. If Lua destroys one, the brick makes it again the next time its
 settings are changed. They're saved with the brick by `saveBuild`.
 
-The dialog's Item section lists every item type the server has by the name its item bar shows (`newItemType`'s
-`uiName`). Picking one floats a display item of that type half a stud over the brick: a real item (`getNumItems`
+The dialog's Item section lists every item type the server gave a name, by that name (`newItemType`'s
+`uiName`). A type with no `uiName` isn't listed, and the server refuses one from a client's dialog, the way a Blockland
+datablock without a `uiName` stayed out of the wrench's list: a dropped ammo box or a spent shell is an item, but not one
+for a brick to hand out. `brick:setItemSpawn` still takes any item type, and a brick Lua gave an unnamed one keeps it
+through the dialog. Picking one floats a display item of that type half a stud over the brick: a real item (`getNumItems`
 counts it, `brick:getDisplayItem` and `item:getDisplayBrick` find it) that spins slowly on the spot the way the
 item bar's icons do, never falls, collides with nothing, and is outlined for a player whose crosshair is on it
 within 10 studs of their player. Left clicking it makes them a new item of that type, see [Items](#items);

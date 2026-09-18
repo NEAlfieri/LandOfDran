@@ -54,12 +54,18 @@ static int readSlot(lua_State* L, int index, const std::string& usage)
 	return (int)value;
 }
 
-//The ID of an item's animation by name, "swing" for the swing every item has, false if its type has none by that name
+//The ID of an item's animation by name, "swing" and "kick" for the two every item has, false if its type has none by that name
 static bool findItemAnimation(const Item& item, const std::string& name, int& id)
 {
 	if (lowercase(name) == "swing")
 	{
 		id = itemSwingAnimation;
+		return true;
+	}
+
+	if (lowercase(name) == "kick")
+	{
+		id = itemKickAnimation;
 		return true;
 	}
 
@@ -71,17 +77,20 @@ static int LUA_newItemType(lua_State* L)
 {
 	scope("(LUA) newItemType");
 
-	if (lua_gettop(L) != 7)
+	const int args = lua_gettop(L);
+	if (args < 5 || args > 7)
 	{
-		error("Expected 7 arguments newItemType(scriptName,modelFilePath,scaleX,scaleY,scaleZ,uiName,iconPath)");
+		error("Expected 5 to 7 arguments newItemType(scriptName,modelFilePath,scaleX,scaleY,scaleZ[,uiName[,iconPath]])");
 		return 0;
 	}
 
 	const char* scriptName = lua_tostring(L, 1);
 	const char* modelFilePath = lua_tostring(L, 2);
 	glm::vec3 scale(lua_tonumber(L, 3), lua_tonumber(L, 4), lua_tonumber(L, 5));
-	const char* uiName = lua_tostring(L, 6);
-	const char* iconPath = lua_tostring(L, 7);
+
+	//Left off, or nil, is no name and no icon. An item with no name is one no brick's wrench dialog offers
+	const char* uiName = (args >= 6 && !lua_isnil(L, 6)) ? lua_tostring(L, 6) : "";
+	const char* iconPath = (args >= 7 && !lua_isnil(L, 7)) ? lua_tostring(L, 7) : "";
 
 	if (!scriptName || !modelFilePath || !uiName || !iconPath)
 	{
@@ -354,7 +363,7 @@ static int LUA_itemPlayAnimation(lua_State* L)
 	int id;
 	if (!name || !findItemAnimation(*item, name, id))
 	{
-		error("Item type " + item->getType()->scriptName + " has no animation named " + std::string(name ? name : "nil") + ", just swing and any addAnimation gave it");
+		error("Item type " + item->getType()->scriptName + " has no animation named " + std::string(name ? name : "nil") + ", just swing, kick, and any addAnimation gave it");
 		return 0;
 	}
 
@@ -384,7 +393,7 @@ static int LUA_itemStopAnimation(lua_State* L)
 	int id = itemNoAnimation;
 	if (name && !findItemAnimation(*item, name, id))
 	{
-		error("Item type " + item->getType()->scriptName + " has no animation named " + std::string(name) + ", just swing and any addAnimation gave it");
+		error("Item type " + item->getType()->scriptName + " has no animation named " + std::string(name) + ", just swing, kick, and any addAnimation gave it");
 		return 0;
 	}
 
@@ -536,8 +545,9 @@ static bool readClickStep(lua_State* L, int index, ClickActionStep& step, const 
 		std::string name = lua_tostring(L, -1);
 		lua_pop(L, 1);
 
-		int animationID = item->getType()->getModel()->getAnimationID(name);
-		if (animationID < 0 || animationID > 255)
+		//The kick every item has goes by a number of its own, above any a model's animations reach
+		int animationID = lowercase(name) == "kick" ? clickStepKickAnimation : item->getType()->getModel()->getAnimationID(name);
+		if (animationID < 0 || animationID > 255 || (animationID == clickStepKickAnimation && lowercase(name) != "kick"))
 		{
 			error(usage + " has a step with no animation called " + name + " on that item's model");
 			return false;

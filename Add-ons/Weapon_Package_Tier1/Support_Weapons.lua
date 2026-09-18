@@ -221,6 +221,15 @@ local function showAmmo(client, weapon, item, always)
 	client:centerPrint(getMagazine(item, weapon) .. " / " .. getReserveAmmo(client, weapon.ammoType), AMMO_PRINT_MS)
 end
 
+--The counter of the gun a client is holding, for when their spare ammo changes under them, like Item_Ammo.lua's
+--pickups. With an ammoType it's only shown by a gun that loads that type, since no other gun's count has changed
+function weaponShowAmmo(client, ammoType)
+	local weapon, item = heldWeapon(client)
+	if weapon ~= nil and (ammoType == nil or weapon.ammoType == ammoType) then
+		showAmmo(client, weapon, item, true)
+	end
+end
+
 --[[
 	Where the end of the barrel is.
 
@@ -340,6 +349,9 @@ function weaponNodeFromHand(typeID, nodeName)
 	return { nodeX - mountX, nodeY - mountY, nodeZ - mountZ }
 end
 
+--Radians either way for each 1 of a weapon's spread, from the 10 * pi * (getRandom() - 0.5) of the originals
+local SPREAD_TO_RADIANS = 5 * math.pi
+
 --A direction knocked off course by up to spread, the way a shotgun throws its pellets apart
 local function spreadDirection(dirX, dirY, dirZ, spread)
 	if spread == nil or spread <= 0 then
@@ -358,8 +370,9 @@ local function spreadDirection(dirX, dirY, dirZ, spread)
 	local upY = dirZ * sideX - dirX * sideZ
 	local upZ = dirX * sideY - dirY * sideX
 
-	--Blockland's spread numbers are tiny, and this is about the angle they came out as there
-	local angle = spread * 90
+	--TT_createProjectile turned a shot by up to (getRandom() - 0.5) * 10 * pi * spread radians around each axis,
+	--so a spread of 0.0015 is 1.35 degrees either way and the shotgun's 0.0032 is 2.9
+	local angle = spread * SPREAD_TO_RADIANS
 	local aroundX = (math.random() * 2 - 1) * angle
 	local aroundY = (math.random() * 2 - 1) * angle
 
@@ -726,7 +739,7 @@ local function ejectCasing(client, weapon, player)
 
 	--shellExitVariance is in degrees, and spreadDirection takes the angle the way the weapons give it
 	dirX, dirY, dirZ = spreadDirection(dirX / length, dirY / length, dirZ / length,
-		math.tan(math.rad(casing.variance or 0)) / 90)
+		math.tan(math.rad(casing.variance or 0)) / SPREAD_TO_RADIANS)
 
 	--Thrown out at shellVelocity on top of however its owner is moving, as Torque's ejectShell did
 	local speed = casing.speed or 14

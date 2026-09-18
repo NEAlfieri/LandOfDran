@@ -72,12 +72,13 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		at += spawnLength;
 	}
 
-	//Every item type the server has, by script name with the name its item bar shows, for the Item section to pick from
+	//Every item type the server gave a name, by script name with that name, for the Item section to pick from. One without
+	//a name isn't meant to be offered by a brick, like a uiName left off a Blockland datablock
 	std::vector<std::pair<std::string, std::string>> itemTypes;
 	for (const std::shared_ptr<DynamicType>& type : simulation.dynamicTypes)
 	{
-		if (type && type->isItemType)
-			itemTypes.emplace_back(type->scriptName, type->itemName.empty() ? type->scriptName : type->itemName);
+		if (type && type->isItemType && !type->itemName.empty())
+			itemTypes.emplace_back(type->scriptName, type->itemName);
 	}
 
 	std::string label = "Brick";

@@ -6,8 +6,8 @@
 		spread 0.0001, shellCount 1
 		SportRifleProjectile: muzzleVelocity 190, gravityMod 0.02
 
-	Note the datablock's shapeFile is Sport_Rifle.3.dts, not sport_rifle.dts. The other two are older
-	models that ship alongside it, and only the .3 one has the fire animation.
+	Note the datablock's shapeFile is Sport_Rifle.3.dts. The package also shipped two older models of it,
+	sport_rifle.dts and SPORT_RIFLE.2.dts, which no datablock named and which have been taken out.
 
 	Barely any spread and almost no drop, so it shoots nearly flat and straight. Fire is followed by
 	Smoke (0.2), then it waits for the trigger, so it's one shot per click. Reload is 1.2 + 0.8.

@@ -9,12 +9,19 @@ static constexpr float swingRadiansPerMS = 0.03f;
 //How far the head tips toward the ground at the bottom of a swing
 static const float swingDepth = glm::radians(90.0f);
 
-//Animations go in a byte: 0 for none, 1 for the swing, 2 and up for the model's own
+//A kick snaps back in a fraction of this and eases home over the rest, quick enough to be over before an automatic's next shot
+static constexpr float kickLengthMS = 90.0f;
+static constexpr float kickRiseMS = 18.0f;
+
+//Animations go in a byte: 0 for none, 1 for the swing, 2 and up for the model's own, and 255 for the kick, which games
+//from before it take for a model animation they don't have and ignore
 static unsigned char encodeAnimation(int id)
 {
 	if (id == itemSwingAnimation)
 		return 1;
-	if (id < 0 || id > 253)
+	if (id == itemKickAnimation)
+		return 255;
+	if (id < 0 || id > 252)
 		return 0;
 	return (unsigned char)(id + 2);
 }
@@ -25,6 +32,8 @@ static int decodeAnimation(unsigned char value)
 		return itemNoAnimation;
 	if (value == 1)
 		return itemSwingAnimation;
+	if (value == 255)
+		return itemKickAnimation;
 	return value - 2;
 }
 
@@ -223,6 +232,15 @@ void Item::startClientAnimation(int id, bool loop)
 		return;
 	}
 
+	//Each shot kicks again from the start, so an automatic's kicks don't run together into a lean
+	if (id == itemKickAnimation)
+	{
+		kicking = true;
+		kickMS = 0;
+		kickLooping = kickLooping || loop;
+		return;
+	}
+
 	if (id < 0 || id >= (int)type->getModel()->animations.size())
 		return;
 
@@ -237,12 +255,24 @@ void Item::stopClientAnimation(int id)
 	//Finishes the swing it's partway through instead of snapping back
 	if (id == itemSwingAnimation)
 		swingLooping = false;
+	else if (id == itemKickAnimation)
+		kickLooping = false;
 	else if (id >= 0 && id < (int)type->getModel()->animations.size())
 		stop(id);
 }
 
 void Item::updateSwing(float deltaT)
 {
+	if (kicking)
+	{
+		kickMS += deltaT;
+		if (kickMS >= kickLengthMS)
+		{
+			kickMS = kickLooping ? std::fmod(kickMS, kickLengthMS) : 0;
+			kicking = kickLooping;
+		}
+	}
+
 	if (!swinging)
 		return;
 
@@ -262,4 +292,17 @@ void Item::updateSwing(float deltaT)
 float Item::getSwingAngle() const
 {
 	return -swingDepth * (1.0f - std::cos(swingPhase)) * 0.5f;
+}
+
+float Item::getKickAmount() const
+{
+	if (!kicking)
+		return 0;
+
+	//Straight back in an instant, then settling home more and more slowly
+	if (kickMS < kickRiseMS)
+		return kickMS / kickRiseMS;
+
+	float home = (kickMS - kickRiseMS) / (kickLengthMS - kickRiseMS);
+	return (1.0f - home) * (1.0f - home);
 }

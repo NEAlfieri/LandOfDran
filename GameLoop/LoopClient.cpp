@@ -466,11 +466,14 @@ void LoopClient::updateItemHotbar()
 
 		const std::shared_ptr<DynamicType>& type = dynamic->getType();
 
+		//A type that was never given a name still says what it is in its slot
+		const std::string& slotName = type->itemName.empty() ? type->scriptName : type->itemName;
+
 		//The item's own model drawn a moment ago by renderItemIcons, or the flat icon its type came with
 		if (Texture* drawn = pd.itemIcons ? pd.itemIcons->getIcon(slot) : nullptr)
-			pd.itemHotbar->setSlot(slot, true, type->itemName, drawn, true);
+			pd.itemHotbar->setSlot(slot, true, slotName, drawn, true);
 		else
-			pd.itemHotbar->setSlot(slot, true, type->itemName, findItemIcon(type->itemIconPath));
+			pd.itemHotbar->setSlot(slot, true, slotName, findItemIcon(type->itemIconPath));
 	}
 }
 
@@ -746,6 +749,10 @@ void LoopClient::placeHeldItems(float deltaT)
 	//Where our own item sits in first person, where our hand is hidden: right, up, and back from the camera, negative back is in front of it
 	static const glm::vec3 firstPersonGrip = glm::vec3(1.5f, -1.6f, -2.6f);
 
+	//A kick at its sharpest: how far the barrel tips up around the grip, and how far back toward its holder the item is shoved, see Item::getKickAmount
+	static const float kickTip = glm::radians(7.0f);
+	static const float kickBack = 0.3f;
+
 	if (!simulation.dynamics)
 		return;
 
@@ -830,10 +837,12 @@ void LoopClient::placeHeldItems(float deltaT)
 			grip = hand != -1 ? holder->getMeshCenter(hand) : holder->renderedPosition + facing * holderModel->getColOffset();
 		}
 
-		//The swing tips it forward around the grip, which is its type's hand offset on the model
+		//The swing tips it forward around the grip, which is its type's hand offset on the model, and the kick tips its
+		//barrel up around the same point while shoving the whole thing back toward its holder
 		const std::shared_ptr<DynamicType>& type = item->getType();
-		glm::quat rotation = facing * glm::angleAxis(item->getSwingAngle(), glm::vec3(1, 0, 0)) * type->handRotation;
-		item->setDrawnTransform(grip - rotation * type->handOffset, rotation);
+		const float kick = item->getKickAmount();
+		glm::quat rotation = facing * glm::angleAxis(item->getSwingAngle() + kick * kickTip, glm::vec3(1, 0, 0)) * type->handRotation;
+		item->setDrawnTransform(grip + facing * glm::vec3(0, 0, kick * kickBack) - rotation * type->handOffset, rotation);
 	}
 }
 

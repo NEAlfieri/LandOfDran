@@ -11,7 +11,7 @@
 
 	What works: firing, the animations, sounds and muzzle effects each weapon came with, real
 	projectiles for the weapons that had them, the casings they throw out, magazines and reloading,
-	and spare ammo per type.
+	spare ammo per type, and the ammo boxes that refill it, see Item_Ammo.lua.
 
 	Their bullet is the plain Gun's, add-ons/Weapon_Gun/bullet.dts in their datablocks, so this needs
 	Weapon_Gun and loads it if it isn't in yet, the way ForceRequiredAddOn did. The sport rifle is
@@ -20,9 +20,6 @@
 	A shot that lands on someone takes the weapon's damage field, the directDamage of its datablock,
 	off their health (Support_Weapons.lua's hurtIfPlayer calls Damage.lua's damagePlayer), without the
 	headshot multiplier the sport rifle had.
-
-	What doesn't, yet: ammo pickups aren't wired up, so the AMMO_*.dts models are loaded as scenery
-	and clients start with the spare ammo set below.
 ]]
 
 local folder = "Add-ons/Weapon_Package_Tier1/"
@@ -73,17 +70,8 @@ dofile(folder .. "Weapon_Submachinegun.lua")
 dofile(folder .. "Weapon_PumpShotgun.lua")
 dofile(folder .. "Weapon_SportRifle.lua")
 
+--The ammo boxes, which fill the spare ammo those reload out of, and what everyone starts with
+dofile(folder .. "Item_Ammo.lua")
+
 --Everything else the add-on ships, as models to look at until there's more to do with them
 dofile(folder .. "Models.lua")
-
---Ammo pickups aren't in yet, so everyone starts with spares to reload out of
-local startingAmmo = { ["9MM"] = 70, ["shotgun"] = 24, ["556"] = 40 }
-
-function weaponPackageGiveAmmo(client)
-	for ammoType, amount in pairs(startingAmmo) do
-		setReserveAmmo(client, ammoType, amount)
-	end
-
-	return client
-end
-registerEventListener("ClientJoin", "weaponPackageGiveAmmo")

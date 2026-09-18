@@ -108,7 +108,7 @@ void ClickActionPlayer::runStep(const ClickActionStep& step, double nowMS, Audio
 		case ClickStep_Animation:
 		{
 			if (item)
-				item->startPredictedAnimation(step.animationID);
+				item->startPredictedAnimation(step.animationID == clickStepKickAnimation ? itemKickAnimation : step.animationID);
 			break;
 		}
 
