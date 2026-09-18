@@ -2,6 +2,7 @@
 
 #include "../NetTypes/NetType.h"
 #include "Server.h"
+#include "../LuaFunctions/LuaObjectCache.h"
 #include <glm/gtx/norm.hpp> //glm::distance2
 
 extern "C" 
@@ -122,6 +123,12 @@ class ObjHolder
 
 	std::string metatableName = "";
 
+	//Registry name of the metatable that cleans up the weak_ptr in each Lua table, one per type since each holds a different weak_ptr
+	std::string ptrMetatableName = "";
+
+	//Set along with the metatable, stays nullptr on the client, which has no Lua
+	lua_State* luaState = nullptr;
+
 	public:
 
 	/*
@@ -131,9 +138,13 @@ class ObjHolder
 	void makeLuaMetatable(lua_State* const L,const std::string& name, luaL_Reg *functions)
 	{
 		metatableName = name;
+		ptrMetatableName = name + "_ptr";
+		luaState = L;
 
 		luaL_newmetatable(L, metatableName.c_str());
 		luaL_setfuncs(L, functions, 0);
+		lua_pushcfunction(L, LUA_weakPtrsEqual<T>);
+		lua_setfield(L, -2, "__eq");
 		lua_pushvalue(L, -1);
 		lua_setfield(L, -1, "__index");
 		lua_setglobal(L, metatableName.c_str());
@@ -147,6 +158,7 @@ class ObjHolder
 		- ptr: lightuserdata, a pointer to a weak_ptr to the object
 		- id: integer, the netID of the object
 		A metatable that handles function calls and comparison behavior
+		An object gets the same table every time, see LuaObjectCache.h, so scripts can keep their own fields on it
 	*/
 	std::shared_ptr<T> popLua(lua_State* const L) const
 	{
@@ -220,6 +232,15 @@ class ObjHolder
 			return;
 		}
 
+		//The table it got last time, unless that's somehow for another object
+		if (pushCachedLuaObject(L, type, obj->netID))
+		{
+			std::weak_ptr<T>* cached = getWeakPtrLua<T>(L, -1);
+			if (cached && cached->lock() == obj)
+				return;
+			lua_pop(L, 1);
+		}
+
 		//Set class metatable, or the object's own, like an item's, which has every dynamic function and more
 		const char* objectMetatable = obj->getLuaMetatable();
 		lua_newtable(L);
@@ -234,10 +255,11 @@ class ObjHolder
 		lua_pushinteger(L, type);
 		lua_setfield(L, -2, "type");
 
-		//Lua will automatically deallocate the space for the weak_ptr itself when the table is garbage collected
-		std::weak_ptr<T> *userdata = (std::weak_ptr<T>*)lua_newuserdata(L, sizeof(std::weak_ptr<T>));
-		new(userdata) std::weak_ptr<T>(obj);
+		//Lua deallocates the space for the weak_ptr itself when the table is garbage collected, its metatable runs the destructor
+		pushWeakPtrLua<T>(L, obj, ptrMetatableName.c_str());
 		lua_setfield(L, -2, "ptr");
+
+		cacheLuaObject(L, type, obj->netID);
 	}
 
 	/*
@@ -312,6 +334,7 @@ class ObjHolder
 		if (it != allObjects.end())
 		{
 			recentlyDeletedIDs.push_back((*it)->netID);
+			forgetLuaObject(luaState, type, (*it)->netID);
 			(*it)->requestDestruction();
 			(*it)->me.reset();
 			(*it).reset();
@@ -332,6 +355,7 @@ class ObjHolder
 		if (it != allObjects.end())
 		{
 			recentlyDeletedIDs.push_back((*it)->netID);
+			forgetLuaObject(luaState, type, (*it)->netID);
 			(*it)->requestDestruction();
 			(*it)->me.reset();
 			(*it).reset();
@@ -363,6 +387,7 @@ class ObjHolder
 		if (it != allObjects.end())
 		{
 			recentlyDeletedIDs.push_back((*it)->netID);
+			forgetLuaObject(luaState, type, (*it)->netID);
 			(*it)->requestDestruction();
 			(*it)->me.reset();
 			(*it).reset();
@@ -391,6 +416,7 @@ class ObjHolder
 			obj.reset();
 		}
 		allObjects.clear();
+		forgetLuaObjects(luaState, type);
 		recentCreations.clear();
 		recentlyDeletedIDs.clear();
 	}

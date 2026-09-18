@@ -60,6 +60,9 @@ class BrickHolder
 
 	std::string metatableName = "";
 
+	//Set along with the metatable, stays nullptr on the client, which has no Lua
+	lua_State* luaState = nullptr;
+
 	void insert(Brick* brick);
 	void createBody(Brick* brick);
 	void destroyBody(Brick* brick);

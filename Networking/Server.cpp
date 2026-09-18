@@ -1,4 +1,5 @@
 #include "Server.h"
+#include "../LuaFunctions/LuaObjectCache.h"
 
 size_t Server::getNumClients() const
 {
@@ -280,6 +281,9 @@ void Server::run(const void* pd, lua_State* L, EventManager * eventManager)
 					if (client.get() == (JoinedClient*)netEvent.peer->data)
 					{
 						handleDisconnect((JoinedClient*)netEvent.peer->data,this,pd,L,eventManager);
+
+						//After ClientLeave, so its listeners still get the table with whatever scripts kept on it
+						forgetLuaObject(L, ClientTypeId, client->getNetId());
 
 						client->me.reset();
 						client.reset();

@@ -12,6 +12,16 @@ source - if you add or change a binding, update this file too.
   `5` = Light, `6` = Emitter (`NetTypes/NetType.h`'s `SimObjectType`). `raycast()` and `client:getCursorItem()` can
   return a Dynamic, a Static, or a Brick, so check `.type` before assuming which. Items are Dynamics too, with
   more methods, see [Items](#items).
+- An object is the same Lua table every time a script gets it, however it got it: `getClientIdx`, an event argument,
+  `raycast()`, `getDynamicId`, and so on. So a script can keep its own fields on one,
+  `getClientIdx(4).someValue = 72`, and read them back from any other script for as long as the object exists, even
+  after the client's index changes because someone else left. `==` between two of them is true when they're the same
+  object, and they work as table keys. This goes for clients, Dynamics, items, Statics, bricks, lights, emitters, and
+  vehicles. Don't overwrite `id`, `type`, or `ptr`, the engine reads those and the change would stick. Fields aren't
+  saved or sent anywhere, they're gone when the object is: a client's table lasts through their `ClientLeave`
+  listeners, and a table a script still holds after its object is removed keeps its fields, but its methods log
+  that it was deleted and it's never handed out again. Net IDs aren't reused while the server runs, so a new object
+  never starts with an old one's fields.
 - Functions documented as `Expected N arguments` in an error message are strict about
   argument count - passing the wrong number logs an error and does nothing (they don't
   throw a Lua error, so a mistake here fails silently unless you're watching the log).

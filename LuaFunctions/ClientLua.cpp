@@ -1,4 +1,5 @@
 #include "ClientLua.h"
+#include "LuaObjectCache.h"
 #include "Dynamic.h" //pushRaycastResult
 #include "SoundLua.h"
 #include "BrickLua.h"
@@ -9,6 +10,15 @@ Server * LUA_server = nullptr;
 void pushClientLua(lua_State* L, std::shared_ptr<JoinedClient> client)
 {
 	std::string metatableName = "metatable_client";
+
+	//The table they got last time, see LuaObjectCache.h, unless that's somehow for another client
+	if (pushCachedLuaObject(L, ClientTypeId, client->getNetId()))
+	{
+		std::weak_ptr<JoinedClient>* cached = getWeakPtrLua<JoinedClient>(L, -1);
+		if (cached && cached->lock() == client)
+			return;
+		lua_pop(L, 1);
+	}
 
 	//Set class metatable
 	lua_newtable(L);
@@ -23,10 +33,11 @@ void pushClientLua(lua_State* L, std::shared_ptr<JoinedClient> client)
 	lua_pushinteger(L, ClientTypeId);
 	lua_setfield(L, -2, "type");
 
-	//Lua will automatically deallocate the space for the weak_ptr itself when the table is garbage collected
-	std::weak_ptr<JoinedClient>* userdata = (std::weak_ptr<JoinedClient>*)lua_newuserdata(L, sizeof(std::weak_ptr<JoinedClient>));
-	new(userdata) std::weak_ptr<JoinedClient>(client->me);
+	//Lua deallocates the space for the weak_ptr itself when the table is garbage collected, its metatable runs the destructor
+	pushWeakPtrLua<JoinedClient>(L, client->me, "metatable_client_ptr");
 	lua_setfield(L, -2, "ptr");
+
+	cacheLuaObject(L, ClientTypeId, client->getNetId());
 }
 
 std::shared_ptr<JoinedClient> popClientLua(lua_State* L)
@@ -1343,6 +1354,8 @@ void registerClientFunctions(lua_State* L)
 
 	luaL_newmetatable(L, "metatable_client");
 	luaL_setfuncs(L, regs, 0);
+	lua_pushcfunction(L, LUA_weakPtrsEqual<JoinedClient>);
+	lua_setfield(L, -2, "__eq");
 	lua_pushvalue(L, -1);
 	lua_setfield(L, -1, "__index");
 	lua_setglobal(L, "metatable_client");

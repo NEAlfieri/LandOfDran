@@ -355,6 +355,8 @@ add_executable (LandOfDran
 "LuaFunctions/Scheduler.cpp" 
 "LuaFunctions/EventManager.h" 
 "LuaFunctions/EventManager.cpp" 
+"LuaFunctions/LuaObjectCache.h"
+"LuaFunctions/LuaObjectCache.cpp"
 "LuaFunctions/ClientLua.h" 
 "LuaFunctions/ClientLua.cpp"  
 "LuaFunctions/Dynamic.cpp" 

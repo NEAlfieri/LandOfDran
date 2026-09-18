@@ -1,6 +1,7 @@
 #include "BrickHolder.h"
 
 #include "../NetTypes/NetType.h"
+#include "../LuaFunctions/LuaObjectCache.h"
 #include "../Graphics/InstancedBrickRenderer.h"
 
 #include <BulletCollision/CollisionDispatch/btManifoldResult.h>
@@ -258,6 +259,7 @@ void BrickHolder::remove(Brick* brick, bool showEffect)
 	tree.Remove(min, max, brick);
 
 	byId.erase(brick->netId);
+	forgetLuaObject(luaState, BrickTypeId, brick->netId);
 	removeName(brick);
 	destroyBody(brick);
 
@@ -301,6 +303,7 @@ void BrickHolder::clear()
 
 	bricks.clear();
 	byId.clear();
+	forgetLuaObjects(luaState, BrickTypeId);
 	byName.clear();
 	tree.RemoveAll();
 }
@@ -568,9 +571,12 @@ void BrickHolder::sendSpecialTypes(JoinedClient const* client) const
 void BrickHolder::makeLuaMetatable(lua_State* L, const std::string& name, luaL_Reg* functions)
 {
 	metatableName = name;
+	luaState = L;
 
 	luaL_newmetatable(L, metatableName.c_str());
 	luaL_setfuncs(L, functions, 0);
+	lua_pushcfunction(L, LUA_objectIdsEqual);
+	lua_setfield(L, -2, "__eq");
 	lua_pushvalue(L, -1);
 	lua_setfield(L, -1, "__index");
 	lua_setglobal(L, metatableName.c_str());
@@ -580,6 +586,10 @@ void BrickHolder::makeLuaMetatable(lua_State* L, const std::string& name, luaL_R
 
 void BrickHolder::pushLua(lua_State* L, const Brick* brick) const
 {
+	//The same table every time, see LuaObjectCache.h, brick IDs are never reused so it can't be another brick's
+	if (pushCachedLuaObject(L, BrickTypeId, brick->netId))
+		return;
+
 	lua_newtable(L);
 	lua_getglobal(L, metatableName.c_str());
 	lua_setmetatable(L, -2);
@@ -589,6 +599,8 @@ void BrickHolder::pushLua(lua_State* L, const Brick* brick) const
 
 	lua_pushinteger(L, BrickTypeId);
 	lua_setfield(L, -2, "type");
+
+	cacheLuaObject(L, BrickTypeId, brick->netId);
 }
 
 Brick* BrickHolder::popLua(lua_State* L) const
@@ -636,6 +648,7 @@ BrickHolder::~BrickHolder()
 	server = nullptr;
 	spawnAttachments = nullptr;
 	removeAttachments = nullptr;
+	luaState = nullptr;
 	clear();
 
 	for (auto& entry : shapes)
