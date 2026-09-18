@@ -38,6 +38,9 @@ void attemptEvalLogin(JoinedClient* source, Server const* const server, ENetPack
 			client->sendAbilities();
 		}
 
+		//The player list marks admins
+		pd->playerListChanged = true;
+
 		server->broadcastChat(source->name + " has logged into the eval console");
 		info(source->name + " has logged into the eval console");	
 

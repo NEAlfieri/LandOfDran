@@ -55,6 +55,9 @@ struct ServerProgramData
 	//Set when the above change other than time passing normally, or someone joins, so clients hear about it on the next tick
 	mutable bool worldStateChanged = true;
 
+	//Someone joined, left, became an admin, or had their score text changed, so LoopServer sends everyone the player list this tick
+	mutable bool playerListChanged = false;
+
 	std::shared_ptr<PhysicsWorld>	physicsWorld = nullptr;
 
 	lua_State * luaState = nullptr;
@@ -217,6 +220,8 @@ struct ServerProgramData
 
 				//Their flashlight and jet flames go with them though, even if their player stays
 				c->at(a)->removeEffects(this);
+
+				playerListChanged = true;
 
 				//Get rid of ClientData and JoinedClient structures themselves
 				src->userData = nullptr;

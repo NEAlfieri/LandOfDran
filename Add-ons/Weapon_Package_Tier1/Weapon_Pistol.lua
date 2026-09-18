@@ -29,6 +29,8 @@ registerWeapon("pistol", {
 	spread = 0.0009,
 	range = 200,
 	pellets = 1,
+	--TT_raycastDirectDamage, what a shot takes off the health of a player it lands on
+	damage = 12,
 	tracer = "gunBullet",
 
 	--The end of the barrel measured from the hand: its muzzle point node less its mount point node

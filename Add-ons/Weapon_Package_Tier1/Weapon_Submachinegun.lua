@@ -29,6 +29,8 @@ registerWeapon("submachinegun", {
 	gravityScale = 0.2,
 	spread = 0.0015,
 	pellets = 1,
+	--SubmachineGunProjectile1's directDamage, what a shot takes off the health of a player it lands on
+	damage = 8,
 
 	--The end of the barrel measured from the hand: its muzzle point node less its mount point node
 	muzzleFromHand = {0.000, 0.840, -2.160},

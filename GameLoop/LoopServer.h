@@ -43,6 +43,12 @@ class LoopServer
 	//Sends time of day and water level to every client
 	void broadcastWorldState();
 
+	//SDL_GetTicks of the last PlayerList packet
+	unsigned int lastPlayerListBroadcast = 0;
+
+	//Sends everyone the name, ping, and score text of everyone here, see PlayerListPacket
+	void broadcastPlayerList();
+
 	//Buoyancy and drag for dynamics in the water, before the physics step, including ones clients simulate themselves
 	void applyWaterForces(float deltaT);
 

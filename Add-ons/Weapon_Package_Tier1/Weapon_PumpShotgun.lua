@@ -29,6 +29,8 @@ registerWeapon("pumpShotgun", {
 	gravityScale = 0.4,
 	spread = 0.0032,
 	pellets = 9,
+	--PumpShotgunProjectile's directDamage, what each pellet takes off the health of a player it lands on
+	damage = 9,
 
 	--The end of the barrel measured from the hand: its muzzle point node less its mount point node
 	muzzleFromHand = {0.000, 0.666, -3.486},

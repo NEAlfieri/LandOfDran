@@ -52,6 +52,9 @@ struct ClientData
 	//Net IDs of clients whose names this client has been sent, so it can show who's talking
 	std::set<netIDType> knownTalkers;
 
+	//Lua's client:setScoreText, shown next to their name in everyone's player list, see Interface/PlayerListWindow.h
+	std::string scoreText = "";
+
 	//Lua's client:setJetsEnabled and client:setFlashlightEnabled, both allowed unless Lua says otherwise
 	bool jetsEnabled = true;
 	bool flashlightEnabled = true;

@@ -27,6 +27,9 @@
 	A brick wrenched to offer an item has a copy of it spinning over it. Left clicking that within reach, whatever's in hand,
 	makes a new item of the same type and puts it in the first empty slot, leaving the copy where it is for the next player.
 
+	Someone who leaves or dies (see Damage.lua) loses the tools they were given, and anything else they carried is left
+	where they were, see dropCarriedItems. Respawning hands out the tools again with giveStartingItems.
+
 	Run from serverstart.lua with dofile("Inventory.lua"), after the item types are added.
 ]]
 
@@ -513,6 +516,9 @@ local function fireLauncher(client, launcher)
 
 	local shell = addProjectile(shellType, x, y, z, velX, velY, velZ, SHELL_TAG, player)
 	if shell ~= nil then
+		--Who gets the score for anyone its blast kills, see launcherShellHit
+		shell.shooterClient = client
+
 		local trail = addEmitter("shellTrailEmitter")
 		if trail ~= nil then
 			trail:attachToDynamic(shell)
@@ -530,7 +536,10 @@ function launcherShellHit(projectile, hit, x, y, z, tag)
 		return projectile, hit, x, y, z, tag
 	end
 
+	--Damage.lua's damageByImpulse hurts every player the blast pushes, and blames whoever impulseAttacker is while it runs
+	impulseAttacker = projectile.shooterClient
 	radiusImpulse(x, y, z, SHELL_IMPULSE)
+	impulseAttacker = nil
 
 	for i = 1, 3 do
 		addEmitter("hammerExplosionEmitter", x + math.random() * 2 - 1, y + math.random(), z + math.random() * 2 - 1)
@@ -680,8 +689,9 @@ function throwItem(client, slot)
 end
 registerEventListener("ClientDropItem", "throwItem")
 
---Registered before serverstart.lua's leave, so their player is still around to drop things next to
-function dropItemsOnLeave(client)
+--Everything a client carries leaves their inventory: the tools they were given are removed, and whatever else they picked up
+--is left next to their player, so call it while they still have one. For leaving, and for dying, see Damage.lua
+function dropCarriedItems(client)
 	stopSpraying(client)
 	stopToolSwings(client)
 	forgetSprayedParts(client)
@@ -704,7 +714,11 @@ function dropItemsOnLeave(client)
 			end
 		end
 	end
+end
 
+--Registered before serverstart.lua's leave, so their player is still around to drop things next to
+function dropItemsOnLeave(client)
+	dropCarriedItems(client)
 	return client
 end
 registerEventListener("ClientLeave", "dropItemsOnLeave")

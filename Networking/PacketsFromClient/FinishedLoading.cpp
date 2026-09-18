@@ -61,4 +61,7 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 
 	//Time of day and water level, instead of waiting up to a second for the regular update
 	pd->worldStateChanged = true;
+
+	//And who's here, for them and for everyone who now has them to list
+	pd->playerListChanged = true;
 }

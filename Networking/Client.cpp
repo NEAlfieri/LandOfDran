@@ -278,6 +278,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new BrickSaveDataPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case PlayerList:
+					packets.push_back(new PlayerListPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case VehicleBricksBroken:
 					packets.push_back(new VehicleBricksBrokenPacket(packetHoldTime, event.packet));
 					return NotKicked;

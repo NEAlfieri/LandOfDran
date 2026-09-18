@@ -205,7 +205,11 @@ enum FromServerPacketType : unsigned char
 	Vignette = 44,			//A colored, wobbling vignette over the client's screen that fades out over a duration, see client:setVignette and VignettePacket
 	DynamicPart = 45,		//Put a model worn on a dynamic in one of its slots, like a hat on a player, or take it off, see Dynamic::setPart
 	BrickSaveData = 46,		//Part of a save of every brick the client asked for, see BrickSaveDataPacket
+	PlayerList = 47,		//Everyone on the server with their ping and score text, whenever any of it changes and every couple of seconds, see PlayerListPacket
 };
+
+//Flags byte of each player in a PlayerList packet
+#define PlayerListFlag_Admin 1
 
 //Flags byte of a PlayerAbilities packet
 #define PlayerAbility_Jets 1

@@ -13,7 +13,8 @@ void EscapeMenu::render(ImGuiIO* io)
 	if (!opened)
 		return;
 
-	if (!ImGui::Begin("Escape Menu", &opened))
+	//As big as its buttons, however many there are and whatever size it was saved at
+	if (!ImGui::Begin("Escape Menu", &opened, ImGuiWindowFlags_AlwaysAutoResize))
 	{
 		ImGui::End();
 		return;
@@ -23,6 +24,11 @@ void EscapeMenu::render(ImGuiIO* io)
 		if (ImGui::Button("Leave Server"))
 		{
 			lastButtonPress = EscapeButtonPressed::LeaveServer;
+			close();
+		}
+		if (ImGui::Button("Player List (F2)"))
+		{
+			lastButtonPress = EscapeButtonPressed::OpenPlayers;
 			close();
 		}
 		if (ImGui::Button("Save / Load Bricks"))

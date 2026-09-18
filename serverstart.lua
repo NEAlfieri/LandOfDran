@@ -72,6 +72,9 @@ newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
 newSoundType("BodyRemove","Assets/sound/bodyRemove.wav")
 --And Pain from a player who was shot or caught in a radiusImpulse, see hurtPlayer
 newSoundType("Pain","Assets/sound/pain.wav")
+--Damage.lua plays Death from a player who dies, Spawn from one who spawns, and BodyRemove where their old body disappears
+newSoundType("Death","Assets/sound/death.wav")
+newSoundType("Spawn","Assets/sound/spawn.wav")
 --And Launch from a firing launcher
 newSoundType("Launch","Assets/sound/launch.wav")
 --And PrintFire from a firing print gun
@@ -117,6 +120,8 @@ dofile("EmitterDefaults.lua")
 dofile("BlocklandImports.lua")
 --Starting tools, picking up and throwing items, and swinging the hammer and wrench
 dofile("Inventory.lua")
+--Health, dying, and respawning, after Inventory.lua so a click that respawns someone isn't also a click with their new tools
+dofile("Damage.lua")
 
 setSkybox("Assets/skyboxes/bluecloud","Assets/skyboxes/space")
 
@@ -410,11 +415,14 @@ function createFallingTiles()
 	table.insert(rights,last)
 end
 
---Client confirms finishes loading SimObject types
-function join(client)	
+--Where players spawn
+SPAWN_X, SPAWN_Y, SPAWN_Z = 0, 50, 0
+
+--Makes a client a player and puts them in it, as they join and each time they respawn after dying, see Damage.lua
+function spawnPlayer(client)
 
 	--Create a player for the client
-	dynamic = createDynamic(0,0,50,0)
+	local dynamic = createDynamic(brickhead,SPAWN_X,SPAWN_Y,SPAWN_Z)
 	
 	--Dynamic cannot tip over
 	dynamic:setAngularFactor(0,0,0);
@@ -433,6 +441,19 @@ function join(client)
 
 	--Their name floats over their head for everyone else
 	dynamic:setNameTag(client:getName(),1,1,1)
+
+	--Full health, and able to be damaged
+	giveHealth(dynamic)
+
+	dynamic:playSound("Spawn")
+
+	return dynamic
+end
+
+--Client confirms finishes loading SimObject types
+function join(client)	
+
+	spawnPlayer(client)
 
 	playSound("PlayerConnect")
 
@@ -455,7 +476,7 @@ end
 registerEventListener("ClientLeave","leave")
 
 --[[
-	What being hurt looks and sounds like, for a player shot by one of the weapon add-ons or caught in a radiusImpulse: the
+	What being hurt looks and sounds like, which Damage.lua's damagePlayer shows on a player it takes health from: the
 	old game's ouch particles and the Pain sound where it happened, and for whoever the player belongs to a red vignette
 	that closes in from the edges of their screen and wobbles their picture, fading away over a second
 	x, y, z is where they were hit, or nothing to put the particles at about chest height
@@ -481,16 +502,6 @@ function hurtPlayer(player, x, y, z)
 		player:getControllerIdx(0):setVignette(1, 0, 0, 0.5, HURT_VIGNETTE_WAVE, HURT_VIGNETTE_MS)
 	end
 end
-
---Anyone's player that a radiusImpulse pushes is hurt by it, like the launcher's shells
-function hurtByImpulse(dynamic, x, y, z, strength)
-	if dynamic:getNumControllers() > 0 then
-		hurtPlayer(dynamic)
-	end
-
-	return dynamic, x, y, z, strength
-end
-registerEventListener("RadiusImpulseHit", "hurtByImpulse")
 
 --Everyone nearby hears a brick get planted, from its center
 function plantSound(client, brick)

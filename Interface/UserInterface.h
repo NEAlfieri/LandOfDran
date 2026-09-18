@@ -116,6 +116,7 @@ class UserInterface
 	public:
 
 	//Queue a temporary message shown centered on screen for durationMS, in the given color (0-1 range each)
+	//A duration of 0 shows nothing and takes away every message showing instead, so a script can replace one, like a countdown
 	void addCenterPrint(const std::string& text, unsigned int durationMS, float red, float green, float blue);
 
 	std::string popupErrorMessage = "";

@@ -286,7 +286,8 @@ function grappleRopeTick(clientID, generation)
 
 	local client = state.client
 	local item = heldGrapple(client)
-	local player = client:getControlledIdx(0)
+	--Asking for a player they don't have logs an error, and someone who dies mid swing has none
+	local player = client:getNumControlled() > 0 and client:getControlledIdx(0) or nil
 
 	--Put it away, switched for another item, threw it, or lost their player
 	if item == nil or item.id ~= state.itemID or player == nil then

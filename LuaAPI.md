@@ -143,7 +143,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 
 | Event | Listener signature | Notes |
 |---|---|---|
-| `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `serverstart.lua`'s `join()` creates and gives them their player dynamic here. |
+| `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `serverstart.lua`'s `join()` gives them their player dynamic here with its `spawnPlayer(client)`, which `Damage.lua` calls again each time they respawn, see [Health, death, and respawning](#health-death-and-respawning). |
 | `ClientLeave` | `function(client) ... return client end` | Fires when a client disconnects, before it's removed from the client list. Use this to clean up anything the client owned (see `PickupSystem.lua`'s `dropHeldOnLeave`). |
 | `ClientChat` | `function(client, message) ... return client, message end` | Fires when a client sends a chat message, before it's broadcast. `message` is `"<name>: <text>"`. Return a modified `message` to alter it, or an empty string to suppress it. Slash commands are case-insensitive: when the text starts with `/`, the command word (up to the first space) is lowercased before listeners see it, so compare against lowercase names; arguments after the space keep their case. |
 | `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. |
@@ -165,7 +165,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `Inventory.lua` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
 | `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `Inventory.lua` throws the item in their hand. |
 | `ProjectileHit` | `function(projectile, hit, x, y, z, tag) ... return projectile, hit, x, y, z, tag end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, and `tag` is the tag it was fired with. It's removed right after its listeners run, unless one already removed it. Return values are ignored. `Inventory.lua` bursts launcher shells here. |
-| `RadiusImpulseHit` | `function(dynamic, x, y, z, strength) ... return dynamic, x, y, z, strength end` | Fires from `radiusImpulse` for each dynamic it pushes (players, items on the ground, projectiles, the rest, not vehicles), with the middle of the impulse and the impulse that reached the dynamic where it stood: `strength * (1 - distance / reach)`, before its mass, negative for a pull. Fired as it's pushed, so a listener can move or destroy it. Return values are ignored. `serverstart.lua`'s `hurtByImpulse` hurts the player of anyone pushed here. |
+| `RadiusImpulseHit` | `function(dynamic, x, y, z, strength) ... return dynamic, x, y, z, strength end` | Fires from `radiusImpulse` for each dynamic it pushes (players, items on the ground, projectiles, the rest, not vehicles), with the middle of the impulse and the impulse that reached the dynamic where it stood: `strength * (1 - distance / reach)`, before its mass, negative for a pull. Fired as it's pushed, so a listener can move or destroy it. Return values are ignored. `Damage.lua`'s `damageByImpulse` takes health off the player of anyone pushed here. |
 
 ---
 
@@ -287,7 +287,8 @@ carried item is held by the first dynamic `client:setDefaultController` gave its
 without one. Pressing Ctrl+W fires `ClientDropItem`, and letting go of a mouse button fires `ClientClickRelease`.
 
 `Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, `printGun`, and
-`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave (other items they carry are dropped).
+`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave or die (other items they carry are dropped
+next to their player, `dropCarriedItems(client)`). `Damage.lua` hands the same tools out again with `giveStartingItems(client)` when they respawn.
 The `paintCan` isn't one of them: opening the paint palette puts one in their hand with `client:setHandItem` (see
 `ClientPaintCan`), and it's destroyed again once their item bar or brick bar takes it back. Left clicking an
 item on the ground within 10 studs picks it up into the first empty slot. Holding left mouse with the hammer or wrench
@@ -339,6 +340,63 @@ Along with every `dynamic:` method.
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
 | `item:isDisplay()` | none | bool | Whether it's a display item: the copy floating over a brick wrenched to offer an item, see [Wrench dialog](#wrench-dialog-and-brick-attachments). It spins in place, never falls or moves, collides with nothing (rays and clicks still hit it, and it's outlined on a player's screen while their crosshair is on it within 10 studs), and `client:addItem` refuses it. `Inventory.lua` hands whoever clicks one a new item of the same type instead. `radiusImpulse` and water leave it alone. |
 | `item:getDisplayBrick()` | none | Brick or `nil` | The brick a display item floats over. |
+
+---
+
+## Health, death, and respawning
+
+`Damage.lua`, run from `serverstart.lua` after `Inventory.lua`, is all there is to health: nothing about it is in the engine,
+and clients are never told anyone's health, only shown what happens because of it. It keeps what it knows on the objects
+themselves (see [Conventions](#conventions)), so any script can read or change these:
+
+| Field | Description |
+|---|---|
+| `player.health` | What the player has left. `serverstart.lua`'s `spawnPlayer` gives every new player `DEFAULT_MAX_HEALTH` (100) with `giveHealth`. |
+| `player.maxHealth` | What their health regenerates back up to. |
+| `player.canBeDamaged` | `true` on a new player. `false` makes `damagePlayer` leave them alone. |
+| `client.score` | `0` as they join, up one for every other player they kill. Dying doesn't change it. Set it with `setScore(client, score)`, which also shows it in everyone's [player list](#player-list) with `client:setScoreText`. |
+| `client.dead` | `true` from when their player dies until they respawn. |
+| `client.corpse` | The body their last player left, until they respawn or leave. |
+
+| Function | Arguments | Returns | Description |
+|---|---|---|---|
+| `giveHealth(player[, maxHealth])` | a player Dynamic; max health, `DEFAULT_MAX_HEALTH` by default | none | Full health and able to be damaged, for a new player. |
+| `damagePlayer(player, amount[, attacker[, x, y, z]])` | the player; health to take; the client to blame, or `nil`; where they were hit | bool | Takes health off a client's player, showing them being hurt with `serverstart.lua`'s `hurtPlayer` (the `Pain` sound, `ouchEmitter` particles at `x, y, z` or else chest height, and a red `client:setVignette` for whoever they belong to), and kills them with `killPlayer` if that was the last of it. `false` and nothing happens if it isn't a client's player, its `canBeDamaged` is `false`, or `amount` isn't above 0. This is the way in for anything that hurts someone. |
+| `setHealth(player, health)` | the player; their new health, capped at their max | none | Sets their health without showing them being hurt, killing them at 0 or less whether or not they can be damaged. |
+| `killPlayer(player[, attacker[, x, y, z]])` | the player; the client whose score goes up, or `nil`; where what killed them hit | none | Kills a client's player whatever health it had, see below. |
+| `setScore(client, score)` | Client; their new score | none | Sets `client.score` and puts it in the Score column of everyone's player list. |
+| `respawnPlayer(client)` | a dead client | none | Respawns them now, without waiting for the countdown or their click. |
+| `spawnPlayer(client)` | Client | Dynamic | In `serverstart.lua`: makes the client a new player at `SPAWN_X, SPAWN_Y, SPAWN_Z`, gives them control of it, binds their camera, puts their appearance and name on it, gives it health, and plays `Spawn` from it. |
+
+What damages players so far: a shot from one of the weapon add-ons takes its weapon's `damage` field, the `directDamage` of
+its Blockland datablock (`Support_Weapons.lua`'s `hurtIfPlayer`: Gun 30, pistol 12, submachine gun 8, sport rifle 24, pump
+shotgun 9 for each of 9 pellets), blaming whoever fired it, and every `radiusImpulse` takes `IMPULSE_DAMAGE_SCALE` (0.005)
+times the square of the push that reached the player (`damageByImpulse`, a `RadiusImpulseHit` listener), so a launcher
+shell landing at someone's feet takes 98, one 10 studs off 43, and one 20 studs off 10. A script that sets the global
+`impulseAttacker` to a client around its `radiusImpulse` call has that client blamed, which `Inventory.lua` does for
+launcher shells, so they can kill whoever fired them too. A pull (negative strength) doesn't hurt.
+
+A player who hasn't been damaged for `HEALTH_REGEN_DELAY_MS` (5000) gets `HEALTH_REGEN_PER_SECOND` (2) back each second up
+to their max.
+
+When a player's health reaches 0:
+
+- They get out of any vehicle, and everything they carry leaves their inventory the way it does when someone leaves
+  (`Inventory.lua`'s `dropCarriedItems`): the tools they were given are removed and anything else is left where they died.
+- Their player is destroyed, leaving them with none (`client:getNumControlled()` is 0), and a body takes its place: a new
+  Dynamic of the same type with their appearance, which nobody controls. It's thrown and tipped away from what hit them, over
+  forwards, backwards, or to one side, whichever is nearest, so that it lands on a flat side. `Death` plays from it.
+  A Dynamic's weight is all at its feet, so left alone a tipped body would stand itself back up: `corpseSettle` stops it
+  turning once it's lying down. It still slides, falls, and gets pushed around.
+- Their camera is left hanging behind and above where they died (`client:staticCamera`), aimed at the body and free to look
+  around. Everyone is told `X killed Y.`, or `Y died.` with nobody else to blame, and a killer's score goes up.
+- A red countdown in the middle of their screen runs `RESPAWN_DELAY_MS` (10000) down, then tells them to click. A left
+  click after that respawns them (`respawnClick`, a `ClientClick` listener, registered after every other so the same click
+  doesn't also use their new tools): `spawnPlayer` again, and `giveStartingItems`.
+- Their old body disappears in a puff of smoke (`bodyRemoveEmitter`) with `BodyRemove` when they respawn, or when they
+  leave the server without having.
+
+The constants above are globals at the top of `Damage.lua`, so a script run after it can change them.
 
 ---
 
@@ -1033,7 +1091,7 @@ of which removes every item lying on the ground, not carried ones or the ones br
 name where dynamics hit or leave the water, louder the faster they're moving and lower pitched
 the bigger they are, and `LightOn` and `LightOff`, which the server plays from a player whose
 flashlight turns on or off. `Inventory.lua` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops
-`SprayLoop` from a spraying paint can, plays `Launch` from a firing launcher, and plays `Pain` from a player who's shot by one of the weapon add-ons or caught in a `radiusImpulse` (`hurtPlayer` in `serverstart.lua`, which also puffs an `ouchEmitter` and gives their client a red `client:setVignette`). `Honk` is the horn a new vehicle honks with left click,
+`SprayLoop` from a spraying paint can, and plays `Launch` from a firing launcher. `Damage.lua` plays `Pain` from a player who's damaged, by a shot from one of the weapon add-ons or a `radiusImpulse` (`hurtPlayer` in `serverstart.lua`, which also puffs an `ouchEmitter` and gives their client a red `client:setVignette`), `Death` from the body of one who dies, `Spawn` from a player who spawns, as they join or respawn, and `BodyRemove` where a body disappears. `Honk` is the horn a new vehicle honks with left click,
 unless it's wrenched to another sound, see [Vehicles](#vehicles), and `LightOn` and `LightOff` also play from a vehicle whose headlight is switched.
 
 In the functions below, `pitch` is a playback speed multiplier (default `1`, clamped to 0.05-10)
@@ -1081,8 +1139,18 @@ A "client" represents one connected player/connection.
 | `getNumClients()` | none | count | How many clients are currently connected. |
 | `getClientIdx(index)` | 0-based index | Client | Looks up a connected client by index. |
 | `messageAll(text)` | text (max 255 chars) | none | Broadcasts a chat message from the server to every connected client, as a single packet. Empty strings are silently ignored, same as `client:message`. |
-| `centerPrintAll(text)` / `centerPrintAll(text, durationMS)` / `centerPrintAll(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Broadcasts a temporary message to the center of every connected client's screen, as a single packet. |
+| `centerPrintAll(text)` / `centerPrintAll(text, durationMS)` / `centerPrintAll(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Broadcasts a temporary message to the center of every connected client's screen, as a single packet. A duration of `0` clears what's showing instead, like `client:centerPrint`. |
 | `registerChatSuggestion(commandName, suggestionText)` | command name (with or without the leading `/`, no spaces, max 64 chars, lowercased); text (max 255 chars, defaults to `/commandName` if empty) | none | Tells every client, now and as they join, about a slash command so their chat window lists it while they type one. Typing `/` plus the start of a name lists every matching command's `suggestionText` (the full name with its arguments, e.g. `"/kick <player> [reason]"`), and Up/Down write the picked command into the message bar ready for arguments. Once a space follows the command only its own line stays listed. This is only the hint: the command itself is still handled by a `ClientChat` listener. Registering a name again replaces its text. |
+
+### Player list
+
+Players press F2 (the `Player List` key bind), or click Player List in their escape menu, for a window listing everyone on
+the server: their name, marked `(admin)` for anyone logged into the eval console, the score text the server's Lua gave them
+with `client:setScoreText`, and their ping. Their own row is lit up. It's part of the HUD like the chat window, so it stays
+up while they play without taking their mouse or keys, until they press F2 again or close it. The server sends everyone the
+whole list whenever someone joins, leaves, becomes an admin, or has their score text changed, and every 2 seconds to keep
+the pings fresh. The engine never reads the score text: `Damage.lua` shows each client's `client.score` there (`setScore`),
+see [Health, death, and respawning](#health-death-and-respawning), and another script can show anything else.
 
 ### `client:` methods
 
@@ -1100,14 +1168,16 @@ A "client" represents one connected player/connection.
 | `client:removeControl(dynamic)` | Dynamic | none | Takes physics-simulation authority for the dynamic back from the client. |
 | `client:getNumControlled()` | none | count | How many dynamics this client currently controls. |
 | `client:getControlledIdx(index)` | 0-based index | Dynamic | The controlled dynamic at that index (index 0 is typically their player). |
-| `client:setDefaultController(dynamic)` | Dynamic | none | Sets up movement-key/camera-direction input handling for this dynamic (walking, jumping). Currently the only way to stop this is to destroy the dynamic. Also required before `getCursorItem`/`snapToCursor` will have live camera data for this client. |
+| `client:setDefaultController(dynamic)` | Dynamic | none | Sets up movement-key/camera-direction input handling for this dynamic (walking, jumping). Currently the only way to stop this is to destroy the dynamic, which both sides then forget: whatever reads "the client's player" (the item in their hand, their flashlight, `getCursorItem`, vehicle seats) goes by the first dynamic given here that still exists, so a client whose player was destroyed has none until this is called with a new one, like `Damage.lua` does when someone respawns. Also required before `getCursorItem`/`snapToCursor` will have live camera data for this client. |
 | `client:bindCamera(dynamic, fixUpVector, maxFollowDistance)` | Dynamic to follow; whether to lock the camera's up vector; max third-person follow distance | none | Binds the client's camera to follow a dynamic. |
 | `client:staticCamera(posX, posY, posZ)` | fixed camera position | none | Detaches the camera and locks it to a fixed position (direction stays free/mouse-controlled). |
 | `client:staticCamera(posX, posY, posZ, dirX, dirY, dirZ)` | fixed camera position and direction | none | Same, but also locks the look direction. |
 | `client:getCursorItem(maxDistance)` | max ray distance | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Same return values as `raycast()`. Raycasts from the client's *live* camera position/direction (updated continuously, not just on click) out to `maxDistance`, ignoring the client's own first controlled object. Requires `setDefaultController` to have been called for this client. |
-| `client:centerPrint(text)` / `client:centerPrint(text, durationMS)` / `client:centerPrint(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Shows a temporary message in the center of just this client's screen. |
+| `client:centerPrint(text)` / `client:centerPrint(text, durationMS)` / `client:centerPrint(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Shows a temporary message in the center of just this client's screen. Messages showing at the same time stack up in lines. A duration of `0` shows nothing and takes away every message showing instead, so a script can replace one message with another: `Damage.lua`'s respawn countdown clears the last second's line before printing the next. |
 | `client:playSound(name[, x, y, z][, pitch, volume])` | same as `playSound` | none | Plays a sound once for just this client. |
-| `client:setVignette(red, green, blue, alpha, strength, durationMS)` | color 0-1; alpha 0-10, how opaque the color is at the very edges of the screen as it starts, over 1 it comes in further; strength 0-10, how hard the picture wobbles, 0 for none, 1 about as much as being underwater; how long it lasts in milliseconds | none | Draws the color in from the edges of the client's screen, clear in the middle, with the whole picture wobbling like it does under the water, both dying away together as the duration runs out. The old game's `setVignette`, with the wobble and duration added. A new one replaces the one showing, and a duration of 0 clears it. Drawn along with the underwater effect when the camera is under the water too. `serverstart.lua`'s `hurtPlayer` flashes `1, 0, 0, 0.5` with strength `0.5` for a second on a player who's shot or caught in a `radiusImpulse`. |
+| `client:setVignette(red, green, blue, alpha, strength, durationMS)` | color 0-1; alpha 0-10, how opaque the color is at the very edges of the screen as it starts, over 1 it comes in further; strength 0-10, how hard the picture wobbles, 0 for none, 1 about as much as being underwater; how long it lasts in milliseconds | none | Draws the color in from the edges of the client's screen, clear in the middle, with the whole picture wobbling like it does under the water, both dying away together as the duration runs out. The old game's `setVignette`, with the wobble and duration added. A new one replaces the one showing, and a duration of 0 clears it. Drawn along with the underwater effect when the camera is under the water too. `serverstart.lua`'s `hurtPlayer` flashes `1, 0, 0, 0.5` with strength `0.5` for a second on a player who's damaged, see [Health, death, and respawning](#health-death-and-respawning). |
+| `client:setScoreText(text)` | any one line of text, or a number, up to 255 characters; `""` for nothing | none | What's shown in the Score column next to the client's name in everyone's player list, see [Player list](#player-list). It's only text to the engine, so it can be a score, a team, a rank, or all of them. Only a change is sent, so it's cheap to call with the same text. `Damage.lua`'s `setScore` puts `client.score` here. |
+| `client:getScoreText()` | none | string | The text `setScoreText` last gave them, `""` to start with. |
 | `client:setAudioEffect(preset)` | same as `setAudioEffect` | none | Sets the reverb effect for just this client, until something sets it again. Not remembered: `setAudioEffect`'s preset is what a client gets when they join. |
 | `client:setVoiceMuted(muted)` | bool | none | Mutes or unmutes the client's voice chat. The server drops their voice while they're muted, and their game shows "Voice Muted" and stops sending. If they were talking, `ClientStopTalking` fires half a second later. Not remembered if they reconnect. |
 | `client:isVoiceMuted()` | none | bool | Whether `setVoiceMuted` muted the client. |

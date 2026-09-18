@@ -15,7 +15,8 @@ enum EscapeButtonPressed
 	JoinServer = 6,
 	OpenSavedVehicles = 7,
 	OpenAppearance = 8,
-	OpenBrickSaves = 9
+	OpenBrickSaves = 9,
+	OpenPlayers = 10
 };
 
 class EscapeMenu : public Window

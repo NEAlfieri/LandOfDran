@@ -225,6 +225,12 @@ std::shared_ptr<Window> UserInterface::getWindowByName(const std::string &name)
 
 void UserInterface::addCenterPrint(const std::string& text, unsigned int durationMS, float red, float green, float blue)
 {
+	if (durationMS == 0)
+	{
+		centerPrints.clear();
+		return;
+	}
+
 	CenterPrintMessage msg;
 	msg.text = text;
 	msg.expireTicksMS = SDL_GetTicks() + durationMS;

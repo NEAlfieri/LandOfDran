@@ -24,7 +24,8 @@
 	pistol has none and is hitscan instead, like the raycasting support it came with, with a tracer
 	fired from the muzzle toward wherever the shot landed so there's still something to watch.
 
-	Nothing takes damage yet, so landing a shot only leaves an effect.
+	A shot that lands on someone's player takes the weapon's damage field off their health, see
+	hurtIfPlayer and Damage.lua.
 
 	The spots on a weapon's model come from the shape's own nodes, see weaponNodeFromHand: the muzzle
 	is its muzzlePoint measured from its mountPoint, the node the hand holds it by, and a casing
@@ -434,6 +435,11 @@ local function fireOneShot(client, weapon, item, player)
 		local shot = addProjectile(projectileType, muzzleX, muzzleY, muzzleZ,
 			dirX * speed, dirY * speed, dirZ * speed, weapon.name, player)
 
+		--Who fired it, for whoever it lands on, see weaponProjectileHit
+		if shot ~= nil then
+			shot.shooterClient = client
+		end
+
 		--gravityMod in the originals, how much of normal gravity the round feels on its way out
 		if shot ~= nil and weapon.gravityScale ~= nil then
 			shot:setGravity(0, WORLD_GRAVITY * weapon.gravityScale, 0)
@@ -459,7 +465,7 @@ local function fireOneShot(client, weapon, item, player)
 		hitX, hitY, hitZ = camX + dirX * range, camY + dirY * range, camZ + dirZ * range
 	else
 		weaponImpactEffect(weapon, hitX, hitY, hitZ)
-		hurtIfPlayer(hit, hitX, hitY, hitZ)
+		hurtIfPlayer(hit, hitX, hitY, hitZ, weapon, client)
 	end
 
 	--The tracer starts at the barrel rather than the camera, and heads for wherever the shot landed
@@ -507,14 +513,18 @@ function weaponRemoveLight(light)
 	end
 end
 
---A round that lands on someone's player hurts them: serverstart.lua's hurtPlayer does the pain
---sound, the ouch particles, and the red vignette on their screen. There's still no health to take
-function hurtIfPlayer(hit, x, y, z)
+--A round that lands on someone's player takes the weapon's damage off their health, the directDamage of
+--the originals, through Damage.lua's damagePlayer, which also does the pain sound, the ouch particles, and
+--the red vignette on their screen, and gives shooter the score if it kills them. Without Damage.lua they're
+--only shown being hurt, by serverstart.lua's hurtPlayer
+function hurtIfPlayer(hit, x, y, z, weapon, shooter)
 	if hit == nil or hit.type ~= DYNAMIC_TYPE_ID or hit:getNumControllers() == 0 then
 		return
 	end
 
-	if hurtPlayer ~= nil then
+	if damagePlayer ~= nil then
+		damagePlayer(hit, weapon.damage or 0, shooter, x, y, z)
+	elseif hurtPlayer ~= nil then
 		hurtPlayer(hit, x, y, z)
 	end
 end
@@ -563,7 +573,7 @@ function weaponProjectileHit(projectile, hit, x, y, z, tag)
 		local weapon = Weapons[tag]
 		if weapon ~= nil then
 			weaponImpactEffect(weapon, x, y, z)
-			hurtIfPlayer(hit, x, y, z)
+			hurtIfPlayer(hit, x, y, z, weapon, projectile.shooterClient)
 		end
 	end
 

@@ -24,7 +24,10 @@
 	What isn't here: gunImage::onFire played the shiftAway recoil thread on the player, which the
 	player model doesn't have, and weaponSwitchSound on its Activate state, since there's no event
 	for picking an item yet. colorShiftColor tinted the stock, and there's nothing to tint a type's
-	meshes with. Nothing takes damage, since the engine has no health system yet.
+	meshes with.
+
+	A bullet that lands on someone takes 30 off their health, gunProjectile's directDamage, see
+	Support_Weapons.lua's hurtIfPlayer.
 
 	Weapon_Guns_Akimbo isn't ported: it mounts a second gun in the left hand, and a player here holds
 	one item.
@@ -220,6 +223,8 @@ registerWeapon("gun", {
 	projectileLifetimeMS = 4000,
 	spread = 0,
 	pellets = 1,
+	--gunProjectile's directDamage, what a shot takes off the health of a player it lands on
+	damage = 30,
 
 	muzzleFromHand = muzzleFromHand,
 	--The same point in the model's own space, which is where its own game hangs the predicted flash

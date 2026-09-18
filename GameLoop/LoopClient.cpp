@@ -37,6 +37,8 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	pd.vehicleGhost.cancel();
 	pd.brickSaveMenu->close();
 	simulation.brickSaves.clear();
+	pd.playerList->close();
+	pd.playerList->clear();
 
 	//Will need to log in again to get eval access
 	pd.debugMenu->reset();
@@ -158,6 +160,7 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 	if (userName.length() > 0)
 		pd.state->addString("network/username", userName);
 	joinedName = userName;
+	pd.playerList->setOwnName(joinedName);
 	pd.state->addString("network/lastip", ip);
 	pd.state->addInt("network/lastport", port, true, "", 1, 65535);
 	pd.state->exportToFile(ClientProgramData::stateFilePath);
@@ -1486,6 +1489,18 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			break;
 		}
 
+		case OpenPlayers:
+		{
+			//Part of the HUD, so it stays up once the escape menu is gone and the mouse goes back to playing
+			if (cmdArgs.gameState == InGame)
+			{
+				pd.playerList->show();
+				if (pd.gui->getOpenWindowCount() == 0)
+					pd.context->setMouseLock(true);
+			}
+			break;
+		}
+
 		case None:
 		default:
 			break;
@@ -1536,6 +1551,10 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	if (pd.input->pollCommand(DebugView))
 		pd.debugMenu->showDebugPhysicsView = !pd.debugMenu->showDebugPhysicsView;
+
+	//Who's here, with their scores and pings, up until the key is hit again
+	if (pd.input->pollCommand(TogglePlayerList) && cmdArgs.gameState == InGame)
+		pd.playerList->toggle();
 
 	//Talking is a toggle rather than a key you hold down, so it keeps going while you do something else
 	if (pd.input->pollCommand(PushToTalk))
@@ -3325,7 +3344,7 @@ void LoopClient::renderEverything(float deltaT)
 
 	std::vector<std::string> hudLines;
 	if (pd.debugMenu->showDebugPhysicsView)
-		hudLines.push_back("Debug physics view ON (F2 toggles)");
+		hudLines.push_back(std::string("Debug physics view ON (") + SDL_GetScancodeName(pd.input->getKeyBind(DebugView)) + " toggles)");
 	if (pd.ghostBrick.isVisible())
 	{
 		const Brick& ghost = pd.ghostBrick.get();
@@ -3783,6 +3802,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.printMenu = pd.gui->createWindow<PrintMenu>(pd.textures, &pd.prints);
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
 	pd.brickSaveMenu = pd.gui->createWindow<BrickSaveMenu>(&pd.brickTypes, &pd.prints);
+	pd.playerList = pd.gui->createWindow<PlayerListWindow>();
 	//Builds from before the state file kept the hot bar in settings.txt
 	std::shared_ptr<SettingManager> hotbarSource = pd.state;
 	if (!pd.state->getPreference("hotbar/slot1/filled") && settings->getPreference("hotbar/slot1/filled"))

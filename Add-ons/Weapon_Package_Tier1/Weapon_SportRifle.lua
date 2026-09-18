@@ -29,6 +29,8 @@ registerWeapon("sportRifle", {
 	gravityScale = 0.02,
 	spread = 0.0001,
 	pellets = 1,
+	--SportRifleProjectile's directDamage, what a shot takes off the health of a player it lands on
+	damage = 24,
 
 	--The end of the barrel measured from the hand: its muzzle point node less its mount point node
 	muzzleFromHand = {0.000, 0.810, -4.500},

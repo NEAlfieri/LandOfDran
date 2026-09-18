@@ -49,6 +49,7 @@ std::string GetInputCommandString(InputCommand command)
         case DropCameraAtPlayer: return "Drop Camera At Player";
         case DropPlayerAtCamera: return "Drop Player At Camera";
         case CycleSeat: return "Next Vehicle Seat";
+        case TogglePlayerList: return "Player List";
         default: return "Other error";
     }
 }
@@ -86,7 +87,8 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
         bindKey(OpenChatWindow, SDL_SCANCODE_T);
         bindKey(FirstThirdPerson, SDL_SCANCODE_TAB);
         bindKey(Jump, SDL_SCANCODE_SPACE);
-        bindKey(DebugView, SDL_SCANCODE_F2);
+        //F2 until the player list took it
+        bindKey(DebugView, SDL_SCANCODE_F3);
 
         //Same as the old game's building controls
         bindKey(BrickForward, SDL_SCANCODE_I);
@@ -124,6 +126,7 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
         bindKey(DropPlayerAtCamera, SDL_SCANCODE_F8);
         //Moves to the next free seat of the vehicle being ridden. Shares the comma with lowering the ghost brick, which isn't out while riding
         bindKey(CycleSeat, SDL_SCANCODE_COMMA);
+        bindKey(TogglePlayerList, SDL_SCANCODE_F2);
 
         //Number keys 1 through 9 then 0, SDL's scancodes for them are in that order
         for (int a = 0; a < 10; a++)
@@ -132,6 +135,9 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
 
     if (settings)
     {
+        //Binds saved before there was a player list have no key for it yet, which is how the move below knows to happen only once
+        bool savedBeforePlayerList = settings->getPreference("keybinds/" + std::to_string(DebugView)) && !settings->getPreference("keybinds/" + std::to_string(TogglePlayerList));
+
         //Load key binds from file, these used to be loaded before the defaults above, which then overwrote them
         for (unsigned int a = 1; a < InputCommand::EndOfCommands; a++)
         {
@@ -145,6 +151,10 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
         //Chat used to open its window with C by default, and every bind gets saved, so a saved C is the old default rather than a choice
         if (keyForCommand[OpenChatWindow] == SDL_SCANCODE_C)
             keyForCommand[OpenChatWindow] = SDL_SCANCODE_T;
+
+        //The debug view's old default, F2, is the player list's now, so a saved F2 from before moves to the new default along with it
+        if (savedBeforePlayerList && keyForCommand[DebugView] == SDL_SCANCODE_F2)
+            keyForCommand[DebugView] = SDL_SCANCODE_F3;
 
         for (unsigned int a = 1; a < InputCommand::EndOfCommands; a++)
             settings->addInt("keybinds/" + std::to_string(a), keyForCommand[a]);

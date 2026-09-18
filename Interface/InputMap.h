@@ -60,7 +60,8 @@ enum InputCommand
     DropCameraAtPlayer = 48,
     DropPlayerAtCamera = 49,
     CycleSeat = 50,
-    EndOfCommands = 51
+    TogglePlayerList = 51,
+    EndOfCommands = 52
 };
 
 //For user interface

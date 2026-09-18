@@ -17,11 +17,12 @@
 	Weapon_Gun and loads it if it isn't in yet, the way ForceRequiredAddOn did. The sport rifle is
 	the one exception: its datablock fires its own rifle_round.dts.
 
-	What doesn't, yet: nothing takes damage, since the engine has no health system. A shot that
-	lands on someone hurts them (Support_Weapons.lua's hurtIfPlayer calls serverstart.lua's
-	hurtPlayer: the Pain sound, ouch particles, and a red vignette on their screen) but takes
-	nothing off them. fireOneShot is where damage would go once there's something to damage. Ammo pickups aren't wired up either, so the AMMO_*.dts models are
-	loaded as scenery and clients start with the spare ammo set below.
+	A shot that lands on someone takes the weapon's damage field, the directDamage of its datablock,
+	off their health (Support_Weapons.lua's hurtIfPlayer calls Damage.lua's damagePlayer), without the
+	headshot multiplier the sport rifle had.
+
+	What doesn't, yet: ammo pickups aren't wired up, so the AMMO_*.dts models are loaded as scenery
+	and clients start with the spare ammo set below.
 ]]
 
 local folder = "Add-ons/Weapon_Package_Tier1/"

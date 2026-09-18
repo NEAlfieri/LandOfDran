@@ -12,6 +12,9 @@
 
 #include <random>
 
+//How often everyone is sent the player list when nothing about it changed, which is what keeps the pings in it fresh
+static constexpr unsigned int playerListRefreshMS = 2000;
+
 void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
 	//When embedded alongside a LoopClient in the same process (single player), both loops
@@ -48,6 +51,10 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 	if (pd.worldStateChanged || SDL_GetTicks() - lastWorldStateBroadcast > 1000)
 		broadcastWorldState();
 
+	//Right away when someone comes, goes, or has their score text changed, and otherwise only to keep pings fresh
+	if (pd.playerListChanged || (!pd.clients.empty() && SDL_GetTicks() - lastPlayerListBroadcast > playerListRefreshMS))
+		broadcastPlayerList();
+
 	server->run(&pd,pd.luaState,pd.eventManager); //   <---- networking
 	endQuietTalkers();
 	startUpdateBudgets();
@@ -75,9 +82,15 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 
 	for (unsigned int a = 0; a < pd.clients.size(); a++)
 	{
-		for (unsigned int b = 0; b < pd.clients[a]->controllers.size(); b++)
+		//A controller whose dynamic was destroyed is forgotten, like the client's own copy in LoopClient::updateControllers, so that
+		//controllers[0] is the player Lua gives them when they respawn rather than the one that died, see Damage.lua
+		std::vector<PlayerController>& controllers = pd.clients[a]->controllers;
+		for (unsigned int b = 0; b < controllers.size();)
 		{
-			pd.clients[a]->controllers[b].controlWithLastInput(pd.physicsWorld, deltaT, pd.waterEnabled ? pd.waterLevel : PlayerController::noWater);
+			if (controllers[b].controlWithLastInput(pd.physicsWorld, deltaT, pd.waterEnabled ? pd.waterLevel : PlayerController::noWater))
+				controllers.erase(controllers.begin() + b);
+			else
+				b++;
 		}
 	}
 
@@ -802,6 +815,60 @@ void LoopServer::updatePlayerAbilities()
 		if (glm::length(look) > 0.0001f && glm::dot(glm::normalize(look), light->getDirection()) < flashlightTurnCosine)
 			light->setDirection(look);
 	}
+}
+
+void LoopServer::broadcastPlayerList()
+{
+	lastPlayerListBroadcast = SDL_GetTicks();
+	pd.playerListChanged = false;
+
+	if (pd.clients.empty())
+		return;
+
+	/*
+		1 byte - packet type
+		1 byte - how many players follow
+		For each: their client net ID, 1 byte of PlayerListFlag bits, 2 bytes of ping in ms,
+		1 byte name length then the name, 1 byte score text length then the text
+	*/
+	std::vector<unsigned char> bytes;
+	bytes.push_back((unsigned char)PlayerList);
+	bytes.push_back((unsigned char)std::min<size_t>(pd.clients.size(), 255));
+
+	auto writeString = [&bytes](std::string text)
+	{
+		if (text.length() > 255)
+			text = text.substr(0, 255);
+		bytes.push_back((unsigned char)text.length());
+		bytes.insert(bytes.end(), text.begin(), text.end());
+	};
+
+	for (unsigned int a = 0; a < pd.clients.size() && a < 255; a++)
+	{
+		const std::shared_ptr<ClientData>& client = pd.clients[a];
+		if (!client->client)
+		{
+			//Keeps the count above honest
+			netIDType none = NO_ID;
+			bytes.insert(bytes.end(), (unsigned char*)&none, (unsigned char*)&none + sizeof(netIDType));
+			bytes.insert(bytes.end(), 5, 0);
+			continue;
+		}
+
+		netIDType id = client->client->getNetId();
+		bytes.insert(bytes.end(), (unsigned char*)&id, (unsigned char*)&id + sizeof(netIDType));
+
+		bytes.push_back(client->client->isAdmin ? PlayerListFlag_Admin : 0);
+
+		uint16_t ping = (uint16_t)std::clamp(client->client->getPing(), 0.0f, 65535.0f);
+		bytes.insert(bytes.end(), (unsigned char*)&ping, (unsigned char*)&ping + sizeof(uint16_t));
+
+		writeString(client->client->name);
+		writeString(client->scoreText);
+	}
+
+	ENetPacket* packet = enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable));
+	server->broadcast(packet, OtherReliable);
 }
 
 void LoopServer::broadcastWorldState()

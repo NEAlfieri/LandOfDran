@@ -731,6 +731,75 @@ static int LUA_clientCenterPrint(lua_State* L)
 	return 0;
 }
 
+//client:setScoreText(text): whatever a script wants next to their name in everyone's player list, one line of up to 255 characters
+static int LUA_clientSetScoreText(lua_State* L)
+{
+	scope("(LUA) client:setScoreText");
+
+	if (lua_gettop(L) != 2)
+	{
+		error("Expected client:setScoreText(text)");
+		return 0;
+	}
+
+	//Numbers are fine too, a score usually is one
+	const char* text = lua_tostring(L, -1);
+	std::string scoreText = text ? text : "";
+	lua_pop(L, 1);
+
+	if (!text)
+	{
+		error("Invalid text passed to client:setScoreText");
+		return 0;
+	}
+
+	std::shared_ptr<JoinedClient> jc = popClientLua(L);
+	std::shared_ptr<ClientData> client = jc ? LUA_pd->getClient(jc) : nullptr;
+
+	if (!client)
+	{
+		error("Invalid client object passed to client:setScoreText");
+		return 0;
+	}
+
+	//The list is a table with a row each, so a line break would only make a mess of it
+	for (char& c : scoreText)
+		if (c == '\n' || c == '\r' || c == '\t')
+			c = ' ';
+	if (scoreText.length() > 255)
+		scoreText = scoreText.substr(0, 255);
+
+	//Scripts tend to set this every time anything happens, and only a change needs sending to everyone
+	if (client->scoreText != scoreText)
+	{
+		client->scoreText = scoreText;
+		LUA_pd->playerListChanged = true;
+	}
+
+	return 0;
+}
+
+static int LUA_clientGetScoreText(lua_State* L)
+{
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected client:getScoreText()");
+		return 0;
+	}
+
+	std::shared_ptr<JoinedClient> jc = popClientLua(L);
+	std::shared_ptr<ClientData> client = jc ? LUA_pd->getClient(jc) : nullptr;
+
+	if (!client)
+	{
+		error("Invalid client object passed to client:getScoreText");
+		return 0;
+	}
+
+	lua_pushstring(L, client->scoreText.c_str());
+	return 1;
+}
+
 /*
 	client:setVignette(red, green, blue, alpha, strength, durationMS)
 	A color drawn in from the edges of their screen, alpha being how opaque it is at the edges to start with, while the
@@ -1333,6 +1402,8 @@ void registerClientFunctions(lua_State* L)
 		{ "centerPrint", LUA_clientCenterPrint },
 		{ "playSound", LUA_clientPlaySound },
 		{ "setVignette", LUA_clientSetVignette },
+		{ "setScoreText", LUA_clientSetScoreText },
+		{ "getScoreText", LUA_clientGetScoreText },
 		{ "setAudioEffect", LUA_clientSetAudioEffect },
 		{ "setVoiceMuted", LUA_clientSetVoiceMuted },
 		{ "isVoiceMuted", LUA_clientIsVoiceMuted },
