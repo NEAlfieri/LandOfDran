@@ -61,7 +61,12 @@ void JoinedClient::sendVignette(float red, float green, float blue, float alpha,
 
 void JoinedClient::send(ENetPacket* packet, PacketChannel channel) const
 {
-	if (!peer)
+	/*
+		ENet resets a peer before it reports the disconnect, so nothing can reach a client from their ClientLeave
+		listeners on, and those still destroy their items and such, which sends them their inventory
+		The packet is still the caller's if it didn't go out, some send one packet to several clients
+	*/
+	if (!peer || peer->state != ENET_PEER_STATE_CONNECTED)
 		return;
 
 	if (enet_peer_send(peer, channel, packet) < 0)
@@ -73,7 +78,8 @@ void JoinedClient::send(ENetPacket* packet, PacketChannel channel) const
 
 void JoinedClient::send(const char* data, unsigned int len, PacketChannel channel) const
 {
-	if (!peer)
+	//See the other send
+	if (!peer || peer->state != ENET_PEER_STATE_CONNECTED)
 		return;
 
 	ENetPacket* packet = enet_packet_create(data, len, getFlagsFromChannel(channel));
@@ -87,6 +93,7 @@ void JoinedClient::send(const char* data, unsigned int len, PacketChannel channe
 	{
 		scope("JoinedClient::send");
 		error("enet_peer_send failed");
+		enet_packet_destroy(packet);
 	}
 }
 
