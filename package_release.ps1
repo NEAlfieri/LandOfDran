@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
 Packages a release Windows binary along with the files it needs at runtime
-(Assets, Shaders, serverstart.lua, and Saves if present) into a single zip archive.
+(Assets, Shaders, Add-ons, serverstart.lua, and Saves if present) into a single zip archive.
 Assets are taken from the working tree, so the gitignored ones (music, .webm prints) go in too.
 
 .DESCRIPTION
@@ -61,6 +61,8 @@ try {
     # .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
     Copy-Item "Assets" $PkgDir -Recurse
     Copy-Item "Shaders" $PkgDir -Recurse
+    # serverstart.lua dofile()s the add-ons by path relative to the working directory
+    Copy-Item "Add-ons" $PkgDir -Recurse
     Copy-Item "serverstart.lua" $PkgDir
     Copy-Item "EmitterDefaults.lua" $PkgDir
     Copy-Item "BlocklandImports.lua" $PkgDir

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Packages a release binary along with the files it needs at runtime
-# (Assets, Shaders, serverstart.lua, and Saves if present) into a single tar.gz archive.
+# (Assets, Shaders, Add-ons, serverstart.lua, and Saves if present) into a single tar.gz archive.
 # Assets are taken from the working tree, so the gitignored ones (music, .webm prints) go in too.
 #
 # By default the binary is built inside a Docker container pinned to an
@@ -72,6 +72,8 @@ fi
 # .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
 cp -r Assets "$PKG_DIR/"
 cp -r Shaders "$PKG_DIR/"
+# serverstart.lua dofile()s the add-ons by path relative to the working directory
+cp -r Add-ons "$PKG_DIR/"
 cp serverstart.lua "$PKG_DIR/"
 cp EmitterDefaults.lua "$PKG_DIR/"
 cp BlocklandImports.lua "$PKG_DIR/"
