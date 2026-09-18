@@ -1,4 +1,5 @@
 #include <set>
+#include <limits>
 #include "Mesh.h"
 #include "DtsShape.h"
 
@@ -1416,6 +1417,9 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	//Lower case names of meshes hide lines asked not to draw, see the client side constructor
 	std::set<std::string> hiddenMeshes;
 
+	//Lower case names of meshes the descriptor's fixedcolor lines keep from being painted, see Mesh::fixedColor
+	std::set<std::string> fixedColorMeshes;
+
 	//The relative file path to the actual 3d model file
 	std::string modelPath = "";
 
@@ -1474,6 +1478,17 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 			continue;
 		}
 
+		//A mesh that keeps its material's look however the instance is colored, by name
+		if (argument == "fixedcolor")
+		{
+			fixedColorMeshes.insert(lowercase(value.substr(0, value.find_last_not_of(" \t\r\n") + 1)));
+			continue;
+		}
+
+		//How a model worn on another sits on it, see attachMesh
+		if (parseAttachLine(argument, value))
+			continue;
+
 		auto flagSearchResult = aiProcessMap.find(argument);
 		//It wasn't a valid assimp flag
 		if (flagSearchResult == aiProcessMap.end())
@@ -1504,6 +1519,13 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 	const aiScene* scene = nullptr;
 
 	/*
+		Only matters to a descriptor asking for GenSmoothNormals (with DropNormals for a file that came with flat
+		ones, like an .stl): faces meeting at a sharper angle than this keep their edge, so the dome of a hat is
+		smooth while the edge of its brim stays an edge. Assimp's default of 175 degrees smooths everything
+	*/
+	importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 80.0f);
+
+	/*
 		A DTS shape is read by us rather than by Assimp, but comes out of it looking like anything
 		else Assimp would have handed back, so everything below here treats the two the same
 	*/
@@ -1532,6 +1554,8 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		Mesh* tmp = new Mesh(src, this,serverSide);
 		if (hiddenMeshes.count(lowercase(tmp->name)))
 			tmp->nonRenderingMesh = true;
+		if (fixedColorMeshes.count(lowercase(tmp->name)))
+			tmp->fixedColor = true;
 		tmp->meshIndex = allMeshes.size();
 		allMeshes.push_back(tmp);
 	}
@@ -1615,6 +1639,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 	*/
 	std::set<std::string> hiddenMeshes;
 
+	//Lower case names of meshes the descriptor's fixedcolor lines keep from being painted, see Mesh::fixedColor
+	std::set<std::string> fixedColorMeshes;
+
 	std::string line = "";
 	while (!descriptor.eof())
 	{
@@ -1680,6 +1707,13 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 			continue;
 		}
 
+		//A mesh that keeps its material's look however the instance is colored, by name
+		if (argument == "fixedcolor")
+		{
+			fixedColorMeshes.insert(lowercase(value.substr(0, value.find_last_not_of(" \t\r\n") + 1)));
+			continue;
+		}
+
 		//Where decals go on a mesh: its name, then the texture coordinates of a decal's top left and bottom right corners
 		if (argument == "decalarea")
 		{
@@ -1695,6 +1729,10 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 			decalAreas[lowercase(meshName)] = area;
 			continue;
 		}
+
+		//How a model worn on another sits on it, see attachMesh
+		if (parseAttachLine(argument, value))
+			continue;
 
 		auto flagSearchResult = aiProcessMap.find(argument);
 		//It wasn't a valid assimp flag
@@ -1724,6 +1762,13 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	Assimp::Importer importer;
 	const aiScene* scene = nullptr;
+
+	/*
+		Only matters to a descriptor asking for GenSmoothNormals (with DropNormals for a file that came with flat
+		ones, like an .stl): faces meeting at a sharper angle than this keep their edge, so the dome of a hat is
+		smooth while the edge of its brim stays an edge. Assimp's default of 175 degrees smooths everything
+	*/
+	importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 80.0f);
 
 	//A DTS shape is read by us rather than by Assimp, see the same branch in the constructor above
 	std::unique_ptr<aiScene> dtsScene;
@@ -1900,6 +1945,12 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 			hiddenMeshes.erase(lowercase(tmp->name));
 		}
 
+		if (fixedColorMeshes.count(lowercase(tmp->name)))
+		{
+			tmp->fixedColor = true;
+			fixedColorMeshes.erase(lowercase(tmp->name));
+		}
+
 		tmp->meshIndex = allMeshes.size();
 		allMeshes.push_back(tmp);
 
@@ -1916,6 +1967,9 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	for (const std::string& meshName : hiddenMeshes)
 		error("hide line for " + meshName + " but " + filePath + " has no mesh by that name");
+
+	for (const std::string& meshName : fixedColorMeshes)
+		error("fixedcolor line for " + meshName + " but " + filePath + " has no mesh by that name");
 
 	//See the note on this member, it has to be known before any Node is constructed
 	nodeDefaultsAreRestPose = isDtsPath(modelPath);
@@ -2192,6 +2246,96 @@ bool Model::getDrawnBounds(glm::vec3& low, glm::vec3& high) const
 	glm::vec3 scaledHigh = high * baseScale;
 	low = glm::min(scaledLow, scaledHigh);
 	high = glm::max(scaledLow, scaledHigh);
+	return true;
+}
+
+bool Model::parseAttachLine(const std::string& argument, const std::string& value)
+{
+	std::istringstream values(value);
+
+	if (argument == "attach")
+	{
+		std::string meshName;
+		values >> meshName;
+		attachMesh = lowercase(meshName);
+		return true;
+	}
+
+	if (argument == "attachoffset")
+	{
+		glm::vec3 offset;
+		if (values >> offset.x >> offset.y >> offset.z)
+			attachOffset = offset;
+		else
+			error("attachoffset line needs three numbers: " + value);
+		return true;
+	}
+
+	if (argument == "attachrotation")
+	{
+		glm::vec3 degrees;
+		if (values >> degrees.x >> degrees.y >> degrees.z)
+			attachRotation = glm::quat(glm::radians(degrees));
+		else
+			error("attachrotation line needs three angles in degrees: " + value);
+		return true;
+	}
+
+	if (argument == "attachscale")
+	{
+		float scale = 0;
+		if (values >> scale && scale > 0)
+			baseScale = glm::vec3(scale);
+		else
+			error("attachscale line needs one number above zero: " + value);
+		return true;
+	}
+
+	return false;
+}
+
+glm::mat4 Model::getAttachTransform(float scale) const
+{
+	glm::mat4 turn = glm::toMat4(attachRotation);
+
+	//Its lowest point once turned is what sits on the mesh it's worn on
+	float bottom = 0;
+	glm::vec3 low, high;
+	if (getDrawnBounds(low, high))
+	{
+		bottom = std::numeric_limits<float>::max();
+		for (int corner = 0; corner < 8; corner++)
+		{
+			glm::vec3 point((corner & 1) ? high.x : low.x, (corner & 2) ? high.y : low.y, (corner & 4) ? high.z : low.z);
+			bottom = std::min(bottom, (turn * glm::vec4(point, 1.0f)).y);
+		}
+	}
+
+	return glm::translate((attachOffset - glm::vec3(0, bottom, 0)) * scale) * turn * glm::scale(glm::vec3(scale));
+}
+
+bool ModelInstance::placeAttachment(ModelInstance* part, float scale) const
+{
+	if (!part || !part->type || !type)
+		return false;
+
+	int meshIdx = type->getMeshIdxIgnoringCase(part->type->attachMesh);
+	if (meshIdx == -1 || part->type->allMeshes.empty())
+	{
+		if (!part->hidden)
+			part->setHidden(true);
+		return false;
+	}
+
+	//The top middle of the mesh in its own space, the same space its vertices are in
+	const Mesh* mesh = type->allMeshes[meshIdx];
+	glm::vec3 top(mesh->center.x, mesh->center.y * 2.0f - mesh->low.y, mesh->center.z);
+
+	part->setModelTransform(getMeshWorldTransform(meshIdx) * glm::translate(top) * part->type->getAttachTransform(scale));
+
+	if (part->hidden != hidden || part->hiddenCastsShadow != hiddenCastsShadow)
+		part->setHidden(hidden, hiddenCastsShadow);
+
 	return true;
 }
 

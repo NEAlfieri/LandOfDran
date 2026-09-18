@@ -1,0 +1,15 @@
+file	jester_cap.obj
+Triangulate	true
+JoinIdenticalVertices	true
+#Exported from колпак+шута.blend by session e09526f0's export_jester.py: the pieces named Cap, Band, and Bells, Y up, with its modifiers applied
+#Assimp gives an .obj a DefaultMaterial before the ones in its .mtl, and a material with no texture is left out, which would shift the others
+material	DefaultMaterial	../partplastic.txt
+material	Cloth	../partplastic.txt
+material	Gold	../gold.txt
+#The bells stay gold whatever color the cap is painted
+fixedcolor	Bells
+#Worn on the player's Head: the band is sized to go around it, and sunk this far below the top of the head (the stud)
+attach	Head
+attachscale	22
+attachrotation	0 0 0
+attachoffset	0 -14 0

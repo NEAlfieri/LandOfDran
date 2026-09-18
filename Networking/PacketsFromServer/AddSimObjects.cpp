@@ -1,4 +1,5 @@
 #include "AddSimObjects.h"
+#include <tuple>
 
 bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& simulation, const ExecutableArguments& cmdArgs)
 {
@@ -350,6 +351,54 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					byteIterator += numLoops;
 				}
 
+				//Models worn on it, like a hat, by slot, from Dynamic::setPart
+				std::vector<std::tuple<std::string, Model*, glm::vec4, float>> parts;
+				bool partsMalformed = false;
+				if (byteIterator < packet->dataLength)
+				{
+					unsigned int numParts = packet->data[byteIterator];
+					byteIterator++;
+					for (unsigned int i = 0; i < numParts; i++)
+					{
+						if (byteIterator + 1 > packet->dataLength)
+						{
+							partsMalformed = true;
+							break;
+						}
+						unsigned int slotLength = packet->data[byteIterator];
+						byteIterator++;
+
+						if (byteIterator + slotLength + 1 > packet->dataLength)
+						{
+							partsMalformed = true;
+							break;
+						}
+						std::string slot((char*)packet->data + byteIterator, slotLength);
+						byteIterator += slotLength;
+						unsigned int nameLength = packet->data[byteIterator];
+						byteIterator++;
+
+						if (byteIterator + nameLength + sizeof(float) * 5 > packet->dataLength)
+						{
+							partsMalformed = true;
+							break;
+						}
+						std::string partName((char*)packet->data + byteIterator, nameLength);
+						byteIterator += nameLength;
+						glm::vec4 partColor;
+						memcpy(&partColor.r, packet->data + byteIterator, sizeof(float) * 4);
+						byteIterator += sizeof(float) * 4;
+						float partScale;
+						memcpy(&partScale, packet->data + byteIterator, sizeof(float));
+						byteIterator += sizeof(float);
+
+						//A part this game doesn't have is left off
+						parts.emplace_back(slot, pd.getPartModel(partName), partColor, partScale);
+					}
+				}
+				if (partsMalformed)
+					break;
+
 				//Items are followed by who carries them and what they play, see Item::writeState
 				unsigned char kind = DynamicKind_Plain;
 				enet_uint8* itemState = nullptr;
@@ -405,6 +454,9 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 					newDynamic->setNameTag(nameTag, nameTagColor);
 
 				newDynamic->syncLoops(loops);
+
+				for (const auto& [slot, partModel, partColor, partScale] : parts)
+					newDynamic->setPart(slot, partModel, partColor, partScale);
 
 				if (itemState)
 					std::static_pointer_cast<Item>(newDynamic)->readState(itemState, true, simulation.idealBufferSize);

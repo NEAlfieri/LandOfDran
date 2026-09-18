@@ -36,6 +36,7 @@
 #include "PacketsFromServer/ParticleEmitterType.h"
 #include "PacketsFromServer/PlayerAbilities.h"
 #include "PacketsFromServer/MeshDecal.h"
+#include "PacketsFromServer/DynamicPart.h"
 #include "PacketsFromServer/OpenWrenchDialog.h"
 #include "PacketsFromServer/OpenPrintMenu.h"
 #include "PacketsFromServer/SkyboxPaths.h"

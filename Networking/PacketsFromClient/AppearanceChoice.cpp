@@ -38,8 +38,15 @@ void appearanceChoice(JoinedClient* source, Server const* const server, ENetPack
 	};
 
 	PlayerAppearance appearance;
-	if (!readName(appearance.face) || !readName(appearance.shirt) || byteIterator >= packet->dataLength)
+	if (!readName(appearance.face) || !readName(appearance.shirt) || !readName(appearance.hat) || byteIterator + 6 > packet->dataLength)
 		return;
+
+	//The hat's color, or none for its own look, and its size
+	if (packet->data[byteIterator])
+		appearance.hatColor = glm::vec4(glm::vec3(packet->data[byteIterator + 1], packet->data[byteIterator + 2], packet->data[byteIterator + 3]) / 255.0f, 1.0f);
+	byteIterator += 4;
+	appearance.hatScale = glm::clamp(packet->data[byteIterator] / 100.0f, PlayerAppearance::minHatScale, PlayerAppearance::maxHatScale);
+	byteIterator++;
 
 	unsigned int parts = std::min((unsigned int)packet->data[byteIterator++], PlayerAppearance::maxColors);
 	for (unsigned int a = 0; a < parts; a++)

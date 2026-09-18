@@ -162,6 +162,9 @@ class LoopClient
 	//Puts each vehicle wheel's tire where it's drawn, before models update
 	void placeVehicleWheels();
 
+	//Draws every model worn on a dynamic, like players' hats, the way the dynamic types' models were just drawn
+	void renderPartModels(bool useMaterials) const;
+
 	//Send simulation.controlledObjects physics/transform data to server
 	void sendControlledObjects();
 

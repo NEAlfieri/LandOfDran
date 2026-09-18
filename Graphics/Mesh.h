@@ -239,6 +239,20 @@ class ModelInstance
 	//Calls setDecal with decalId = -1
 	void removeDecal(unsigned int meshId);
 
+	//World space transform of one of its meshes' own space: setModelTransform's transform over getMeshTransform, as of the same updates as getMeshCenter
+	glm::mat4 getMeshWorldTransform(int meshIdx) const { return wholeModelTransform * MeshTransforms[meshIdx]; }
+
+	//See setHidden
+	bool getHiddenCastsShadow() const { return hiddenCastsShadow; }
+
+	/*
+		Puts an instance of a model that's worn on this one, like a hat on a player, where its attach lines say, see
+		Model::attachMesh, and hides it along with this. Call once a frame after this instance's transforms are up to
+		date and before the part's model is updated. False, hiding the part, if this model has no mesh by that name
+		scale is on top of the part's own size, see Model::getAttachTransform
+	*/
+	bool placeAttachment(ModelInstance* part, float scale = 1.0f) const;
+
 	//Returns true if a highlight/outline is currently applied (color.a > 0), false otherwise. color/thickness are always written either way
 	bool getHighlight(glm::vec4& color, float& thickness) const;
 	//Applies an outline/highlight effect to the whole model instance, pass color.a <= 0 (or call clearHighlight) to remove it
@@ -298,6 +312,9 @@ class Mesh
 
 	//For collision meshes, binding points, other stuff that might be included with models we don't want to see
 	bool nonRenderingMesh = false;
+
+	//From a fixedcolor line in the descriptor: keeps its material's look, an instance color is never put on it, like the gold bells of a painted hat
+	bool fixedColor = false;
 
 	/*
 		True only once vao/buffers/indexBuffer below have actually been allocated via the glGen family of calls.
@@ -541,7 +558,30 @@ class Model
 	//Were there no errors on loading this Model:
 	bool valid = false;
 
+	//Reads one of a descriptor's attach lines into the members below, false if the line isn't one
+	bool parseAttachLine(const std::string& argument, const std::string& value);
+
 	public:
+
+	/*
+		For a model worn on another, like a hat in Assets/brickhead/parts on a player's Head, from the attach lines of
+		its descriptor: the lower case name of the mesh it hangs on, empty for a model that isn't worn. It's put with
+		the bottom of its box on the top middle of that mesh's, moved by attachoffset in that mesh's own units and
+		turned by attachrotation (degrees about X, Y, and Z), see ModelInstance::placeAttachment. An attachscale
+		line sets baseScale, so a file in other units can be sized to the model it's worn on
+	*/
+	std::string attachMesh = "";
+	glm::vec3 attachOffset = glm::vec3(0);
+	glm::quat attachRotation = glm::quat(1, 0, 0, 0);
+
+	bool isAttachment() const { return !attachMesh.empty(); }
+
+	/*
+		attachOffset and attachRotation, with the lift that puts the lowest point of its turned box at the origin, for
+		placeAttachment. scale is a player's own size for it on top of attachscale: the lift and the offset scale with
+		it, so a small hat rests on the head rather than sinking into it as far as a full size one goes over it
+	*/
+	glm::mat4 getAttachTransform(float scale = 1.0f) const;
 
 	//Any errors that occured during loading?
 	bool isValid() const { return valid; }
@@ -576,6 +616,9 @@ class Model
 
 	//False for meshes that are never drawn, like the collision box
 	bool isMeshDrawn(int meshIdx) const { return !allMeshes[meshIdx]->nonRenderingMesh; }
+
+	//Drawn and not kept its own color by a fixedcolor line, so an instance color shows on it
+	bool isMeshPaintable(int meshIdx) const { return isMeshDrawn(meshIdx) && !allMeshes[meshIdx]->fixedColor; }
 
 	//Where a player's face goes: Face1 in the default player model, otherwise Face or Head, -1 without any of them
 	int getFaceMeshIdx() const;

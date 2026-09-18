@@ -225,6 +225,24 @@ struct ClientProgramData
 	//File names of the images in Assets/shirts, their layers in the decal array come after every face
 	std::vector<std::string> shirtNames;
 
+	/*
+		File names of the hat descriptors in PlayerAppearance::partsFolder that loaded, and their models in the same order,
+		which live for the whole program with every dynamic's hat an instance of one, see LoopClient's constructor
+	*/
+	std::vector<std::string> hatNames;
+	std::vector<Model*> hatModels;
+
+	//The model of a part by its file name, nullptr for none or one this game doesn't have
+	Model* getPartModel(const std::string& partName) const
+	{
+		for (size_t a = 0; a < hatNames.size() && a < hatModels.size(); a++)
+		{
+			if (hatNames[a] == partName)
+				return hatModels[a];
+		}
+		return nullptr;
+	}
+
 	//The decal array layer of a face from Assets/faces or a shirt from Assets/shirts, the face if both folders have that name
 	//-1 for none or one this game doesn't have
 	int getDecal(const std::string& decalName) const

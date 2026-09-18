@@ -1,0 +1,7 @@
+#Polished gold for the bells of the jester's cap, kept off the hat's paint by a fixedcolor line in its descriptor
+#A material needs at least one texture layer, so the color is a flat image rather than an albedo number
+#Not quite 0 roughness, which would shrink the sun's highlight to nothing, see MaterialSlippery in model.frag.glsl
+albedo	gold.png
+roughness	0.05
+metalness	1
+occlusion	1

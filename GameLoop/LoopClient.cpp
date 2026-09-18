@@ -951,6 +951,12 @@ void LoopClient::placeVehicleWheels()
 	}
 }
 
+void LoopClient::renderPartModels(bool useMaterials) const
+{
+	for (Model* hat : pd.hatModels)
+		hat->render(pd.shaders, useMaterials);
+}
+
 void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
 	pd.input->keystates = SDL_GetKeyboardState(NULL);
@@ -1894,6 +1900,7 @@ void LoopClient::renderGodRays()
 		simulation.dynamicTypes[a]->render(pd.shaders, false);
 	if (pd.tireModel)
 		pd.tireModel->render(pd.shaders, false);
+	renderPartModels(false);
 	glEnable(GL_CULL_FACE);
 
 	//Opaque bricks only: light comes through a transparent one, so it shouldn't cut a ray off
@@ -1972,6 +1979,7 @@ void LoopClient::renderScene(bool clipAtWater)
 		simulation.dynamicTypes[a]->render(pd.shaders);
 	if (pd.tireModel)
 		pd.tireModel->render(pd.shaders);
+	renderPartModels(true);
 
 	if (timePasses)
 	{
@@ -2475,6 +2483,15 @@ void LoopClient::renderEverything(float deltaT)
 	if (pd.tireModel)
 		pd.tireModel->updateAll(deltaT, modelCullFrom, pd.drawDistance);
 
+	//Hats ride on the heads just updated, so their models come after, see Dynamic::placeParts
+	if (simulation.dynamics)
+	{
+		for (unsigned int a = 0; a < simulation.dynamics->size(); a++)
+			simulation.dynamics->get(a)->placeParts();
+	}
+	for (Model* hat : pd.hatModels)
+		hat->updateAll(deltaT, modelCullFrom, pd.drawDistance);
+
 	pd.environment.cycle = simulation.dayCycle;
 	pd.environment.calc(simulation.worldTimeSeconds);
 	pd.environment.passUniforms(pd.shaders);
@@ -2595,6 +2612,7 @@ void LoopClient::renderEverything(float deltaT)
 			simulation.dynamicTypes[a]->render(pd.shaders, false);
 		if (pd.tireModel)
 			pd.tireModel->render(pd.shaders, false);
+		renderPartModels(false);
 		glEnable(GL_CULL_FACE);
 
 		//Bricks are closed boxes, so only their far sides are drawn, which leaves a whole brick between a lit face and the depth it's compared to
@@ -2718,6 +2736,7 @@ void LoopClient::renderEverything(float deltaT)
 			simulation.dynamicTypes[a]->render(pd.shaders, false);
 		if (pd.tireModel)
 			pd.tireModel->render(pd.shaders, false);
+		renderPartModels(false);
 		glEnable(GL_CULL_FACE);
 
 		//Like the sun: transparent bricks tint the light instead of blocking it, or without colored shadows the ones at least half opaque block it
@@ -3432,7 +3451,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.itemIcons3d = settings->getBool("graphics/itemicons3d");
 	if (pd.itemIcons3d)
 		pd.itemIcons = std::make_shared<ItemIconRenderer>(pd.textures);
-	pd.appearanceEditor = pd.gui->createWindow<AppearanceEditor>(settings, pd.textures, &pd.faceNames, &pd.shirtNames);
+	pd.appearanceEditor = pd.gui->createWindow<AppearanceEditor>(settings, pd.textures, &pd.faceNames, &pd.shirtNames, &pd.hatNames);
 	pd.wrenchDialog = pd.gui->createWindow<WrenchDialog>();
 	pd.printMenu = pd.gui->createWindow<PrintMenu>(pd.textures, &pd.prints);
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
@@ -3575,6 +3594,32 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 		pd.tireModel = nullptr;
 	}
 
+	//Hats players pick in the appearance editor, worn on their player's Head, servers send them by file name like faces
+	if (std::filesystem::is_directory(PlayerAppearance::partsFolder))
+	{
+		std::vector<std::filesystem::path> hatPaths;
+		for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(PlayerAppearance::partsFolder))
+		{
+			if (entry.is_regular_file() && lowercase(entry.path().extension().string()) == ".txt")
+				hatPaths.push_back(entry.path());
+		}
+		std::sort(hatPaths.begin(), hatPaths.end());
+
+		for (const std::filesystem::path& hatPath : hatPaths)
+		{
+			Model* hat = new Model(hatPath.generic_string(), pd.textures, glm::vec3(1.0f));
+			if (!hat->isValid() || hat->getNumMeshes() < 1 || !hat->isAttachment())
+			{
+				error("Couldn't load " + hatPath.generic_string() + " as a hat" + (hat->isValid() && !hat->isAttachment() ? ", it needs an attach line saying which mesh it's worn on" : ""));
+				delete hat;
+				continue;
+			}
+
+			pd.hatNames.push_back(hatPath.filename().string());
+			pd.hatModels.push_back(hat);
+		}
+	}
+
 	pd.skybox = new Skybox(pd.shaders);
 	pd.imageBasedLighting = settings->getBool("graphics/imagebasedlighting");
 	pd.depthPrePass = settings->getBool("graphics/depthprepass");
@@ -3640,9 +3685,14 @@ LoopClient::~LoopClient()
 	glDeleteVertexArrays(1, &pd.waterVao);
 	glDeleteBuffers(1, &pd.waterVbo);
 
-	//Vehicles' tire instances are gone with leaveServer
+	//Vehicles' tire instances are gone with leaveServer, as are the hats dynamics wore
 	delete pd.tireModel;
 	pd.tireModel = nullptr;
+
+	for (Model* hat : pd.hatModels)
+		delete hat;
+	pd.hatModels.clear();
+	pd.hatNames.clear();
 
 	delete pd.brickRenderer;
 	pd.brickRenderer = nullptr;

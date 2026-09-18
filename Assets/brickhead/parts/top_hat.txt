@@ -1,0 +1,13 @@
+file	tophatr2.stl
+Triangulate	true
+JoinIdenticalVertices	true
+#An .stl only has flat face normals, these smooth the crown while the brim keeps its edge, see Model's constructor
+DropNormals	true
+GenSmoothNormals	true
+singlematerial	Assets/brickhead/partplastic.txt
+#Worn on the player's Head: the file is in inches, upside down (brim up, the way it prints) with Z up, so it's scaled
+#to the player model's units, turned brim down and Y up, and sunk this far below the top of the head (the stud)
+attach	Head
+attachscale	19
+attachrotation	90 0 0
+attachoffset	0 -12 0

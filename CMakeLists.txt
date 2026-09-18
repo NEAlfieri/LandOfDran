@@ -302,6 +302,8 @@ add_executable (LandOfDran
 "Networking/PacketsFromServer/PlayerAbilities.cpp"
 "Networking/PacketsFromServer/MeshDecal.h"
 "Networking/PacketsFromServer/MeshDecal.cpp"
+"Networking/PacketsFromServer/DynamicPart.h"
+"Networking/PacketsFromServer/DynamicPart.cpp"
 "Networking/PacketsFromServer/ItemState.h"
 "Networking/PacketsFromServer/ItemState.cpp"
 "Networking/PacketsFromServer/InventoryContents.h"

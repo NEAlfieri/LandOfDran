@@ -701,6 +701,90 @@ ENetPacket* Dynamic::setMeshDecal(const std::string& meshName, const std::string
 	return ret;
 }
 
+/*
+	1 byte		-	packet type
+	4 bytes		-	dynamic net ID
+	1 byte		-	slot name length, then the slot name
+	1 byte		-	part name length, 0 to take the part off, then the part's file name
+	16 bytes	-	the color it's painted, alpha 0 for its own look
+	4 bytes		-	its size as a multiple of its descriptor's
+*/
+ENetPacket* Dynamic::setPart(const std::string& slot, const std::string& partName, const glm::vec4& color, float scale)
+{
+	std::string slotName = slot.substr(0, maxSlotLength);
+	std::string name = partName.substr(0, PlayerAppearance::maxNameLength);
+	if (slotName.empty())
+	{
+		error("A part needs a slot name");
+		return nullptr;
+	}
+
+	if (name.empty())
+		parts.erase(slotName);
+	else
+		parts[slotName] = { name, color, scale };
+
+	ENetPacket* ret = enet_packet_create(NULL, 3 + sizeof(netIDType) + slotName.length() + name.length() + sizeof(float) * 5, getFlagsFromChannel(OtherReliable));
+
+	size_t byteIterator = 0;
+	ret->data[byteIterator++] = (unsigned char)DynamicPart;
+	memcpy(ret->data + byteIterator, &netID, sizeof(netIDType));
+	byteIterator += sizeof(netIDType);
+	ret->data[byteIterator++] = (unsigned char)slotName.length();
+	memcpy(ret->data + byteIterator, slotName.data(), slotName.length());
+	byteIterator += slotName.length();
+	ret->data[byteIterator++] = (unsigned char)name.length();
+	memcpy(ret->data + byteIterator, name.data(), name.length());
+	byteIterator += name.length();
+	memcpy(ret->data + byteIterator, &color.r, sizeof(float) * 4);
+	byteIterator += sizeof(float) * 4;
+	memcpy(ret->data + byteIterator, &scale, sizeof(float));
+
+	return ret;
+}
+
+void Dynamic::setPart(const std::string& slot, Model* model, const glm::vec4& color, float scale)
+{
+	auto existing = mountedParts.find(slot);
+	if (existing != mountedParts.end() && existing->second.model != model)
+	{
+		delete existing->second.instance;
+		mountedParts.erase(existing);
+		existing = mountedParts.end();
+	}
+
+	if (!model)
+		return;
+
+	if (existing == mountedParts.end())
+	{
+		MountedPart part;
+		part.model = model;
+		part.instance = new ModelInstance(model);
+		//Out of sight until placeParts puts it on this, rather than a frame at the origin
+		part.instance->setHidden(true);
+		existing = mountedParts.emplace(slot, part).first;
+	}
+
+	existing->second.scale = scale;
+
+	//A part like a hat with gold bells keeps the bells their own color, see Mesh::fixedColor
+	for (int a = 0; a < existing->second.instance->getNumMeshes(); a++)
+	{
+		if (model->isMeshPaintable(a))
+			existing->second.instance->setColor(a, color);
+	}
+}
+
+void Dynamic::placeParts()
+{
+	if (!modelInstance)
+		return;
+
+	for (auto& [slot, part] : mountedParts)
+		modelInstance->placeAttachment(part.instance, part.scale);
+}
+
 void Dynamic::setHighlight(const glm::vec4& color, float thickness)
 {
 	modelInstance->setHighlight(color, thickness);
@@ -923,8 +1007,13 @@ unsigned int Dynamic::getCreationPacketBytes() const
 	//1 byte for how many animations are looping on it, then their IDs, see startLoop
 	int loopsSize = 1 + (int)loopingAnimations.size();
 
-	//Buoyancy, decals, the name tag, and its loops go last, then a DynamicKind byte and whatever that kind adds
-	return meshColorsSize + highlightSize + decalsSize + nameTagSize + loopsSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
+	//1 byte for how many parts it wears, then each one's slot name length, slot name, file name length, file name, color, and size, see setPart
+	int partsSize = 1;
+	for (const auto& [slot, part] : parts)
+		partsSize += 2 + (int)slot.length() + (int)part.name.length() + (int)sizeof(float) * 5;
+
+	//Buoyancy, decals, the name tag, its loops, and its parts go last, then a DynamicKind byte and whatever that kind adds
+	return meshColorsSize + highlightSize + decalsSize + nameTagSize + loopsSize + partsSize + PositionBytes + QuaternionBytes + sizeof(netIDType) * 2 + sizeof(float) + 1 + getKindCreationBytes();
 }
 
 void Dynamic::addToCreationPacket(enet_uint8* dest) const
@@ -1023,6 +1112,27 @@ void Dynamic::addToCreationPacket(enet_uint8* dest) const
 	memcpy(dest + byteIterator, loopingAnimations.data(), loopingAnimations.size());
 	byteIterator += loopingAnimations.size();
 
+	//Everything worn on it, so a client joining now sees that too, see setPart
+	dest[byteIterator] = (unsigned char)parts.size();
+	byteIterator++;
+	for (const auto& [slot, part] : parts)
+	{
+		dest[byteIterator] = (unsigned char)slot.length();
+		byteIterator++;
+		memcpy(dest + byteIterator, slot.data(), slot.length());
+		byteIterator += slot.length();
+
+		dest[byteIterator] = (unsigned char)part.name.length();
+		byteIterator++;
+		memcpy(dest + byteIterator, part.name.data(), part.name.length());
+		byteIterator += part.name.length();
+
+		memcpy(dest + byteIterator, &part.color.r, sizeof(float) * 4);
+		byteIterator += sizeof(float) * 4;
+		memcpy(dest + byteIterator, &part.scale, sizeof(float));
+		byteIterator += sizeof(float);
+	}
+
 	dest[byteIterator] = (unsigned char)getKind();
 	byteIterator++;
 	addKindCreationData(dest + byteIterator);
@@ -1035,6 +1145,9 @@ void Dynamic::requestDestruction()
 
 Dynamic::~Dynamic()
 {
+	for (auto& [slot, part] : mountedParts)
+		delete part.instance;
+
 	if (modelInstance)
 		delete modelInstance;
 

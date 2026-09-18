@@ -8,7 +8,8 @@
 #include "../GameLoop/PlayerAppearance.h"
 
 /*
-	Picks how your player looks, like the old game's avatar picker: a color for each part of the player model, a face from Assets/faces, and a shirt from Assets/shirts
+	Picks how your player looks, like the old game's avatar picker: a color for each part of the player model, a face from Assets/faces,
+	a shirt from Assets/shirts, and a hat from Assets/brickhead/parts, which is colored like any other part
 	Saved under appearance/ in settings and sent to servers as you join them, see PlayerAppearance
 	Opened from the server browser, LoopClient draws the model with renderPreview while it's open
 */
@@ -30,6 +31,20 @@ class AppearanceEditor : public Window
 	const std::vector<std::string>* shirtNames = nullptr;
 	std::vector<Texture*> shirtIcons;
 
+	//File names of the hats in PlayerAppearance::partsFolder, see ClientProgramData::hatNames
+	const std::vector<std::string>* hatNames = nullptr;
+
+	//Its own copies of the hat models, parallel to hatNames and loaded with the player model, nullptr for one that failed, and one instance of each
+	std::vector<Model*> hatModels;
+	std::vector<ModelInstance*> hatInstances;
+
+	//The hat's index in colors and everywhere else a part goes, one past the player model's last mesh, -1 without a model
+	int hatPart = -1;
+
+	//File name in PlayerAppearance::partsFolder, empty for no hat, and its size from the slider, see PlayerAppearance::hatScale
+	std::string hat = "";
+	float hatScale = 1.0f;
+
 	//Its own copy of the player model, loaded the first time the editor opens, nullptr if that failed
 	Model* model = nullptr;
 	ModelInstance* instance = nullptr;
@@ -45,7 +60,7 @@ class AppearanceEditor : public Window
 	//Where the shirt goes, -1 without one
 	int shirtMesh = -1;
 
-	//Per mesh index, alpha 0 shows the model's own look
+	//Per mesh index, then the hat at hatPart, alpha 0 shows the model's own look
 	std::vector<glm::vec4> colors;
 
 	//File name in Assets/faces, empty for no face
@@ -76,6 +91,8 @@ class AppearanceEditor : public Window
 	glm::vec4 colorBeforePicking = glm::vec4(0);
 	std::string faceBeforePicking = "";
 	std::string shirtBeforePicking = "";
+	std::string hatBeforePicking = "";
+	float hatScaleBeforePicking = 1.0f;
 	bool colorWindowAppearing = false;
 	ImVec2 colorWindowPosition = ImVec2(0, 0);
 
@@ -106,6 +123,12 @@ class AppearanceEditor : public Window
 	//Colors a part, along with the head or face if it's the other one, so the face never stands out from the head
 	void setColor(int meshIdx, const glm::vec4& color);
 
+	//Index of the chosen hat in hatNames, -1 for none
+	int hatIndex() const;
+
+	//Readable name of a hat from its file name, like Top Hat from top_hat.txt
+	static std::string hatLabel(const std::string& fileName);
+
 	//Whether two parts are always the same color, see setColor
 	bool sameColor(int meshA, int meshB) const;
 
@@ -125,11 +148,14 @@ class AppearanceEditor : public Window
 	//A grid of buttons for picking one of names (or None) into chosen, icons parallel to names
 	void renderDecalChoices(const char* label, const std::vector<std::string>& names, const std::vector<Texture*>& icons, std::string& chosen);
 
+	//A row of buttons naming each hat (and None) for picking into hat, and the slider for its size
+	void renderHatChoices();
+
 	virtual void render(ImGuiIO* io) override;
 	virtual void init() override;
 	virtual void handleInput(SDL_Event& e, std::shared_ptr<InputMap> input) override;
 
-	AppearanceEditor(std::shared_ptr<SettingManager> _settings, std::shared_ptr<TextureManager> _textures, const std::vector<std::string>* _faceNames, const std::vector<std::string>* _shirtNames);
+	AppearanceEditor(std::shared_ptr<SettingManager> _settings, std::shared_ptr<TextureManager> _textures, const std::vector<std::string>* _faceNames, const std::vector<std::string>* _shirtNames, const std::vector<std::string>* _hatNames);
 
 	public:
 

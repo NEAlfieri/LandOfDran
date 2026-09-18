@@ -451,10 +451,21 @@ inline ENetPacket* makeSliceRequestPacket(const glm::ivec3& min, const glm::ivec
 	1-64 bytes	-	mesh name
 	3 bytes		-	red, green, blue, 0-255
 */
+/*
+	1 byte		-	packet type
+	1 byte		-	face name length, then the name
+	1 byte		-	shirt name length, then the name
+	1 byte		-	hat name length, then the name
+	1 byte		-	whether the hat is painted
+	3 bytes		-	the hat's color
+	1 byte		-	the hat's size as a percentage of its descriptor's, see PlayerAppearance::hatScale
+	1 byte		-	how many parts are painted, then for each its name length, name, and 3 bytes of color
+*/
 inline ENetPacket* makeAppearanceChoicePacket(const PlayerAppearance& appearance)
 {
 	std::string face = appearance.face.substr(0, PlayerAppearance::maxNameLength);
 	std::string shirt = appearance.shirt.substr(0, PlayerAppearance::maxNameLength);
+	std::string hat = appearance.hat.substr(0, PlayerAppearance::maxNameLength);
 
 	std::vector<std::pair<std::string, glm::vec3>> colors;
 	for (const auto& [meshName, color] : appearance.colors)
@@ -463,7 +474,7 @@ inline ENetPacket* makeAppearanceChoicePacket(const PlayerAppearance& appearance
 			colors.emplace_back(meshName.substr(0, PlayerAppearance::maxNameLength), color);
 	}
 
-	size_t length = 4 + face.length() + shirt.length();
+	size_t length = 10 + face.length() + shirt.length() + hat.length();
 	for (const auto& [meshName, color] : colors)
 		length += 4 + meshName.length();
 
@@ -472,12 +483,19 @@ inline ENetPacket* makeAppearanceChoicePacket(const PlayerAppearance& appearance
 	ret->data[0] = (unsigned char)AppearanceChoice;
 
 	size_t byteIterator = 1;
-	for (const std::string& name : { face, shirt })
+	for (const std::string& name : { face, shirt, hat })
 	{
 		ret->data[byteIterator++] = (unsigned char)name.length();
 		memcpy(ret->data + byteIterator, name.data(), name.length());
 		byteIterator += name.length();
 	}
+
+	ret->data[byteIterator++] = appearance.hatColor.a > 0 ? 1 : 0;
+	glm::vec3 hatBytes = glm::clamp(glm::vec3(appearance.hatColor), 0.0f, 1.0f) * 255.0f + 0.5f;
+	for (int channel = 0; channel < 3; channel++)
+		ret->data[byteIterator++] = (unsigned char)hatBytes[channel];
+
+	ret->data[byteIterator++] = (unsigned char)(glm::clamp(appearance.hatScale, PlayerAppearance::minHatScale, PlayerAppearance::maxHatScale) * 100.0f + 0.5f);
 
 	ret->data[byteIterator++] = (unsigned char)colors.size();
 	for (const auto& [meshName, color] : colors)

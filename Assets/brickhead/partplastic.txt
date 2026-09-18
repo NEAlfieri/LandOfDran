@@ -1,0 +1,6 @@
+#White plastic for the hats in parts/, whose files carry no texture coordinates, so nothing here varies over the surface
+#Players paint them their own colors in the appearance editor, see Material for how a color goes over the albedo
+albedo	white.png
+roughness	0.55
+metalness	0
+occlusion	1

@@ -21,7 +21,7 @@ static constexpr float startYaw = 3.14159265f;
 
 static const glm::vec3 backgroundColor = glm::vec3(0.16f, 0.18f, 0.22f);
 
-//Index of a file name in a list of faces or shirts, -1 if it isn't there
+//Index of a file name in a list of faces, shirts, or hats, -1 if it isn't there
 static int findName(const std::vector<std::string>* names, const std::string& name)
 {
 	if (!names || name.empty())
@@ -31,8 +31,8 @@ static int findName(const std::vector<std::string>* names, const std::string& na
 	return found == names->end() ? -1 : (int)(found - names->begin());
 }
 
-AppearanceEditor::AppearanceEditor(std::shared_ptr<SettingManager> _settings, std::shared_ptr<TextureManager> _textures, const std::vector<std::string>* _faceNames, const std::vector<std::string>* _shirtNames)
-	: settings(_settings), textures(_textures), faceNames(_faceNames), shirtNames(_shirtNames)
+AppearanceEditor::AppearanceEditor(std::shared_ptr<SettingManager> _settings, std::shared_ptr<TextureManager> _textures, const std::vector<std::string>* _faceNames, const std::vector<std::string>* _shirtNames, const std::vector<std::string>* _hatNames)
+	: settings(_settings), textures(_textures), faceNames(_faceNames), shirtNames(_shirtNames), hatNames(_hatNames)
 {
 	name = "Appearance Editor";
 }
@@ -55,6 +55,13 @@ void AppearanceEditor::releaseGraphics()
 {
 	pickingTarget.reset();
 
+	for (ModelInstance* hatInstance : hatInstances)
+		delete hatInstance;
+	hatInstances.clear();
+	for (Model* hatModel : hatModels)
+		delete hatModel;
+	hatModels.clear();
+
 	delete instance;
 	instance = nullptr;
 
@@ -72,14 +79,22 @@ PlayerAppearance AppearanceEditor::loadAppearance(std::shared_ptr<SettingManager
 	PlayerAppearance appearance;
 	appearance.face = settings->getString("appearance/face");
 	appearance.shirt = settings->getString("appearance/shirt");
+	appearance.hat = settings->getString("appearance/hat");
 
-	//Every color under appearance/colors, which meshes a player model has isn't known without loading it
+	//0 when it was never saved, which getFloat gives for a missing setting
+	float hatScale = settings->getFloat("appearance/hatscale");
+	if (hatScale > 0)
+		appearance.hatScale = glm::clamp(hatScale, PlayerAppearance::minHatScale, PlayerAppearance::maxHatScale);
+
+	//Every color under appearance/colors, which meshes a player model has isn't known without loading it, and the hat's if it has one
 	settings->startPreferenceBindingSearch();
 	std::string path;
 	while (PreferencePair* pref = settings->nextPreferenceBinding(path))
 	{
 		if (path == "appearance/colors" && pref->type == PreferenceColor)
 			appearance.colors.emplace_back(pref->name, glm::clamp(glm::vec3(pref->color[0], pref->color[1], pref->color[2]), 0.0f, 1.0f));
+		else if (path == "appearance" && pref->type == PreferenceColor && pref->name == "hatcolor")
+			appearance.hatColor = glm::vec4(glm::clamp(glm::vec3(pref->color[0], pref->color[1], pref->color[2]), 0.0f, 1.0f), 1.0f);
 	}
 
 	return appearance;
@@ -111,7 +126,28 @@ void AppearanceEditor::loadModel()
 	faceMesh = model->getFaceMeshIdx();
 	headMesh = model->getMeshIdxIgnoringCase("Head");
 	shirtMesh = model->getShirtMeshIdx();
-	colors.assign(model->getNumMeshes(), glm::vec4(0));
+
+	//The hat is one more part after the model's meshes
+	hatPart = model->getNumMeshes();
+	colors.assign(model->getNumMeshes() + 1, glm::vec4(0));
+
+	//Its own copies of the hats, the game's have every player's hat as an instance and would draw them all here
+	if (hatNames)
+	{
+		for (const std::string& hatName : *hatNames)
+		{
+			Model* hatModel = new Model(PlayerAppearance::partsFolder + hatName, textures, glm::vec3(1.0f));
+			if (!hatModel->isValid() || hatModel->getNumMeshes() < 1)
+			{
+				error("Couldn't load the hat " + hatName + " for the appearance editor");
+				delete hatModel;
+				hatModel = nullptr;
+			}
+
+			hatModels.push_back(hatModel);
+			hatInstances.push_back(hatModel ? new ModelInstance(hatModel) : nullptr);
+		}
+	}
 }
 
 void AppearanceEditor::loadSaved()
@@ -119,6 +155,8 @@ void AppearanceEditor::loadSaved()
 	PlayerAppearance appearance = loadAppearance(settings);
 	face = appearance.face;
 	shirt = appearance.shirt;
+	hat = appearance.hat;
+	hatScale = appearance.hatScale;
 
 	std::fill(colors.begin(), colors.end(), glm::vec4(0));
 	if (model)
@@ -129,6 +167,8 @@ void AppearanceEditor::loadSaved()
 			if (meshIdx != -1)
 				colors[meshIdx] = glm::vec4(color, 1.0f);
 		}
+
+		colors[hatPart] = appearance.hatColor;
 	}
 }
 
@@ -171,6 +211,8 @@ void AppearanceEditor::save()
 	settings->remove("appearance");
 	settings->addString("appearance/face", face);
 	settings->addString("appearance/shirt", shirt);
+	settings->addString("appearance/hat", hat);
+	settings->addFloat("appearance/hatscale", hatScale, true, "", PlayerAppearance::minHatScale, PlayerAppearance::maxHatScale);
 
 	if (model)
 	{
@@ -179,6 +221,9 @@ void AppearanceEditor::save()
 			if (colors[meshIdx].a > 0)
 				settings->addColor("appearance/colors/" + lowercase(model->getMeshName(meshIdx)), glm::vec4(glm::vec3(colors[meshIdx]), 1.0f));
 		}
+
+		if (colors[hatPart].a > 0)
+			settings->addColor("appearance/hatcolor", glm::vec4(glm::vec3(colors[hatPart]), 1.0f));
 	}
 
 	settings->exportToFile("Config/settings.txt");
@@ -205,11 +250,43 @@ bool AppearanceEditor::sameColor(int meshA, int meshB) const
 
 void AppearanceEditor::setColor(int meshIdx, const glm::vec4& color)
 {
+	//The hat isn't one of the model's meshes
+	if (meshIdx == hatPart)
+	{
+		colors[hatPart] = color;
+		return;
+	}
+
 	for (int other : editableMeshes)
 	{
 		if (sameColor(meshIdx, other))
 			colors[other] = color;
 	}
+}
+
+int AppearanceEditor::hatIndex() const
+{
+	return findName(hatNames, hat);
+}
+
+std::string AppearanceEditor::hatLabel(const std::string& fileName)
+{
+	std::string result;
+	bool wordStart = true;
+	for (char c : fileName.substr(0, fileName.find_last_of('.')))
+	{
+		if (c == '_' || c == '-' || c == ' ')
+		{
+			result += ' ';
+			wordStart = true;
+			continue;
+		}
+
+		result += wordStart ? (char)std::toupper((unsigned char)c) : c;
+		wordStart = false;
+	}
+
+	return result;
 }
 
 int AppearanceEditor::faceDecal() const
@@ -228,6 +305,9 @@ int AppearanceEditor::shirtDecal() const
 
 std::string AppearanceEditor::partName(int meshIdx) const
 {
+	if (meshIdx == hatPart)
+		return "Hat";
+
 	if (meshIdx == faceMesh && faceMesh != headMesh)
 		return "Face";
 
@@ -289,6 +369,8 @@ void AppearanceEditor::openColorWindow(int meshIdx, ImVec2 position)
 	colorBeforePicking = colors[meshIdx];
 	faceBeforePicking = face;
 	shirtBeforePicking = shirt;
+	hatBeforePicking = hat;
+	hatScaleBeforePicking = hatScale;
 	colorWindowAppearing = true;
 	colorWindowPosition = position;
 }
@@ -300,6 +382,8 @@ bool AppearanceEditor::handleEscape()
 		setColor(pickingColorFor, colorBeforePicking);
 		face = faceBeforePicking;
 		shirt = shirtBeforePicking;
+		hat = hatBeforePicking;
+		hatScale = hatScaleBeforePicking;
 		pickingColorFor = -1;
 		return true;
 	}
@@ -392,6 +476,8 @@ void AppearanceEditor::renderColorWindow()
 			setColor(pickingColorFor, colorBeforePicking);
 			face = faceBeforePicking;
 			shirt = shirtBeforePicking;
+			hat = hatBeforePicking;
+			hatScale = hatScaleBeforePicking;
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Default"))
@@ -403,6 +489,11 @@ void AppearanceEditor::renderColorWindow()
 
 		if (shirtMesh != -1 && pickingColorFor == shirtMesh && shirtNames && !shirtNames->empty())
 			renderDecalChoices("Shirt", *shirtNames, shirtIcons, shirt);
+
+		//The hat's own window offers the others, and the head's offers them too since there's no hat to click without one
+		bool headPicked = headMesh != -1 && sameColor(pickingColorFor, headMesh);
+		if (hatPart != -1 && (pickingColorFor == hatPart || headPicked) && hatNames && !hatNames->empty())
+			renderHatChoices();
 	}
 	ImGui::End();
 
@@ -467,6 +558,54 @@ void AppearanceEditor::renderDecalChoices(const char* label, const std::vector<s
 	ImGui::PopID();
 }
 
+void AppearanceEditor::renderHatChoices()
+{
+	ImGui::Separator();
+	ImGui::TextUnformatted("Hat");
+
+	ImGuiStyle& style = ImGui::GetStyle();
+	ImVec4 chosenColor = style.Colors[ImGuiCol_ButtonActive];
+
+	//Buttons go across as far as the color picker is wide, then wrap
+	float rowWidth = ImGui::GetFontSize() * 14.0f;
+	float rowLeft = ImGui::GetCursorScreenPos().x;
+
+	auto choice = [&](const std::string& label, const std::string& value, bool first)
+	{
+		float width = ImGui::CalcTextSize(label.c_str()).x + style.FramePadding.x * 2.0f;
+		if (!first && ImGui::GetItemRectMax().x + style.ItemSpacing.x + width - rowLeft <= rowWidth)
+			ImGui::SameLine();
+
+		bool isChosen = hat == value;
+		if (isChosen)
+			ImGui::PushStyleColor(ImGuiCol_Button, chosenColor);
+		if (ImGui::Button(label.c_str()))
+			hat = value;
+		if (isChosen)
+			ImGui::PopStyleColor();
+	};
+
+	ImGui::PushID("hats");
+	choice("None", "", true);
+	for (size_t a = 0; a < hatNames->size(); a++)
+	{
+		ImGui::PushID((int)a);
+		choice(hatLabel((*hatNames)[a]), (*hatNames)[a], false);
+		ImGui::PopID();
+	}
+
+	//Its size, which is kept when they pick another hat
+	if (!hat.empty())
+	{
+		float percent = hatScale * 100.0f;
+		ImGui::SetNextItemWidth(rowWidth);
+		if (ImGui::SliderFloat("##hatSize", &percent, PlayerAppearance::minHatScale * 100.0f, PlayerAppearance::maxHatScale * 100.0f, "Size: %.0f%%", ImGuiSliderFlags_AlwaysClamp))
+			hatScale = percent / 100.0f;
+		ImGui::SetItemTooltip("%s", "How big the hat is, it stays sitting on top of the head");
+	}
+	ImGui::PopID();
+}
+
 void AppearanceEditor::render(ImGuiIO* io)
 {
 	if (!opened)
@@ -490,7 +629,7 @@ void AppearanceEditor::render(ImGuiIO* io)
 		ImGui::TextWrapped("%s", "Drag to spin your player around, scroll to zoom.");
 		ImGui::TextWrapped("%s", "Left click a part to set its color.");
 		ImGui::TextWrapped("%s", "Right click a part to pick up its color, then left click other parts to paint it on.");
-		ImGui::TextWrapped("%s", "Click the face or torso to pick a different face or shirt.");
+		ImGui::TextWrapped("%s", "Click the face or torso to pick a different face or shirt, and the head or hat to pick a hat.");
 
 		if (painting)
 		{
@@ -523,6 +662,10 @@ void AppearanceEditor::render(ImGuiIO* io)
 		showChoice("Shirt", shirt, findName(shirtNames, shirt), shirtIcons);
 		if (model && shirtMesh != -1 && ImGui::Button("Change shirt"))
 			openColorWindow(shirtMesh, besidePanel);
+
+		ImGui::Text("Hat: %s", hat.empty() ? "None" : hatLabel(hat).c_str());
+		if (model && hatPart != -1 && hatNames && !hatNames->empty() && ImGui::Button("Change hat"))
+			openColorWindow(hatPart, besidePanel);
 
 		ImGui::Separator();
 
@@ -562,11 +705,11 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 	if (!model || !instance || screenWidth < 1 || screenHeight < 1)
 		return;
 
-	//The camera looks at the middle of the collision box from far enough away that the whole model fits
+	//The camera looks at the middle of the collision box from far enough away that the whole model fits, with room over it for a hat
 	glm::vec3 center = model->getColOffset();
 	float halfHeight = std::max(model->getColHalfExtents().y, 0.1f);
 	float fov = glm::radians(fieldOfView);
-	float distance = halfHeight * 1.3f / std::tan(fov * 0.5f) * zoom;
+	float distance = halfHeight * 1.45f / std::tan(fov * 0.5f) * zoom;
 	glm::vec3 cameraPosition = center + glm::vec3(0.0f, 0.0f, distance);
 
 	glm::mat4 view = glm::lookAt(cameraPosition, center, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -583,6 +726,25 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 	if (shirtMesh != -1)
 		instance->setDecal(shirtMesh, shirtDecal());
 	model->updateAll(deltaT);
+
+	//The chosen hat rides on the head, drawn and picked as one more part
+	int chosenHat = hatIndex();
+	Model* hatModel = chosenHat != -1 && chosenHat < (int)hatModels.size() ? hatModels[chosenHat] : nullptr;
+	ModelInstance* hatInstance = hatModel ? hatInstances[chosenHat] : nullptr;
+	if (hatInstance)
+	{
+		//A part like the jester's cap keeps its bells gold, see Mesh::fixedColor
+		for (int a = 0; a < hatInstance->getNumMeshes(); a++)
+		{
+			if (hatModel->isMeshPaintable(a))
+				hatInstance->setColor(a, colors[hatPart]);
+		}
+
+		if (instance->placeAttachment(hatInstance, hatScale))
+			hatModel->updateAll(deltaT);
+		else
+			hatInstance = nullptr;
+	}
 
 	CameraUniforms& camera = shaders->cameraUniforms;
 	camera.CameraView = view;
@@ -654,6 +816,11 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 			glUniform1i(pickingUniform, meshIdx + 1);
 			model->renderMesh(shaders, meshIdx);
 		}
+		if (hatInstance)
+		{
+			glUniform1i(pickingUniform, hatPart + 1);
+			hatModel->render(shaders);
+		}
 		glUniform1i(pickingUniform, 0);
 
 		//Render targets are made with their read buffer off
@@ -663,7 +830,7 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 		glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel);
 
 		hoveredMesh = (int)pixel[0] - 1;
-		if (std::find(editableMeshes.begin(), editableMeshes.end(), hoveredMesh) == editableMeshes.end())
+		if (!(hoveredMesh == hatPart && hatInstance) && std::find(editableMeshes.begin(), editableMeshes.end(), hoveredMesh) == editableMeshes.end())
 			hoveredMesh = -1;
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -674,7 +841,7 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 	shaders->updateCameraUBO();
 
 	float pulse = 0.5f + 0.5f * std::sin(SDL_GetTicks() / 1000.0f * 6.2831853f);
-	for (int meshIdx : editableMeshes)
+	auto highlightPart = [&](int meshIdx)
 	{
 		if (hoveredMesh != -1 && sameColor(meshIdx, hoveredMesh))
 		{
@@ -685,8 +852,17 @@ void AppearanceEditor::renderPreview(std::shared_ptr<ShaderManager> shaders, int
 		}
 		else
 			glUniform4f(highlightUniform, 0.0f, 0.0f, 0.0f, 0.0f);
+	};
 
+	for (int meshIdx : editableMeshes)
+	{
+		highlightPart(meshIdx);
 		model->renderMesh(shaders, meshIdx);
+	}
+	if (hatInstance)
+	{
+		highlightPart(hatPart);
+		hatModel->render(shaders);
 	}
 	glUniform4f(highlightUniform, 0.0f, 0.0f, 0.0f, 0.0f);
 

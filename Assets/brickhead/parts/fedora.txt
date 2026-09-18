@@ -1,0 +1,10 @@
+file	Trilby+Hat+Belt+-+OBJ.obj
+Triangulate	true
+JoinIdenticalVertices	true
+singlematerial	Assets/brickhead/partplastic.txt
+#Worn on the player's Head: the file is Y up with the brim's dip at -Z, which is forward, so it's only scaled to the
+#player model's units and sunk this far below the top of the head (the stud)
+attach	Head
+attachscale	37
+attachrotation	0 0 0
+attachoffset	0 -14 0

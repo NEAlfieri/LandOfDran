@@ -1032,6 +1032,14 @@ void applyAppearance(Server const* server, ClientData& client, std::shared_ptr<D
 
 	putDecal(model->getFaceMeshIdx(), appearance.face);
 	putDecal(model->getShirtMeshIdx(), appearance.shirt);
+
+	//Likewise nothing is sent for a dynamic that has no hat and isn't getting one
+	if (!appearance.hat.empty() || dynamic->parts.count(PlayerAppearance::hatSlot))
+	{
+		ENetPacket* packet = dynamic->setPart(PlayerAppearance::hatSlot, appearance.hat, appearance.hatColor, appearance.hatScale);
+		if (packet)
+			server->broadcast(packet, OtherReliable);
+	}
 }
 
 static int LUA_clientApplyAppearance(lua_State* L)

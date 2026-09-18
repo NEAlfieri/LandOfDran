@@ -353,6 +353,43 @@ class Dynamic : public SimObject
 	//Server side: decal file names by mesh index, for creation packets
 	std::map<int, std::string> meshDecals;
 
+	/*
+		Models worn on this one, by slot: a player's hat from their appearance editor goes in the "hat" slot, see
+		PlayerAppearance::hatSlot. Each is a model with attach lines saying which mesh of this one it sits on and
+		how, see Model::attachMesh, is painted one color like a mesh, alpha 0 for its own look, and is sized by
+		a multiple of the size its descriptor gives it
+		Server side: the descriptor's file name in PlayerAppearance::partsFolder, its color, and its size, for creation packets
+	*/
+	struct PartChoice
+	{
+		std::string name = "";
+		glm::vec4 color = glm::vec4(0);
+		float scale = 1.0f;
+	};
+	std::map<std::string, PartChoice> parts;
+
+	//Longer slot names are cut down to this, so one packet always holds a whole one
+	static constexpr size_t maxSlotLength = 32;
+
+	//Server side: puts the part with that file name in a slot, or takes the slot's part off for an empty name
+	//Returns a fully created packet ready to broadcast, see DynamicPartPacket, or nullptr for an empty slot name
+	ENetPacket* setPart(const std::string& slot, const std::string& partName, const glm::vec4& color, float scale = 1.0f);
+
+	//Client side: an instance of each worn model by slot, put on this one's model each frame by placeParts
+	struct MountedPart
+	{
+		Model* model = nullptr;
+		ModelInstance* instance = nullptr;
+		float scale = 1.0f;
+	};
+	std::map<std::string, MountedPart> mountedParts;
+
+	//Client side: wears an instance of model in a slot, painted color and sized scale, or takes the slot's part off for nullptr, like a hat this game doesn't have
+	void setPart(const std::string& slot, Model* model, const glm::vec4& color, float scale = 1.0f);
+
+	//Client side: moves each worn model to where it sits on this one's model as drawn, call each frame after this one's model is updated and before theirs are
+	void placeParts();
+
 	//Applies (or, if color.a <= 0, clears) an outline/highlight effect on this object. Used both client-side when
 	//applying a packet and server-side for bookkeeping so late-joining clients get it baked into their creation packet
 	void setHighlight(const glm::vec4& color, float thickness);

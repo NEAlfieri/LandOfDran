@@ -1,0 +1,13 @@
+file	berretto_v2.stl
+Triangulate	true
+JoinIdenticalVertices	true
+#An .stl only has flat face normals, these smooth the dome while the brim keeps its edge, see Model's constructor
+DropNormals	true
+GenSmoothNormals	true
+singlematerial	Assets/brickhead/partplastic.txt
+#Worn on the player's Head: scaled from the file's units to the player model's, turned from the file's Z up to Y up,
+#which points the visor forward, and sunk this far below the top of the head (the stud) once its bottom is put there
+attach	Head
+attachscale	1.55
+attachrotation	-90 0 0
+attachoffset	0 -18 0

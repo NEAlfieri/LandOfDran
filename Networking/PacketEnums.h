@@ -196,6 +196,7 @@ enum FromServerPacketType : unsigned char
 	OpenPrintMenu = 42,		//Open the print menu for a brick, so the print gun can put a print on it, see Interface/PrintMenu.h
 	ChatSuggestion = 43,	//A slash command's name and the hint the chat window lists for it, for every one as a client joins and whenever Lua registers one, see registerChatSuggestion
 	Vignette = 44,			//A colored, wobbling vignette over the client's screen that fades out over a duration, see client:setVignette and VignettePacket
+	DynamicPart = 45,		//Put a model worn on a dynamic in one of its slots, like a hat on a player, or take it off, see Dynamic::setPart
 };
 
 //Flags byte of a PlayerAbilities packet
