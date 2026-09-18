@@ -52,6 +52,16 @@
 */
 struct ClientProgramData
 {
+	/*
+		We're connected to the demo playing behind the main menu rather than to a server anyone is playing,
+		see LoopClient::startMenuDemo. Everything that belongs to playing stays out of the way while it's
+		true: the HUD, the mouse lock, every game key, and anything the server browser would say about
+		joining, since the browser is still up and the demo is only the picture behind it
+
+		It lives here rather than in LoopClient so the packet handlers can see it too
+	*/
+	bool menuDemo = false;
+
 	Material* grassMaterial = nullptr;
 	GLuint grassVao = 0;
 

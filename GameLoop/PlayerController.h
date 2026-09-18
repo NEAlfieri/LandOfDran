@@ -25,6 +25,13 @@ struct PlayerController
 
 	bool serverSide = false;
 
+	/*
+		Nobody is playing this one: Lua walks it with dynamic:setBotInput and the server simulates it like any
+		other object it owns. A player's own game turns their body and sends the rotation back, so the server
+		never sets it; a bot has no game to do that, so control turns it toward where it walks itself
+	*/
+	bool bot = false;
+
 	//Client only, set each frame by the client wrapper: our camera is in first person on the target, so its hidden body turns to face where we look
 	//instead of where we walk, keeping what it holds (the flashlight) in front of it
 	bool faceCamera = false;

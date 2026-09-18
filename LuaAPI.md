@@ -237,6 +237,68 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getBuoyancy()` | none | number | Current buoyancy. |
 | `dynamic:isItem()` | none | bool | Whether it's an item, which has the `item:` methods below too. |
 | `dynamic:isProjectile()` | none | bool | Whether `addProjectile` made it. |
+| `dynamic:setBotInput(dirX, dirY, dirZ[, forward, backward, left, right, jump, jet, crawl])` | where it's looking, which needn't be normalized; the movement keys, each `false` by default | none | Holds a set of movement keys down on a dynamic nobody is playing, so the server walks it with the same code a client's player gets: it walks at the same speed, steps onto ledges, jumps, jets, swims, lies down, plays the walk cycle, and turns to face where it's going. The keys stay held until this is called again, so a script only has to call it when something changes, and the look direction is where its head turns and where anything aiming from it should aim. Logs an error and does nothing for a dynamic a client controls, since that client's own game is already walking it. See [Bots](#bots). |
+| `dynamic:clearBotInput()` | none | none | Stops walking it and stops its walk cycle, leaving it an ordinary object again. Does nothing to one that wasn't being walked. A bot's keys are also forgotten when it's destroyed. |
+
+---
+
+## Bots
+
+A bot is an ordinary dynamic that nobody is playing, walked by `dynamic:setBotInput` instead of by a client. The server
+gives it the same `PlayerController` a player's dynamic gets and runs it every tick, so everything walking feels like
+comes along with it: walking speed, stepping onto ledges no taller than a player steps onto, jumping, jetting (with the
+`playerJetEmitter` flames under its feet), swimming, crawling, and the walk cycle playing while it moves. It turns to
+face where it walks, which a player's own game normally does and nothing else would do for a bot.
+
+```lua
+--Walk a brickhead toward a spot, and shoot from its chest at whatever it's facing
+local bot = createDynamic(brickhead, x, y, z)
+bot:setAngularFactor(0, 0, 0)     --like a player, nothing tips it over
+
+local dx, dz = targetX - x, targetZ - z
+local length = math.sqrt(dx * dx + dz * dz)
+bot:setBotInput(dx / length, 0, dz / length, true)
+```
+
+Things worth knowing:
+
+- **The keys stay held.** `setBotInput` is a set of keys being held down, not a step: call it again when the bot should
+  turn or stop, not every tick. Passing `forward` as `false` (or leaving it out) is letting go of the key, which stops it.
+- **`jump` is held, not tapped.** It jumps whenever it's on the ground with that set, and swims up in water, exactly like
+  a player holding the key. For a single jump, set it for one call and clear it on the next.
+- **It's a normal dynamic otherwise.** It collides, floats, takes `radiusImpulse`, can be shot, wears hats
+  (`dynamic:setPart`), is painted with `setMeshColor`, and shows a face with `setMeshDecal`. What it is not is a client,
+  so nothing that takes a Client works on it: it can't carry items, drive a vehicle, or be damaged by `Damage.lua`, whose
+  health lives on clients' players. A script that wants bots to be hurt keeps that itself.
+- **Nothing moves it for free.** There's no path finding and no avoiding each other or anything else: a bot walks the way
+  it was last told to until it's told otherwise, so the script decides where to and when to give up.
+- `menudemo.lua` is the worked example, eight of them fighting over an island behind the main menu.
+
+---
+
+## The demo behind the main menu
+
+`menudemo.lua` is a whole game the client plays to itself behind the main menu, on a server of its own
+(`MENU_DEMO_PORT`, 8764) so it never collides with a real one. The client hosts and joins it the moment it reaches the
+menu and again after leaving a server, and tears it down the moment a real server is joined or hosted. Players turn it
+off in Settings under Graphics ("Demo Behind The Menu"), and `-singleplayer` and `-dedicated` never start it.
+
+Watching it isn't playing: there's no HUD, no chat, no captured mouse, no player, and no game key does anything, so it's
+only the picture behind the menu. The one client connected to it is a camera.
+
+It runs `serverstart.lua` first, so it has the whole real game (every model, sound, emitter, weapon and add-on) and picks
+up new work for free, then unregisters every `ClientJoin` listener so nobody is given a player. What it adds is its own:
+an island built out of about 200 bricks, eight [bots](#bots) fighting over it with the Gun add-on's rounds (tagged
+`"gun"`, so `Support_Weapons.lua`'s own listener gives them their real bullet holes, dust and crack) and the launcher's
+shells every so often, a jeep driven round a lap by pushing its velocity, and five camera shots cut between on a timer.
+
+Two things in it are worth copying for any script that has to move a camera:
+
+- **It has no clock.** Lua here has no real time of its own and the tick is a frame rather than a timer, so the demo
+  counts frames and has a `schedule` (which is in real milliseconds) measure how long a run of them took. Without that,
+  everything would run at the speed of the frame rate.
+- **It composes off-center.** The server browser sits at the top left, so every shot aims up and to the left of what it's
+  watching, which puts the subject down and to the right where the menu isn't.
 
 ---
 

@@ -125,8 +125,17 @@ public:
 	//Lot less in this so far given no input or rendering on the server...
 	void run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
 
-	//Called only when the program starts up
-	LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
+	/*
+		Called only when the program starts up, or when the graphical client hosts one of its own:
+		single player ("Start Server"), and the demo playing behind the main menu, which runs its own
+		Lua on its own port so it never collides with a real server, see LoopClient::startMenuDemo
+
+		startScript is the Lua run once everything is registered, port is the UDP port to listen on, and
+		loopbackAdmin is whether a client connecting over loopback is let into the eval console without a
+		password, which single player's host wants and the menu demo (which nobody plays) does not
+	*/
+	LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings,
+		const std::string& startScript = "serverstart.lua", int port = DEFAULT_PORT, bool loopbackAdmin = true);
 	//Called only when the program finally shuts down
 	~LoopServer();
 };

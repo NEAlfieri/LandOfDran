@@ -159,6 +159,45 @@ struct ServerProgramData
 	};
 	std::vector<VehicleSpawnType> vehicleSpawns;
 
+	/*
+		Dynamics Lua walks itself with dynamic:setBotInput, each with the same PlayerController a client's player
+		has, run the same way every tick by LoopServer::run. One whose dynamic is gone is dropped there
+	*/
+	std::vector<PlayerController> botControllers;
+
+	//The controller walking a dynamic, made if there isn't one yet, or nullptr for a dynamic that can't have one
+	PlayerController* getBotController(const std::shared_ptr<Dynamic>& dynamic)
+	{
+		if (!dynamic)
+			return nullptr;
+
+		for (PlayerController& controller : botControllers)
+		{
+			if (controller.target.lock() == dynamic)
+				return &controller;
+		}
+
+		botControllers.emplace_back();
+		PlayerController& made = botControllers.back();
+		made.target = dynamic;
+		made.serverSide = true;
+		made.bot = true;
+		return &made;
+	}
+
+	//Stops walking a dynamic, whether or not anything was
+	void removeBotController(const std::shared_ptr<Dynamic>& dynamic)
+	{
+		for (unsigned int a = 0; a < botControllers.size(); a++)
+		{
+			if (botControllers[a].target.lock() == dynamic)
+			{
+				botControllers.erase(botControllers.begin() + a);
+				return;
+			}
+		}
+	}
+
 	//ObjHolders created and destroyed with ServerLoop class
 	//All dynamic objects:
 	ObjHolder<Dynamic>* dynamics = nullptr;

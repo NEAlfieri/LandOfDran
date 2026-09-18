@@ -69,6 +69,8 @@ try {
     Copy-Item "Inventory.lua" $PkgDir
     Copy-Item "Damage.lua" $PkgDir
     Copy-Item "Hats.lua" $PkgDir
+    # The game that plays behind the main menu, which runs serverstart.lua itself, see LoopClient::startMenuDemo
+    Copy-Item "menudemo.lua" $PkgDir
 
     # Saves is gitignored, so this packages whatever builds are in the local copy, if there is one
     if (Test-Path "Saves") {

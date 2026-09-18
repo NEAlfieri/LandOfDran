@@ -27,6 +27,19 @@ class LoopClient
 	//Non-null only for single player: a server hosted in-process that we also connect to as a client
 	LoopServer* localServer = nullptr;
 
+	/*
+		Whether we're watching the demo behind the menu is pd.menuDemo, which packet handlers see too.
+		It's an ordinary local server running MENU_DEMO_SCRIPT on its own port, which we join like any
+		other, and whose camera its Lua flies around a scene it builds itself. It's torn down the moment a
+		real server is joined or hosted, and started again on the way back out to the menu
+	*/
+
+	//It only gets one go: a demo that couldn't start (its port taken, its Lua broken) shouldn't be retried every frame
+	bool menuDemoTried = false;
+
+	//Hosts MENU_DEMO_SCRIPT and joins it, if graphics/menudemo asks for it and we're at the menu with nothing else going on
+	void startMenuDemo(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
+
 	bool valid = false;
 
 	//Per land of dran kino agent special request
@@ -247,8 +260,12 @@ public:
 	//Clean up performed when leaving a server to return to main menu or joining another server
 	void leaveServer(ExecutableArguments& cmdArgs);
 
-	//Joining new server from main menu or another server
-	void connectToServer(std::string ip,unsigned int port,std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);
+	/*
+		Joining new server from main menu or another server
+		asDemo is only for the menu demo, which joins quietly: it isn't remembered as the last server played on,
+		it says nothing in the server browser, and the game stays at the menu rather than starting to play
+	*/
+	void connectToServer(std::string ip,unsigned int port,std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings, bool asDemo = false);
 
 	//Hosts a server in-process on localhost, then connects to it as a client. Used for the "Start Server" button
 	void hostSinglePlayer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings);

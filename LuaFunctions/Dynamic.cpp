@@ -1284,6 +1284,125 @@ static int LUA_dynamicSetNameTag(lua_State* L)
 	return 0;
 }
 
+/*
+	dynamic:setBotInput(dirX,dirY,dirZ[,forward,backward,left,right,jump,jet,crawl])
+
+	Holds a set of movement keys down on a dynamic nobody is playing. The server runs the same PlayerController
+	a client's player gets, so a bot walks, steps onto ledges, jumps, jets, swims and plays the walk cycle exactly
+	like a player does, and turns to face where it walks. The keys stay held until this is called again
+*/
+static int LUA_dynamicSetBotInput(lua_State* L)
+{
+	scope("(LUA) dynamic:setBotInput");
+
+	int args = lua_gettop(L);
+
+	if (args < 4 || args > 11)
+	{
+		error("Expected 4 to 11 arguments dynamic:setBotInput(dirX,dirY,dirZ[,forward,backward,left,right,jump,jet,crawl])");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	//Every key past the look direction is optional and off by default
+	bool keys[7] = { false, false, false, false, false, false, false };
+	for (int a = args; a > 4; a--)
+	{
+		keys[a - 5] = lua_toboolean(L, -1);
+		lua_pop(L, 1);
+	}
+
+	float dirZ = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float dirY = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+	float dirX = lua_tonumber(L, -1);
+	lua_pop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//A player's own game walks their player, so two sets of keys would fight over the same body
+	for (const std::shared_ptr<ClientData>& other : LUA_pd->clients)
+	{
+		for (const std::shared_ptr<Dynamic>& controlled : other->controlledObjects)
+		{
+			if (controlled->getID() == dynamic->getID())
+			{
+				error("That dynamic is controlled by a client, it can't be walked as a bot too");
+				return 0;
+			}
+		}
+	}
+
+	PlayerController* controller = LUA_pd->getBotController(dynamic);
+	if (!controller)
+		return 0;
+
+	glm::vec3 direction(dirX, dirY, dirZ);
+	if (glm::length(direction) > 0.0001f)
+		controller->lastCameraDirection = glm::normalize(direction);
+
+	//Where a player's camera would be, which is what anything following their aim reads, see dynamic:snapToCursor
+	controller->lastCameraPosition = b2g3(dynamic->getPosition());
+
+	controller->lastForward = keys[0];
+	controller->lastBackward = keys[1];
+	controller->lastLeft = keys[2];
+	controller->lastRight = keys[3];
+	//A held jump key both starts a jump and swims up, the same as a player holding it
+	controller->lastJump = keys[4];
+	controller->lastJumpHeld = keys[4];
+	controller->lastJet = keys[5];
+	controller->lastCrawl = keys[6];
+
+	return 0;
+}
+
+//dynamic:clearBotInput(): stops walking it, leaving it wherever it stands as an ordinary object again
+static int LUA_dynamicClearBotInput(lua_State* L)
+{
+	scope("(LUA) dynamic:clearBotInput");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument dynamic:clearBotInput()");
+		return 0;
+	}
+
+	if (!LUA_pd->dynamics)
+	{
+		error("dynamics ObjHolder is null");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//Its walk cycle would otherwise be left playing on whatever step it stopped on
+	dynamic->playWalkingAnimation = false;
+	dynamic->stop(0);
+
+	LUA_pd->removeBotController(dynamic);
+
+	return 0;
+}
+
 static int LUA_newDynamicType(lua_State* L)
 {
 	scope("(LUA) newDynamicType");
@@ -2175,7 +2294,7 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[43];
+	luaL_Reg* regs = new luaL_Reg[45];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -2220,6 +2339,8 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "getBuoyancy", LUA_dynamicGetBuoyancy };
 	regs[iter++] = { "isItem", LUA_dynamicIsItem };
 	regs[iter++] = { "isProjectile", LUA_dynamicIsProjectile };
+	regs[iter++] = { "setBotInput", LUA_dynamicSetBotInput };
+	regs[iter++] = { "clearBotInput", LUA_dynamicClearBotInput };
 	regs[iter++] = { NULL, NULL };
 
 	return regs;

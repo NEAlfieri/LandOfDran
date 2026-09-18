@@ -22,7 +22,9 @@ bool AcceptConnectionPacket::applyPacket(const ClientProgramData& pd, Simulation
 		}
 		case ConnectionOkay:
 		{
-			pd.serverBrowser->setConnectionNote("Connection accepted, loading...");
+			//The menu demo joins behind the browser rather than through it, so it says nothing there
+			if (!pd.menuDemo)
+				pd.serverBrowser->setConnectionNote("Connection accepted, loading...");
 
 			if (packet->dataLength < 6)
 			{

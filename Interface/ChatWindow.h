@@ -74,6 +74,10 @@ public:
 	//Forgets every suggestion, for leaving a server
 	void clearSuggestions();
 
+	//Throws away every message shown so far. Chat is deliberately kept across joining one server and then
+	//another, so this is only for the demo behind the menu, whose chat was never anyone's to read
+	void clearMessages() { messages.clear(); }
+
 	void addMessage(const std::string &message);
 
 	ChatWindow();

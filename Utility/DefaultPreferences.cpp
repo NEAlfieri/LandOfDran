@@ -97,6 +97,8 @@ void populateDefaults(std::shared_ptr<SettingManager> settings)
 	settings->setTooltip("graphics/itemicons3d",	"The item bar shows a little drawing of each item you're carrying instead of its flat icon, and turns the one you have picked. Off uses whatever icon the server gave the item");
 	settings->addEnum("graphics/rainquality",		2,				"Rain Quality",		{"Sound Only","Low","Medium","High"});
 	settings->setTooltip("graphics/rainquality",		"Falling drops, splashes, and wet surfaces when a server makes it rain. Costs nothing while it isn't raining");
+	settings->addBool("graphics/menudemo",			true, false,	"Demo Behind The Menu");
+	settings->setTooltip("graphics/menudemo",		"Plays a game of Land of Dran behind the main menu, run by menudemo.lua on a server of its own. Turn it off to sit at the menu on an empty screen, which costs nothing at all");
 
 	//Hosting settings
 	settings->addBool("hosting/useevalpassword",	false, false,	"Enable Lua Password");

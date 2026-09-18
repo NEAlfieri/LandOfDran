@@ -100,6 +100,15 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 		}
 	}
 
+	//Dynamics Lua walks itself, run exactly like the players above so they step, jump, jet, and swim the same way
+	for (unsigned int a = 0; a < pd.botControllers.size();)
+	{
+		if (pd.botControllers[a].controlWithLastInput(pd.physicsWorld, deltaT, pd.waterEnabled ? pd.waterLevel : PlayerController::noWater))
+			pd.botControllers.erase(pd.botControllers.begin() + a);
+		else
+			a++;
+	}
+
 	updatePlayerAbilities();
 
 	//Drive any dynamics currently snapped to a client's cursor (see dynamic:snapToCursor)
@@ -945,9 +954,10 @@ void LoopServer::broadcastWorldState()
 	server->broadcast(packet, OtherReliable);
 }
 
-LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
+LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings,
+	const std::string& startScript, int port, bool loopbackAdmin)
 {
-	server = new Server(DEFAULT_PORT);
+	server = new Server(port);
 	LUA_server = server;
 	if (!server->isValid())
 		return;
@@ -971,8 +981,9 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	NetRelevanceSettings::bytesPerTick = settings->getInt("hosting/updatebytespertick");
 
 	//Not a dedicated server means we're embedded in the graphical client (single player/"Start Server"), so the
-	//only client that can reach us over loopback is our own host - let them straight into the eval console
-	pd.autoAdminForLoopback = !cmdArgs.dedicated;
+	//only client that can reach us over loopback is our own host - let them straight into the eval console.
+	//The menu demo passes false: nobody is playing it, so nothing there should have an eval console at all
+	pd.autoAdminForLoopback = !cmdArgs.dedicated && loopbackAdmin;
 	//TODO: Hash password
 
 	//Start up Lua and give it access to all the default libraries, file io, debugging, math, etc.
@@ -1014,11 +1025,11 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.prints.load("Assets/brick/prints");
 	pd.bricks->makeLuaMetatable(pd.luaState, "metatable_brick", getBrickFunctions(pd.luaState));
 
-	info("Loading serverstart.lua");
+	info("Loading " + startScript);
 
-	if (luaL_dofile(pd.luaState, "serverstart.lua"))
+	if (luaL_dofile(pd.luaState, startScript.c_str()))
 	{
-		error("Error loading serverstart.lua: " + std::string(lua_tostring(pd.luaState, -1)));
+		error("Error loading " + startScript + ": " + std::string(lua_tostring(pd.luaState, -1)));
 
 		//Only block on console input for a real standalone dedicated server.
 		//When embedded in the graphical client (single player), there's no console to read from.

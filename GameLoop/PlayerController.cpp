@@ -445,7 +445,8 @@ bool PlayerController::control(std::shared_ptr<PhysicsWorld> world, float deltaT
 	else if (forwardBackUsed)
 		turn = forwardBackTurn;
 
-	if (!faceCamera && !serverSide)
+	//A bot has no game of its own sending rotation back, so the server turns it here like a client would
+	if (!faceCamera && (!serverSide || bot))
 	{
 		//TODO: This LERP isn't right
 		playerYaw = playerYaw.slerp(turn, deltaT / blendTime);

@@ -39,6 +39,13 @@
 //Default port for land of dran
 #define DEFAULT_PORT 8765
 
+//The demo playing behind the main menu hosts its own server on loopback, see LoopClient::startMenuDemo.
+//A port of its own so it never fights a real server (the user's own dedicated one included) for DEFAULT_PORT
+#define MENU_DEMO_PORT 8764
+
+//The Lua the menu demo's server runs instead of serverstart.lua
+#define MENU_DEMO_SCRIPT "menudemo.lua"
+
 //How loud a looping sound can be set, the music on a brick or vehicle above all, where 1 is the file as it was recorded
 //A loop fades with distance like anything else, so the extra is for music meant to fill more than the room it's in
 #define MAX_LOOP_VOLUME 2.0f

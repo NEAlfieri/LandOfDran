@@ -7,6 +7,14 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 {
 	info("Leaving server");
 
+	//Whether this was the demo or a real server, we aren't watching a demo after it. Leaving a real one puts us
+	//back at the menu, where the demo gets another go; tearing the demo down itself doesn't, or it would come
+	//straight back in front of the server we left it for
+	const bool wasMenuDemo = pd.menuDemo;
+	if (!wasMenuDemo)
+		menuDemoTried = false;
+	pd.menuDemo = false;
+
 	//Nobody to talk to anymore
 	voiceToggled = false;
 
@@ -31,6 +39,10 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	pd.chatWindow->close();
 	//The next server has its own commands
 	pd.chatWindow->clearSuggestions();
+	//Chat is kept from one server to the next on purpose, but the demo behind the menu is not a server
+	//anyone joined: its own join message would otherwise be the first line of chat in the next real game
+	if (wasMenuDemo)
+		pd.chatWindow->clearMessages();
 	pd.wrenchDialog->close();
 	pd.printMenu->close();
 	pd.vehicleLoader->close();
@@ -158,23 +170,30 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	}
 }
 
-void LoopClient::connectToServer(std::string ip, unsigned int port, std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
+void LoopClient::connectToServer(std::string ip, unsigned int port, std::string userName, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings, bool asDemo)
 {
 	if (cmdArgs.gameState != NotInGame)
 		leaveServer(cmdArgs);
 
 	//TODO: Note without some kind of multithreading, this message will never display in the UI
-	pd.serverBrowser->setConnectionNote("Connecting to server...");
+	if (!asDemo)
+		pd.serverBrowser->setConnectionNote("Connecting to server...");
 	info("Attempting connection to " + ip + ":" + std::to_string(port));
 
-	if (userName.length() > 0)
-		pd.state->addString("network/username", userName);
 	joinedName = userName;
 	pd.playerList->setOwnName(joinedName);
-	pd.state->addString("network/lastip", ip);
-	pd.state->addInt("network/lastport", port, true, "", 1, 65535);
-	pd.state->exportToFile(ClientProgramData::stateFilePath);
 
+	//The demo is nobody's choice of server, so it doesn't become the name and address the browser comes back to
+	if (!asDemo)
+	{
+		if (userName.length() > 0)
+			pd.state->addString("network/username", userName);
+		pd.state->addString("network/lastip", ip);
+		pd.state->addInt("network/lastport", port, true, "", 1, 65535);
+		pd.state->exportToFile(ClientProgramData::stateFilePath);
+	}
+
+	pd.menuDemo = asDemo;
 	cmdArgs.gameState = Connecting;
 
 	//If we're hosting our own local server, it needs to service its ENet host while
@@ -188,8 +207,10 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 	//Connection to server failed
 	if (!client->isValid())
 	{
-		pd.serverBrowser->setConnectionNote("Could not connect");
+		if (!asDemo)
+			pd.serverBrowser->setConnectionNote("Could not connect");
 		cmdArgs.gameState = NotInGame;
+		pd.menuDemo = false;
 		delete client;
 		client = nullptr;
 		return;
@@ -228,6 +249,38 @@ void LoopClient::hostSinglePlayer(ExecutableArguments& cmdArgs, std::shared_ptr<
 		userName = "Player";
 
 	connectToServer("127.0.0.1", DEFAULT_PORT, userName, cmdArgs, settings);
+}
+
+void LoopClient::startMenuDemo(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
+{
+	//Only ever behind the menu itself, and only once: whatever stopped it starting won't have fixed itself by the next frame
+	//-singleplayer means an automated run that wants nothing but the game it asked for, so it never gets a demo either
+	if (menuDemoTried || cmdArgs.autoSinglePlayer || cmdArgs.gameState != NotInGame || !settings->getBool("graphics/menudemo"))
+		return;
+
+	menuDemoTried = true;
+
+	info("Starting the menu demo");
+
+	localServer = new LoopServer(cmdArgs, settings, MENU_DEMO_SCRIPT, MENU_DEMO_PORT, false);
+	if (!localServer->isValid())
+	{
+		//Nothing is said in the browser about it: the demo failing is no reason to put an error in front of someone
+		//who only wants to play. The log has whatever went wrong, and the menu is simply left as it was
+		error("Could not start the menu demo's server, the menu will have no demo behind it.");
+		delete localServer;
+		localServer = nullptr;
+		return;
+	}
+
+	connectToServer("127.0.0.1", MENU_DEMO_PORT, "Menu", cmdArgs, settings, true);
+
+	//The handshake failed somehow, so there's nothing to watch and no server worth keeping
+	if (!client && localServer)
+	{
+		delete localServer;
+		localServer = nullptr;
+	}
 }
 
 void LoopClient::updateDisplayItemHighlight()
@@ -529,8 +582,9 @@ void LoopClient::updateNameTags()
 	if (!simulation.dynamics || !simulation.camera)
 		return;
 
-	//The appearance editor covers the scene, so nothing in it is there to put a tag over
-	if (pd.appearanceEditor && pd.appearanceEditor->isOpen())
+	//The appearance editor covers the scene, so nothing in it is there to put a tag over, and the demo behind
+	//the menu is a picture rather than a game: names floating over it would read as players who aren't there
+	if (pd.menuDemo || (pd.appearanceEditor && pd.appearanceEditor->isOpen()))
 		return;
 
 	const glm::vec2 resolution = pd.context->getResolution();
@@ -1106,7 +1160,8 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 				else
 				{
 					pd.gui->closeOneWindow();
-					if (!pd.context->getMouseLocked() && !pd.gui->getOpenWindowCount() && cmdArgs.gameState != NotInGame)
+					//Closing the last menu while the demo plays leaves the mouse free: there's nothing behind it to play
+					if (!pd.context->getMouseLocked() && !pd.gui->getOpenWindowCount() && cmdArgs.gameState != NotInGame && !pd.menuDemo)
 						pd.context->setMouseLock(true);
 				}
 			}
@@ -1118,7 +1173,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			if (!pd.paintMenu->scroll(amount) && !pd.itemHotbar->scroll(amount))
 				pd.brickHotbar->scroll(amount);
 		}
-		else if (e.type == SDL_MOUSEBUTTONDOWN && simulation.camera && !pd.gui->shouldUnlockMouse() && cmdArgs.gameState == InGame && !pd.appearanceEditor->isOpen())
+		else if (e.type == SDL_MOUSEBUTTONDOWN && simulation.camera && !pd.gui->shouldUnlockMouse() && cmdArgs.gameState == InGame && !pd.menuDemo && !pd.appearanceEditor->isOpen())
 		{
 			//A saved vehicle's ghost takes the left click that places it
 			if (e.button.button == SDL_BUTTON_LEFT && pd.vehicleGhost.isActive() && pd.context->getMouseLocked())
@@ -1207,7 +1262,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 					spawnGhostFromCamera(pd, simulation);
 			}
 		}
-		else if (e.type == SDL_MOUSEBUTTONUP && simulation.camera && client && cmdArgs.gameState == InGame)
+		else if (e.type == SDL_MOUSEBUTTONUP && simulation.camera && client && cmdArgs.gameState == InGame && !pd.menuDemo)
 		{
 			if (e.button.button == SDL_BUTTON_LEFT)
 			{
@@ -1434,7 +1489,7 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	{
 		if (appearanceEditorFromBrowser)
 			pd.serverBrowser->open();
-		else if (pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame)
+		else if (pd.gui->getOpenWindowCount() == 0 && cmdArgs.gameState == InGame && !pd.menuDemo)
 			pd.context->setMouseLock(true);
 		appearanceEditorFromBrowser = false;
 	}
@@ -1519,7 +1574,9 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 			break;
 	}
 
-	if(cmdArgs.gameState == NotInGame)
+	//Nothing below here is anything but playing the game, which the demo behind the menu is not: there's no
+	//player of ours in it, and every key belongs to the menu until a real server is joined
+	if(cmdArgs.gameState == NotInGame || pd.menuDemo)
 	{
 		return;
 	}
@@ -3409,16 +3466,18 @@ void LoopClient::renderEverything(float deltaT)
 	else if (getRiddenVehicle())
 		hudLines.push_back("Riding: right click gets off");
 
-	pd.escapeMenu->showLeaveServer = client != nullptr;
+	//Being connected to the demo behind the menu is not being in a server: the escape menu offers joining one
+	pd.escapeMenu->showLeaveServer = client != nullptr && !pd.menuDemo;
 	pd.gui->superShiftIndicator = pd.ghostBrick.isVisible() ? (pd.ghostBrick.isSuperShift() ? 1 : 0) : -1;
 	pd.gui->resizeIndicator = pd.ghostBrick.isVisible() ? (pd.ghostBrick.isResizeMode() ? 1 : 0) : -1;
-	pd.gui->voiceIndicator = !client ? -1 : (pd.voice->isTransmitting() ? 1 : (pd.voice->isMuted() ? 0 : -1));
+	pd.gui->voiceIndicator = (!client || pd.menuDemo) ? -1 : (pd.voice->isTransmitting() ? 1 : (pd.voice->isMuted() ? 0 : -1));
 	pd.gui->voiceSpeakers = pd.voice->getSpeaking();
 	pd.gui->voiceLevel = pd.voice->getInputLevel();
 	pd.gui->voiceClipping = pd.voice->isClipping();
 	pd.gui->setMouseCaptured(pd.context->getMouseLocked());
-	//The appearance editor fills the screen with your player, not the world the brick bar, item bar, and palette belong to
-	pd.gui->hideGameHud = pd.appearanceEditor && pd.appearanceEditor->isOpen();
+	//The appearance editor fills the screen with your player, not the world the brick bar, item bar, and palette belong to,
+	//and the demo behind the menu has no HUD of its own at all
+	pd.gui->hideGameHud = pd.menuDemo || (pd.appearanceEditor && pd.appearanceEditor->isOpen());
 	{
 		GpuZone zone(pd.profiler, "GUI");
 		pd.gui->render(pd.context->getResolution().x, pd.context->getResolution().y,crossHair,hudLines);
@@ -3518,6 +3577,11 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	pd.profiler.beginFrame(deltaT);
 	pd.profiler.begin("Whole frame");
 
+	//Nothing to play behind the menu yet: this is where the demo starts, on the first frame at the menu and
+	//again on the first frame back at it after leaving a server
+	if (cmdArgs.mainLoopRun)
+		startMenuDemo(cmdArgs, settings);
+
 	//Single player: tick our embedded server before doing any client work this frame.
 	//It shares the SimObject::world static with us, so reclaim it for our own PhysicsWorld once it's done.
 	if (localServer)
@@ -3593,8 +3657,8 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		client->send(chat, OtherReliable);
 	}
 
-	//Progress loading SimObject types
-	pd.serverBrowser->passLoadProgress(pd.signals.typesToLoad, simulation.dynamicTypes.size());
+	//Progress loading SimObject types. The demo loads in the background behind the menu, so it shows no bar at all
+	pd.serverBrowser->passLoadProgress(pd.menuDemo ? 0 : pd.signals.typesToLoad, simulation.dynamicTypes.size());
 
 	// --- State changes requested from packets ---
 
@@ -3630,12 +3694,17 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 
 		cmdArgs.gameState = InGame;
 
-		pd.serverBrowser->setConnectionNote("");
-		pd.serverBrowser->close();
+		//The demo is only scenery behind the menu: the browser stays up over it, and none of what belongs to
+		//playing (the chat, the captured mouse) comes with it
+		if (!pd.menuDemo)
+		{
+			pd.serverBrowser->setConnectionNote("");
+			pd.serverBrowser->close();
 
-		//Chat is part of the HUD rather than a window that holds the mouse, so playing starts with the mouse captured
-		pd.chatWindow->open();
-		pd.context->setMouseLock(true);
+			//Chat is part of the HUD rather than a window that holds the mouse, so playing starts with the mouse captured
+			pd.chatWindow->open();
+			pd.context->setMouseLock(true);
+		}
 	}
 
 	//All signals from packets processed for this frame, reset flags
