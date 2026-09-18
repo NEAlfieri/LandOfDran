@@ -696,20 +696,22 @@ void BrickTypes::load(const std::string& typesFolder)
 
 			if (!claimedFiles.insert(blb).second)
 			{
-				//test.cs names some of the same files, like the wheels, and its names stay for old saves, but they still become vehicle parts in the selector's vehicle section
-				if (vehiclePart != VehiclePart_None)
+				//test.cs names most of the same files, and its names stay for old saves, but it has no icons: Blockland's are named after the ui name ("25 Ramp 1x.png" beside 1x3ramp.blb) so only the datablock's iconName finds them
+				for (NamedFile& claimed : namedFiles)
 				{
-					for (NamedFile& claimed : namedFiles)
-					{
-						if (claimed.blb.string() != blb)
-							continue;
+					if (claimed.blb.string() != blb)
+						continue;
 
+					if (claimed.icon.empty())
+						claimed.icon = resolve(csPath, field("iconname"), ".png");
+
+					//The wheels and such still become vehicle parts in the selector's vehicle section
+					if (vehiclePart != VehiclePart_None)
+					{
 						claimed.vehiclePart = vehiclePart;
 						claimed.category = blocklandTextToUtf8(field("category"));
 						claimed.subCategory = blocklandTextToUtf8(field("subcategory"));
 						claimed.listed = !field("category").empty();
-						if (claimed.icon.empty())
-							claimed.icon = resolve(csPath, field("iconname"), ".png");
 					}
 				}
 				continue;
@@ -749,13 +751,15 @@ void BrickTypes::load(const std::string& typesFolder)
 		bool validSize = sscanf(sizeLine.c_str(), "%d %d %d", &width, &length, &height) == 3 &&
 			width >= 1 && width <= 255 && length >= 1 && length <= 255 && height >= 1 && height <= 255;
 
+		//Whatever the case, 1x1f.blb ships beside 1x1F.png
 		std::string icon = named.icon;
 		if (icon.empty())
 		{
-			std::filesystem::path besideBlb = named.blb;
+			std::filesystem::path besideBlb = named.blb.lexically_relative(root);
 			besideBlb.replace_extension(".png");
-			if (std::filesystem::exists(besideBlb, errorCode))
-				icon = besideBlb.string();
+			auto found = filesByPath.find(lowercase(besideBlb.generic_string()));
+			if (found != filesByPath.end())
+				icon = found->second.string();
 		}
 
 		if (validSize && (kindLine == "SPECIAL" || kindLine == "SPECIALBRICK"))
