@@ -23,8 +23,9 @@ static constexpr float underwaterGain = 0.7f;
 static constexpr float underwaterGainHF = 0.1f;
 static constexpr float occlusionSmoothingMS = 80.0f;
 
-//Positioned sounds are at full volume within this many studs, then lose about 10 dB each time the distance doubles
-static constexpr float fullVolumeDistance = 5.0f;
+//Positioned sounds are at full volume within their sound type's fullVolumeDistance (AudioSystem::defaultFullVolumeDistance
+//unless Lua gave another), then lose about 10 dB each time the distance doubles
+static constexpr float fullVolumeDistance = AudioSystem::defaultFullVolumeDistance;
 static constexpr float distanceRolloff = 1.66f;
 //How much high end distant sounds lose on top of that, OpenAL's air absorption treating a stud as a meter
 static constexpr float airAbsorption = 1.5f;
@@ -455,7 +456,7 @@ void AudioSystem::updateOcclusion(ALuint source, Occlusion& occlusion, const Sou
 	applyDirectFilter(source, occlusion);
 }
 
-void AudioSystem::addSoundType(int id, const std::string& name, const std::string& filePath, bool isMusic)
+void AudioSystem::addSoundType(int id, const std::string& name, const std::string& filePath, bool isMusic, float soundFullVolumeDistance)
 {
 	scope("AudioSystem::addSoundType");
 
@@ -469,7 +470,10 @@ void AudioSystem::addSoundType(int id, const std::string& name, const std::strin
 
 	//The server can send the whole list and a newly added sound at the same time to someone who's just joining
 	if (sound.name == name && sound.filePath == filePath && sound.isMusic == isMusic)
+	{
+		sound.fullVolumeDistance = soundFullVolumeDistance;
 		return;
+	}
 
 	if (sound.buffer)
 	{
@@ -496,6 +500,7 @@ void AudioSystem::addSoundType(int id, const std::string& name, const std::strin
 	sound.name = name;
 	sound.filePath = filePath;
 	sound.isMusic = isMusic;
+	sound.fullVolumeDistance = soundFullVolumeDistance;
 
 	if (!valid)
 		return;
@@ -564,6 +569,7 @@ void AudioSystem::playSound(int soundID, const SoundLocation& where, float pitch
 	ALuint source = generalSources[index];
 	alSourceStop(source);
 	alSourcei(source, AL_BUFFER, sounds[soundID].buffer);
+	alSourcef(source, AL_REFERENCE_DISTANCE, sounds[soundID].fullVolumeDistance);
 	alSourcei(source, AL_LOOPING, AL_FALSE);
 	alSourcef(source, AL_PITCH, std::clamp(pitch, 0.05f, 10.0f));
 	alSourcef(source, AL_GAIN, std::clamp(volume, 0.0f, 1.0f));
@@ -1016,6 +1022,7 @@ void AudioSystem::update(const glm::vec3& position, const glm::vec3& listenerDir
 
 			ALuint source = loopSources[b];
 			alSourcei(source, AL_BUFFER, sounds[loop.soundID].buffer);
+			alSourcef(source, AL_REFERENCE_DISTANCE, sounds[loop.soundID].fullVolumeDistance);
 			alSourcei(source, AL_LOOPING, AL_TRUE);
 			alSourcef(source, AL_PITCH, loop.pitch);
 			alSourcef(source, AL_GAIN, loop.volume * musicVolume);

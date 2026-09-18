@@ -8,6 +8,7 @@ bool AddSoundTypePacket::applyPacket(const ClientProgramData& pd, Simulation& si
 		1 byte  - flags, 1 = music
 		1 byte  - name length, then the name
 		1 byte  - file path length, then the path
+		4 bytes - full volume distance, left off by servers from before sounds had one
 	*/
 
 	//Sounds are needed from the moment objects start arriving, so this doesn't wait for InGame
@@ -33,8 +34,18 @@ bool AddSoundTypePacket::applyPacket(const ClientProgramData& pd, Simulation& si
 		return true;
 
 	std::string filePath((char*)packet->data + byteIterator, pathLength);
+	byteIterator += pathLength;
 
-	pd.audio->addSoundType(id, name, filePath, isMusic);
+	float fullVolumeDistance = AudioSystem::defaultFullVolumeDistance;
+	if (packet->dataLength >= byteIterator + sizeof(float))
+	{
+		memcpy(&fullVolumeDistance, packet->data + byteIterator, sizeof(float));
+		if (!std::isfinite(fullVolumeDistance))
+			fullVolumeDistance = AudioSystem::defaultFullVolumeDistance;
+		fullVolumeDistance = std::clamp(fullVolumeDistance, 1.0f, 500.0f);
+	}
+
+	pd.audio->addSoundType(id, name, filePath, isMusic, fullVolumeDistance);
 
 	return true;
 }

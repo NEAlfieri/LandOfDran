@@ -53,6 +53,9 @@ class AudioSystem
 {
 public:
 
+	//Studs from a positioned sound within which it's at full volume, unless its sound type was given another
+	static constexpr float defaultFullVolumeDistance = 5.0f;
+
 	static constexpr int generalSourceCount = 64;
 	static constexpr int loopSourceCount = 16;
 	static constexpr int voiceSourceCount = 8;
@@ -77,6 +80,9 @@ private:
 		std::string name = "";
 		std::string filePath = "";
 		bool isMusic = false;
+		//Studs from it within which it plays at full volume, past which it loses about 10 dB each time the distance doubles
+		//Lua's newSoundType gives it, for sounds that ought to carry, like an explosion
+		float fullVolumeDistance = defaultFullVolumeDistance;
 		//0 if the file couldn't be loaded, playing it does nothing
 		ALuint buffer = 0;
 	};
@@ -234,7 +240,7 @@ public:
 	bool isValid() const { return valid; }
 
 	//Loads the file right away. A second packet for the same ID replaces it, unless it's the same sound again
-	void addSoundType(int id, const std::string& name, const std::string& filePath, bool isMusic);
+	void addSoundType(int id, const std::string& name, const std::string& filePath, bool isMusic, float fullVolumeDistance = defaultFullVolumeDistance);
 
 	//-1 if the server hasn't registered a sound with that name
 	int findSound(const std::string& name) const;

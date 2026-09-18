@@ -74,9 +74,11 @@ if registerWeapon == nil then
 	dofile("Add-ons/Weapon_Package_Tier1/Support_Weapons.lua")
 end
 
---Sounds, the AudioProfile datablocks
+--Sounds, the AudioProfile datablocks. The explosion's description is AudioDefault3d, at full volume within 20 units
+--where the launcher's own sounds are AudioClosest3d's 5: it's meant to be heard from wherever the rocket was fired,
+--which the 5 studs a sound gets by default are nowhere near
 newSoundType("RocketFire", folder .. "rocketFire.wav")
-newSoundType("RocketExplode", folder .. "tntExplode.wav")
+newSoundType("RocketExplode", folder .. "tntExplode.wav", false, 40)
 newSoundType("RocketLoop", folder .. "rocketLoop.wav")
 
 --[[

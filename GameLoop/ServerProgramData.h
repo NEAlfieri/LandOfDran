@@ -74,6 +74,8 @@ struct ServerProgramData
 		std::string name = "";
 		std::string filePath = "";
 		bool isMusic = false;
+		//Studs from it within which it plays at full volume, see AudioSystem's SoundType
+		float fullVolumeDistance = 5.0f;
 	};
 	std::vector<RegisteredSound> soundTypes;
 

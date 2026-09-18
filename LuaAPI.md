@@ -1066,7 +1066,7 @@ connected), so the file has to exist on the clients too. `.wav` (any bit depth),
 (Vorbis), and `.mp3` files work, mono or stereo.
 
 Sounds with no position play at the same volume wherever the listener is. Sounds with a position
-pan left and right, are at full volume within 5 studs, and past that lose about 10 dB every time
+pan left and right, are at full volume within 5 studs (or their type's `fullVolumeDistance`, see `newSoundType`), and past that lose about 10 dB every time
 the distance doubles, getting duller as well, so they're close to silent a couple hundred studs
 away. Sounds moving toward or away from the listener, or a listener moving toward or away from
 them, shift in pitch (the Doppler effect, with sound traveling 343 studs a second). Closing in or
@@ -1102,7 +1102,7 @@ and `volume` is 0-1 (default `1`). They can only be given together.
 
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
-| `newSoundType(name, filePath[, isMusic])` | unique name and a path relative to the game folder, each 1-255 characters; `isMusic` marks it as music | none | Registers a sound. Logs an error and skips it if the name is taken or the file doesn't exist on the server. Sounds marked as music are the ones players can pick for a brick in the wrench dialog. `serverstart.lua` registers `After School Special` from `Assets/music` as music. |
+| `newSoundType(name, filePath[, isMusic[, fullVolumeDistance]])` | unique name and a path relative to the game folder, each 1-255 characters; `isMusic` marks it as music; studs, 1-500 (clamped), default 5 | none | Registers a sound. `fullVolumeDistance` is how far from it the sound still plays at full volume when it has a position, past which it loses about 10 dB each time the distance doubles: the default 5 is right for clicks, tools, and footsteps, and close to silent 50 studs off, so give something meant to carry more, like the Rocket Launcher add-on's explosion (40), which is then as loud 100 studs away as a default sound is at 12. Logs an error and skips it if the name is taken or the file doesn't exist on the server. Sounds marked as music are the ones players can pick for a brick in the wrench dialog. `serverstart.lua` registers `After School Special` from `Assets/music` as music. |
 | `playSound(name[, x, y, z][, pitch, volume])` | sound type name; optional world position | none | Plays a sound once for every client, with no position or at `x, y, z`. Sent unreliably, so a client can occasionally miss one. |
 | `startSoundLoop(name[, x, y, z][, pitch, volume])` | sound type name; optional world position | loop ID | Starts a sound that repeats until `stopSoundLoop`, with no position or at `x, y, z`. Clients who join later hear it too. Each client only plays the 16 loops closest to them at once; farther ones pause and pick up where they left off. Loops use the music volume setting on top of `volume`. |
 | `stopSoundLoop(loopID)` | ID from `startSoundLoop` or `dynamic:startSoundLoop` | none | Stops a loop. Does nothing if it already ended. |

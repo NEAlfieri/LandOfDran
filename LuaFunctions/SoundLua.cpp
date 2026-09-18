@@ -48,6 +48,8 @@ static ENetPacket* makeSoundTypePacket(size_t id, const ServerProgramData::Regis
 	bytes.push_back(sound.isMusic ? 1 : 0);
 	putString(bytes, sound.name);
 	putString(bytes, sound.filePath);
+	//After everything else, where a client from before sounds had one never looks
+	put(bytes, sound.fullVolumeDistance);
 	return makePacket(bytes, JoinNegotiation);
 }
 
@@ -283,9 +285,9 @@ static int LUA_newSoundType(lua_State* L)
 	scope("(LUA) newSoundType");
 
 	int args = lua_gettop(L);
-	if ((args != 2 && args != 3) || lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TSTRING)
+	if (args < 2 || args > 4 || lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TSTRING || (args == 4 && !lua_isnumber(L, 4)))
 	{
-		error("Expected newSoundType(name, filePath[, isMusic])");
+		error("Expected newSoundType(name, filePath[, isMusic[, fullVolumeDistance]])");
 		lua_settop(L, 0);
 		return 0;
 	}
@@ -293,7 +295,13 @@ static int LUA_newSoundType(lua_State* L)
 	ServerProgramData::RegisteredSound sound;
 	sound.name = lua_tostring(L, 1);
 	sound.filePath = lua_tostring(L, 2);
-	sound.isMusic = args == 3 && lua_toboolean(L, 3);
+	sound.isMusic = args >= 3 && lua_toboolean(L, 3);
+	if (args == 4)
+	{
+		float distance = (float)lua_tonumber(L, 4);
+		if (std::isfinite(distance))
+			sound.fullVolumeDistance = std::clamp(distance, 1.0f, 500.0f);
+	}
 	lua_settop(L, 0);
 
 	if (sound.name.length() < 1 || sound.name.length() > 255 || sound.filePath.length() < 1 || sound.filePath.length() > 255)
