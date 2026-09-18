@@ -74,6 +74,9 @@ struct SpecialBrickType
 	//Whether it's a wheel or steering wheel for vehicles
 	VehiclePart vehiclePart = VehiclePart_None;
 
+	//Our own vehicleSpawn datablock field: its wrench dialog picks a vehicle that's kept spawned above it, see BrickAttachments::vehicleSpawnName
+	bool vehicleSpawn = false;
+
 	/*
 		Triangles in world units, centered on the brick's middle, specialVertexFloats each
 		Sorted by BrickFaceTexture, group n is groupCount[n] vertices starting at groupFirst[n]

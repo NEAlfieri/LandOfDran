@@ -20,6 +20,19 @@ void updateBrickAttachments(Brick* brick);
 //Gets rid of the loop, light, and emitter a brick's attachments made, set as BrickHolder::removeAttachments
 void removeBrickAttachments(Brick* brick);
 
+/*
+	Spawns the vehicle of every brick wrenched to spawn one whose vehicle is gone, once a second, see BrickAttachments::vehicleSpawnName
+	Called every tick by LoopServer, and does nothing until a second has passed since it last looked
+*/
+void respawnBrickVehicles();
+
+//The vehicle a brick's vehicle spawn made, if it's still around, and the display item its item spawn made, see BrickAttachments
+std::shared_ptr<Vehicle> getBrickSpawnedVehicle(const Brick* brick);
+std::shared_ptr<Item> getBrickDisplayItem(const Brick* brick);
+
+//Whether a brick's type is a Vehicle Spawn brick, whose wrench dialog picks a vehicle to keep above it
+bool brickIsVehicleSpawn(const Brick* brick);
+
 //Replaces a brick's music, light, and emitter settings with these (clamped), then updates what they make
 void setBrickAttachments(Brick* brick, const BrickAttachments& settings);
 

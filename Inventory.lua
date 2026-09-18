@@ -24,6 +24,9 @@
 	with printed faces opens that brick's print menu, where picking a print puts it straight on. Anything else it hits, or
 	nothing at all, just makes the noise.
 
+	A brick wrenched to offer an item has a copy of it spinning over it. Left clicking that within reach, whatever's in hand,
+	makes a new item of the same type and puts it in the first empty slot, leaving the copy where it is for the next player.
+
 	Run from serverstart.lua with dofile("Inventory.lua"), after the item types are added.
 ]]
 
@@ -544,6 +547,27 @@ function launcherShellHit(projectile, hit, x, y, z, tag)
 end
 registerEventListener("ProjectileHit", "launcherShellHit")
 
+--Gives the client a new item of the type a brick's display item shows, if they have a slot for it. The display item itself stays over its brick
+function takeDisplayItem(client, display)
+	local player = playerOf(client)
+	local typeID = getDynamicType(display:getTypeName())
+	if player == nil or typeID == nil then
+		return
+	end
+
+	--Made where they stand and put straight into their slot, so nobody sees it anywhere else first
+	local x, y, z = player:getPosition()
+	local item = createItem(typeID, x, y, z)
+	if item == nil then
+		return
+	end
+
+	if client:addItem(item) == nil then
+		item:destroy()
+		client:centerPrint("You can't carry any more items.", 2000)
+	end
+end
+
 function inventoryClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 	--Left mouse only
 	if (mask & 1) == 0 or playerOf(client) == nil then
@@ -554,9 +578,11 @@ function inventoryClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 	local hit, x, y, z = client:getCursorItem(CLICK_RANGE)
 	local reached = x ~= nil and withinReach(client, x, y, z, REACH)
 
-	--An item on the ground goes into the first empty slot
+	--An item on the ground goes into the first empty slot, and the item a brick offers hands out a new one of its type
 	if reached and hit ~= nil and hit.type == DYNAMIC_TYPE_ID and hit:isItem() and not hit:isHeld() then
-		if client:addItem(hit) == nil then
+		if hit:isDisplay() then
+			takeDisplayItem(client, hit)
+		elseif client:addItem(hit) == nil then
 			client:centerPrint("You can't carry any more items.", 2000)
 		end
 		return client, posX, posY, posZ, dirX, dirY, dirZ, mask

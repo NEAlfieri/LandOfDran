@@ -145,7 +145,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientClickRelease` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires when a client lets go of a mouse button in game, even over a window. Same arguments as `ClientClick`, except `mask` is only the button let go. `Inventory.lua` stops swinging the hammer or wrench here. |
 | `ClientSliceBricks` | `function(client, brickCount) ... return client, brickCount end` | Fires when a client's selection box would make a vehicle, after every rule it has to follow checks out, with how many bricks (wheels included) would be sliced. Return `client, nil` to stop it, which leaves the bricks where they are and tells the client nothing. See [Vehicles](#vehicles). |
 | `VehicleCreated` | `function(vehicle, builder) ... return vehicle, builder end` | Fires once a vehicle is finished being made, by slicing, loading a save (by a client or `loadVehicleFile`), or `sliceBricks`, with the client who made it or `nil` for Lua. Return values are ignored. `serverstart.lua` makes every new vehicle destructable here. |
-| `ClientEnterVehicle` | `function(client, vehicle, seat) ... return client, vehicle, seat end` | Fires when a client right clicks a vehicle, before they get in: to drive it (`seat` is `nil`) when nobody is, otherwise onto its free passenger seat nearest where they clicked (`seat` 0 or more). Return `client, nil, seat` to keep them out. Not fired by `client:enterVehicle`. |
+| `ClientEnterVehicle` | `function(client, vehicle, seat) ... return client, vehicle, seat end` | Fires when a client right clicks a vehicle, before they get in: to drive it (`seat` is `nil`) when nobody is, otherwise onto its free passenger seat nearest where they clicked (`seat` 0 or more). Also fires when a client already in the vehicle presses their next seat key (comma) to move to another of its seats, with the seat they'd move to. Return `client, nil, seat` to keep them out, or where they are. Not fired by `client:enterVehicle`. |
 | `ClientExitVehicle` | `function(client, vehicle, seat) ... return client, vehicle, seat end` | Fires after a client gets out of a vehicle (`seat` is `nil` for the driver, else the passenger seat they were on) by right clicking, or because their player was destroyed or given to someone else while in it. Not fired by `client:exitVehicle`, `vehicle:ejectDriver`, removing the vehicle, or leaving the server. |
 | `ClientWrenchVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client holds Insert and left clicks a vehicle, before its wrench dialog opens. Return `client, nil` to keep the dialog closed. Not fired by `client:openWrenchDialog`. |
 | `ClientLoadVehicle` | `function(client, brickCount, asVehicle) ... return client, brickCount, asVehicle end` | Fires when a vehicle save a client uploaded from their Saved Vehicles window is about to be placed, with how many bricks it has (wheels included) and whether it's loading as a vehicle or as bricks. Return `client, nil` to stop it, which tells the client nothing. Not fired by `loadVehicleFile`. See [Vehicles](#vehicles). |
@@ -297,7 +297,9 @@ whatever the crosshair is on, trailing a `shellTrailEmitter`, at most once every
 Left clicking with the print gun in hand plays `PrintFire` from it and sends a `LaserEmitterA` at what the crosshair is
 on for 150 ms. If that's a brick with printed faces it opens that brick's print menu, see
 [Print menu](#print-menu); anything else within 60 studs, or nothing at all, just makes the noise.
-Ctrl+W throws the item in hand the way the player looks.
+Ctrl+W throws the item in hand the way the player looks. Left clicking the display item over a brick that offers an item
+(`item:isDisplay`), within the same 10 studs and whatever is in hand, makes a new item of its type with `createItem` and
+puts it in the first empty slot, or center prints that they can't carry any more; the display item stays for the next player.
 
 ### Global functions
 
@@ -323,6 +325,8 @@ Along with every `dynamic:` method.
 | `item:stopAnimation([name])` | animation name, or nothing | none | Stops the looping animation if it's the one named, or whatever loops without a name. A swing finishes the one it's partway through. |
 | `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`. |
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
+| `item:isDisplay()` | none | bool | Whether it's a display item: the copy floating over a brick wrenched to offer an item, see [Wrench dialog](#wrench-dialog-and-brick-attachments). It spins in place, never falls or moves, collides with nothing (rays and clicks still hit it, and it's outlined on a player's screen while their crosshair is on it within 10 studs), and `client:addItem` refuses it. `Inventory.lua` hands whoever clicks one a new item of the same type instead. `radiusImpulse` and water leave it alone. |
+| `item:getDisplayBrick()` | none | Brick or `nil` | The brick a display item floats over. |
 
 ---
 
@@ -612,7 +616,7 @@ as they join, and draw bricks of types they don't have as plain boxes.
 | `getBrickId(id)` | net ID | Brick or `nil` | Looks up a brick by its net ID. |
 | `getBrickAt(x, y, z)` | one stud/plate grid cell | Brick or `nil` | The brick filling that cell, if any. |
 | `clearAllBricks()` | none | none | Removes every brick. |
-| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, emitter, and print, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
+| `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, emitter, print, and what it spawns, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
 | `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, prints, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Prints come by name, from the old game's saves too, however many faces its print mask covered; ones the server doesn't have are dropped and listed in the log. Other special types, and the old game's lights and music, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
 | `loadBlocklandSave(fileName)` | file name inside `Saves` | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, prints, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Prints are matched by the name in the save, like `Letters/X`; ones the server doesn't have are dropped and listed in the log. Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
 | `addBlocklandLight(uiName, table)` / `addBlocklandLight(uiName, nil)` | a Blockland light type's name, like `"Red Light"`, 1-255 characters, case-insensitive; light fields as for `brick:setLight` | none | Sets the light `loadBlocklandSave` puts on bricks that had this Blockland light type, replacing any set before. Fields left out get a new light's defaults, so without an `offset` the light sits in the middle of its brick, like Blockland's. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` forgets the type, so its lights are skipped. Bricks already loaded keep their lights. |
@@ -695,14 +699,22 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 | `brick:canPrint()` | none | bool | Whether the brick's type has printed faces, so a print put on it would actually show. `Inventory.lua`'s print gun checks this before opening the print menu. |
 | `brick:getPrint()` | none | print name, or `""` | The print on the brick, like `"Letters/X"`. |
 | `brick:setPrint(name)` / `brick:setPrint("")` | a print's name, case-insensitive | none | Puts a print on the brick, drawn on the printed faces of a print brick type. A `.webm` print plays there, see Prints above. Logs an error and changes nothing for a name no print has. `""` takes it off. Prints on a brick whose type has no printed face are kept but never drawn. |
+| `brick:getItemSpawn()` | none | item type script name, or `nil` | The item the brick offers, like `"hammer"`, see the Item section of the [wrench dialog](#wrench-dialog-and-brick-attachments). |
+| `brick:setItemSpawn(typeName)` / `brick:setItemSpawn(nil)` | an item type's script name from `newItemType` | none | Floats a display item of that type over the brick (`item:isDisplay`), replacing any it had, for players to click and take copies of. Logs an error for a name no item type has. `nil` takes it away. Any brick can offer an item. |
+| `brick:getDisplayItem()` | none | Item or `nil` | The display item floating over the brick, if it has one. Destroying it leaves the brick without one until its settings change again, like a light. |
+| `brick:isVehicleSpawn()` | none | bool | Whether its type is a Vehicle Spawn brick (the `vehicleSpawn` datablock field), the only kind that can keep a vehicle spawned. |
+| `brick:getVehicleSpawn()` | none | vehicle spawn name, or `nil` | Which registered vehicle the brick keeps spawned, like `"Jeep"`, see [Vehicle spawn bricks](#vehicle-spawn-bricks). |
+| `brick:setVehicleSpawn(name)` / `brick:setVehicleSpawn(nil)` | a name from `registerVehicleSpawn` | none | Has the brick keep that vehicle spawned above it, spawning one right away if it has none. Logs an error for a name nothing registered. Works on any brick from Lua, though only a Vehicle Spawn brick's wrench dialog offers it. `nil` removes the vehicle along with the setting. |
+| `brick:getSpawnedVehicle()` | none | Vehicle or `nil` | The vehicle the brick spawned, while it's around. |
 
 ### Wrench dialog and brick attachments
 
 Players wrench a brick to open its wrench dialog, where they can change whether it collides, its name,
-its music loop with volume and pitch, its light, and its emitter. Its print isn't here, the print gun's menu
+its music loop with volume and pitch, its light, its emitter, and the item it offers. Its print isn't here, the print gun's menu
 puts that on, see [Print menu](#print-menu). Wheel and steering wheel bricks also get a section for
 how they drive once sliced into a vehicle, the steering wheel's with the horn it'll honk and a checkbox making its
-light the vehicle's headlight, see [Vehicles](#vehicles). Wrenching is left clicking a brick with the
+light the vehicle's headlight, see [Vehicles](#vehicles), and a Vehicle Spawn brick gets a section picking the vehicle it
+keeps spawned above it, see [Vehicle spawn bricks](#vehicle-spawn-bricks). Wrenching is left clicking a brick with the
 wrench item in hand (see [Items](#items)), or holding Insert (the `Wrench` key bind) and left clicking one. Lua can
 veto or redirect the Insert way with the `ClientWrenchBrick` event, or open a dialog itself with `client:openWrenchDialog`.
 A light being edited shines while the dialog is open, changing as its settings do, in place of whatever light
@@ -717,6 +729,15 @@ The music loop, light, and emitter are real sound loops, lights, and emitters: t
 `getNumLights`/`getLightIdx` and `getNumEmitters`/`getEmitterIdx`, are sent to players who join later,
 and are removed along with the brick. If Lua destroys one, the brick makes it again the next time its
 settings are changed. They're saved with the brick by `saveBuild`.
+
+The dialog's Item section lists every item type the server has by the name its item bar shows (`newItemType`'s
+`uiName`). Picking one floats a display item of that type half a stud over the brick: a real item (`getNumItems`
+counts it, `brick:getDisplayItem` and `item:getDisplayBrick` find it) that spins slowly on the spot the way the
+item bar's icons do, never falls, collides with nothing, and is outlined for a player whose crosshair is on it
+within 10 studs of their player. Left clicking it makes them a new item of that type, see [Items](#items);
+the display item itself can't be picked up. It's removed with the brick, and if Lua destroys it the brick makes
+another the next time its settings change. Saved with the brick by `saveBuild`, and `brick:setItemSpawn` sets
+it from Lua. Copy in the dialog carries it between bricks.
 
 Light fields for `brick:setLight` and `brick:getLight` (see [Lights](#lights) for what each does):
 
@@ -781,7 +802,13 @@ default) switches the headlight on and off instead of their own flashlight, whet
 allows them a flashlight, and holding the key doesn't cycle its color; `LightOn` and `LightOff` play from the vehicle. Right clicking a vehicle someone is already driving stands the player on its free seat
 nearest the crosshair, or center prints that every seat is taken. A passenger is locked in place on the seat's top but
 turns to face wherever they look (on a brick vehicle, a model vehicle's passengers sit facing the way it drives), uses items and clicks like normal, and right clicks to get off where they stand;
-their movement keys do nothing and jets are off. Passengers stay on when the driver gets out. A vehicle nobody drives holds its brakes. The engine stops pushing past 200 studs a second.
+their movement keys do nothing and jets are off. Passengers stay on when the driver gets out. Anyone in a vehicle presses
+comma (the `Next Vehicle Seat` key bind) to move to its next free seat, the driver's seat then the passenger seats in order
+and around again, without getting out in between; a driver who moves leaves the vehicle parked, and every other seat being
+taken center prints as much. A vehicle nobody drives holds its brakes,
+except while a player on foot is touching it: then its brakes come off and it's rolled along the way it drives, away from
+whoever's pushing, at 6 studs a second squared until it rolls faster than 6 studs a second, so a car shoved from behind rolls
+forward rather than sliding sideways. The engine stops pushing past 200 studs a second.
 Wheels on the ground going faster than 50 km/h (about 14 studs a second) while turning or braking throw up the
 `setVehicleDirtEmitter` emitter type (`vehicleDirtEmitter` from `EmitterDefaults.lua` by default), tinted a darker shade
 of the brick under them, or brown when there's no brick under them. Wheels in the water float the vehicle and splash like the old game. A vehicle going faster than
@@ -833,10 +860,11 @@ anything; use the events to limit that.
 | `getVehicleIdx(index)` | 0-based index | Vehicle | Looks up a vehicle by its position in the internal list. |
 | `getVehicleId(id)` | net ID | Vehicle or `nil` | Looks up a vehicle by its net ID. |
 | `clearAllVehicles()` | none | none | Removes every vehicle, letting their drivers out. |
-| `radiusImpulse(x, y, z, strength)` | world position; impulse, positive pushes away and negative pulls in | objects pushed, bricks broken | Pushes every dynamic in the world (players, items on the ground, and the rest) and every vehicle whose bounding box is within reach, which is `2.5 * sqrt(abs(strength))` studs (at most 200), along the line from the position to its center, fading to nothing at the edge of its reach. It's an impulse: something weighing 1, like a player or an item, gets `strength` studs a second right at the middle, and a vehicle weighs one per brick. Carried items and players in vehicles aren't pushed themselves. `RadiusImpulseHit` fires for each dynamic pushed, see [Built-in events](#built-in-events). Destructable vehicles (see `vehicle:setDestructable`) also lose every brick, except the steering wheel, where `abs(strength) * vehicleBrickBreakScale / (1 + distance^2)` is at least its volume in cubic studs (a plate is 0.4 tall), with the distance to the nearest part of the brick; they fly off for everyone like hammered bricks, pushed the same way, taking their lights and emitters with them, and a broken seat lets its rider off and can't be used again. The tuning constants are in `Physics/RadiusImpulse.h`. |
+| `radiusImpulse(x, y, z, strength)` | world position; impulse, positive pushes away and negative pulls in | objects pushed, bricks broken | Pushes every dynamic in the world (players, items on the ground, and the rest) and every vehicle whose bounding box is within reach, which is `2.5 * sqrt(abs(strength))` studs (at most 200), along the line from the position to its center, fading to nothing at the edge of its reach. It's an impulse: something weighing 1, like a player or an item, gets `strength` studs a second right at the middle. A vehicle weighs one per brick (what it weighed before the same impulse broke any off), or its `impulseMass` for a model vehicle, and is pushed 5 times harder than that weight alone would say, with at least 0.6 of lift mixed into its direction: a car shoved only sideways goes nowhere, its tires' grip eats the push within a frame, so the lift hops its wheels off the ground first. A launcher shell beside a 22 brick car throws it a dozen studs. Carried items and players in vehicles aren't pushed themselves. `RadiusImpulseHit` fires for each dynamic pushed, see [Built-in events](#built-in-events). Destructable vehicles (see `vehicle:setDestructable`) also lose every brick, except the steering wheel, where `abs(strength) * vehicleBrickBreakScale / (1 + distance^2)` is at least its volume in cubic studs (a plate is 0.4 tall), with the distance to the nearest part of the brick; they fly off for everyone like hammered bricks, pushed the same way, taking their lights and emitters with them, and a broken seat lets its rider off and can't be used again. The tuning constants are in `Physics/RadiusImpulse.h`. |
 | `setVehicleDirtEmitter(typeName)` / `setVehicleDirtEmitter(nil)` | an emitter type's name | none | The emitter type wheels of vehicles sliced from now on throw dirt with. `nil` for none. |
 | `loadVehicleFile(fileName, x, y, z[, asBricks])` | a name in the server's `Saves/Vehicles` without `.lod`; a grid spot in studs/plates; `asBricks` | Vehicle (or `true` as bricks) and a message, or `nil` and why | Places a vehicle save, from `vehicle:saveToFile` or one a player saved, with the middle of its bottom at the spot. As a vehicle it follows the same rules as slicing; as bricks, ones in the way of other bricks are left out. Doesn't fire `ClientLoadVehicle`. |
 | `spawnModelVehicle(settings)` | one table, see [Model vehicles](#model-vehicles) | Vehicle, or `nil` and why | Makes a vehicle whose body is a model rather than bricks, and fires `VehicleCreated`. |
+| `registerVehicleSpawn(name, functionName)` / `registerVehicleSpawn(name, nil)` | a name for wrench dialogs, 1-255 characters; the name of a global function | none | Lists a vehicle for Vehicle Spawn bricks to keep spawned, see [Vehicle spawn bricks](#vehicle-spawn-bricks). The function is called as `functionName(x, y, z, brick)` and returns the vehicle it made (or `nil`). Registering a name again changes its function, `nil` takes it off the list; bricks set to it keep the name and spawn nothing until it's registered again. `Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua` registers `"Jeep"` as `spawnJeep`. |
 
 ### `vehicle:` methods
 
@@ -859,6 +887,7 @@ anything; use the events to limit that.
 | `vehicle:getPassenger(seat)` | 0 to `getNumSeats() - 1` | Client or `nil` | Who's riding on that seat. Use `client:exitVehicle` to get them off. |
 | `vehicle:getBuilder()` | none | Client or `nil` | Who sliced or loaded it, or the `builder` `spawnModelVehicle` was given, `nil` if Lua made it or they left. |
 | `vehicle:getBuilderID()` | none | client net ID, or `-1` | |
+| `vehicle:getSpawnBrick()` | none | Brick or `nil` | The Vehicle Spawn brick that spawned it, which spawns another once it's gone, see [Vehicle spawn bricks](#vehicle-spawn-bricks). |
 | `vehicle:getMusic()` | none | sound name, volume, pitch; or `nil` | The loop playing from it. |
 | `vehicle:setMusic(soundName[, volume, pitch])` / `vehicle:setMusic(nil)` | a sound type's name; `volume` 0-1, `pitch` 0.05-10 | none | Plays the sound on a loop from the vehicle for everyone, following it, until it's changed or the vehicle is removed. Changing anything starts the loop over. |
 | `vehicle:getHorn()` | none | sound name, or `nil` | What its driver honks with left click. A new vehicle's is `Honk` if there's a sound by that name, or whatever its steering wheel brick was wrenched to. |
@@ -867,6 +896,26 @@ anything; use the events to limit that.
 | `vehicle:setHeadlight(table)` / `vehicle:setHeadlight(nil)` | light fields as for `brick:setLight` | none | Gives it a headlight, or changes it, and switches it on. Fields left out keep the current values, or for a new headlight a white 70 degree spotlight of brightness 150 with a 0.5 stud corona shining the way it drives from the middle of its front. `nil` takes it off. |
 | `vehicle:setHeadlightOn(bool)` / `vehicle:isHeadlightOn()` | bool | none / bool | Switches the headlight on or off, playing `LightOn` or `LightOff` from the vehicle, like the driver's flashlight key does. Logs an error switching on a vehicle with no headlight. The light shows up in `getNumLights` while it's on and is gone while it's off. |
 
+
+### Vehicle spawn bricks
+
+The `Vehicle Spawn` special brick (`Assets/brick/types/special`, marked with our own `vehicleSpawn = "true";` datablock
+field, which any `bricks.txt` datablock can use) keeps a vehicle in the world. Its wrench dialog has a Vehicle spawn
+section listing every vehicle Lua registered with `registerVehicleSpawn`, `None` if nothing did. Picking one spawns
+that vehicle 3 studs above the middle of the brick's top, turned to drive the way the brick faces (`+x` for an unturned
+brick, like a steering wheel), by calling the registered function with that spot and the brick. Whenever the vehicle
+is destroyed or removed, by anything at all (`vehicle:destroy`, `/clearvehicles`, its wrench dialog's Remove, an
+explosion), the server spawns another within about a second, and picking `None` or removing the brick (hammer, undo,
+`brick:remove`, slicing it into a vehicle, `clearAllBricks`) removes the vehicle. A spawner that fails, or a name
+nothing registered (a save from a server with an add-on this one lacks), is tried again every 10 seconds with an error
+logged each time. Picking a different vehicle leaves the one already out until it's gone rather than pulling it out from
+under a driver. The setting is saved with the brick by `saveBuild` and set from Lua by `brick:setVehicleSpawn`;
+`brick:getSpawnedVehicle` and `vehicle:getSpawnBrick` link the two. Only model vehicles spawn this way, since a
+spawner is a Lua function like `spawnJeep`; a spawner can build anything that returns a Vehicle, `loadVehicleFile`
+included. A spawned vehicle belongs to whoever planted the brick: `vehicle:getBuilder` is them and `/clearvehicles` takes it
+with their others (after which the brick spawns another). A brick nobody planted, from Lua or a save, leaves the builder
+whatever the spawner set. `VehicleCreated` fires from inside the spawner, before the owner is put on it, so it sees the
+spawner's builder, `nil` for `spawnJeep(x, y, z)`.
 
 ### Model vehicles
 
@@ -899,6 +948,7 @@ can type `/sit` in chat to sit down where they stand and `/sit` again to get up,
 | `box` | the model's collision box | `{x, y, z}` half sizes of the one box it collides as, in world units. |
 | `boxOffset` | the model's collision box | `{x, y, z}` middle of that box in the model's space. |
 | `mass` | `40` | What the whole thing weighs, 1 to 100000. A brick vehicle weighs one per colliding brick. |
+| `impulseMass` | `30` | What `radiusImpulse` pushes it as if it weighed, 1 to 100000, since `mass` is picked for how it drives: at the jeep's 150 a launcher shell that sends a 30 brick car flying would barely nudge it. The default is about a small brick car. |
 | `angularDamping` | `0.03` | The same setting a steering wheel brick has, 0 to 1. |
 | `seat` | `{0, 0, 0}` | Where the driver's model goes, which for a player model is their feet. |
 | `seats` | none | A list of at most 32 passenger seats, each `{x, y, z}` (or a table with a `position`), where that passenger stands. |
@@ -917,7 +967,7 @@ vehicle gets to free its bricks from the ground.
 
 `Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua` is a worked example: the Blockland jeep, with its wheels read off the shape's
 `hub0` to `hub3` nodes and its seven seats off `Mount0` to `Mount6`. `spawnJeep(x, y, z)`, or `spawnJeep(client)` to
-drop one in front of somebody, puts one in the world.
+drop one in front of somebody, puts one in the world, and it's registered as the `Jeep` a Vehicle Spawn brick can keep.
 
 Vehicles also come back from `raycast()` and `client:getCursorItem`, with `type` 7.
 
@@ -954,7 +1004,8 @@ and `ClickRotate` when the ghost brick moves or turns, `Jump` when their player 
 `BrickBreak` where a removed brick pops loose. `serverstart.lua` registers these along with
 `ClickPlant`, `PlayerConnect`, `PlayerLeave`, `Admin` (played to a client who logs into the eval
 console), and `BrickClear` (played to everyone when someone types `/clearbricks` or `/clearvehicles` in chat to remove
-all of their own bricks or vehicles, or an admin types `/clearAllBricks` or `/clearAllVehicles`). It also registers `Splash` and `ExitWater`, which the server plays by
+all of their own bricks or vehicles, or an admin types `/clearAllBricks`, `/clearAllVehicles`, or `/clearAllItems`, the last
+of which removes every item lying on the ground, not carried ones or the ones bricks offer). It also registers `Splash` and `ExitWater`, which the server plays by
 name where dynamics hit or leave the water, louder the faster they're moving and lower pitched
 the bigger they are, and `LightOn` and `LightOff`, which the server plays from a player whose
 flashlight turns on or off. `Inventory.lua` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops

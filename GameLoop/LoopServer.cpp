@@ -59,6 +59,7 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 	pd.vehicles->sendRecent();
 	sendNewVehicleBricks();
 	pd.bricks->sendRecent();
+	respawnBrickVehicles();
 	updateVehicles(deltaT);
 	applyWaterForces(deltaT);
 	pd.physicsWorld->step(deltaT);
@@ -239,6 +240,68 @@ void LoopServer::sendNewVehicleBricks()
 	pd.vehiclesAwaitingBricks.clear();
 }
 
+/*
+	A vehicle nobody drives holds its brakes, which a player walking into it can't overcome, so a player touching one rolls it
+	along instead: its brakes come off and it's pushed a little along the way it drives, away from whoever's pushing, the way a
+	car shoved from behind rolls forward rather than sliding sideways. It's an acceleration so a jeep and a brick car roll alike,
+	and it stops adding once the vehicle rolls faster than a walk. True if someone was pushing, so the caller doesn't park it
+*/
+static bool pushVehicle(const ServerProgramData& pd, const std::shared_ptr<Vehicle>& vehicle)
+{
+	//Studs per second squared while pushed, and the speed along the push it stops adding at
+	static constexpr btScalar pushAcceleration = 6.0f;
+	static constexpr btScalar pushMaxSpeed = 6.0f;
+
+	if (vehicle->body->getInvMass() <= 0)
+		return false;
+
+	const btTransform& transform = vehicle->body->getWorldTransform();
+	btVector3 forward = transform.getBasis() * g2b3(vehicle->forward);
+	forward.setY(0);
+	if (forward.length2() < 0.0001f)
+		return false;
+	forward.normalize();
+
+	//Which way the pushing players stand from it, added up so two on the same side push together and two on opposite sides don't
+	std::vector<btRigidBody*> touching = pd.physicsWorld->getTouching(vehicle->body);
+	btVector3 pushAway(0, 0, 0);
+	bool pushed = false;
+	for (const std::shared_ptr<ClientData>& client : pd.clients)
+	{
+		//Their player, on its own feet rather than riding something
+		if (client->controlledObjects.empty() || !client->vehicle.expired())
+			continue;
+
+		const std::shared_ptr<Dynamic>& player = client->controlledObjects[0];
+		if (!player->isInWorld() || std::find(touching.begin(), touching.end(), player->body) == touching.end())
+			continue;
+
+		btVector3 away = transform.getOrigin() - player->getPosition();
+		away.setY(0);
+		if (away.length2() < 0.0001f)
+			continue;
+
+		pushAway += away.normalized();
+		pushed = true;
+	}
+
+	if (!pushed)
+		return false;
+
+	btScalar along = forward.dot(pushAway);
+	if (std::abs(along) < 0.0001f)
+		return true;
+	btVector3 roll = forward * (along > 0 ? 1.0f : -1.0f);
+
+	vehicle->coast();
+	vehicle->body->activate();
+
+	if (roll.dot(vehicle->body->getLinearVelocity()) < pushMaxSpeed)
+		vehicle->body->applyCentralForce(roll * pushAcceleration / vehicle->body->getInvMass());
+
+	return true;
+}
+
 void LoopServer::updateVehicles(float deltaT)
 {
 	//A wheel this far above the water already floats a little, and floats hardest this far below it, like the old game
@@ -308,7 +371,7 @@ void LoopServer::updateVehicles(float deltaT)
 				driver->client->sendCenterPrint("You have reached this vehicle's max speed!", 3000, 1.0f, 1.0f, 1.0f);
 			}
 		}
-		else
+		else if (!pushVehicle(pd, vehicle))
 			vehicle->park();
 
 		if (!pd.waterEnabled || vehicle->wheels.empty() || vehicle->body->getInvMass() <= 0)
@@ -434,6 +497,10 @@ void LoopServer::applyWaterForces(float deltaT)
 	{
 		std::shared_ptr<Dynamic> dynamic = pd.dynamics->get(a);
 		if (dynamic->isSnappedToCursor() || !dynamic->isInWorld())
+			continue;
+
+		//A display item floats over its brick whether or not that's under water
+		if (dynamic->getKind() == DynamicKind_Item && std::static_pointer_cast<Item>(dynamic)->display)
 			continue;
 
 		dynamic->applyWaterForces(pd.waterLevel, deltaT);

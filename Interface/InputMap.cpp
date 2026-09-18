@@ -48,6 +48,7 @@ std::string GetInputCommandString(InputCommand command)
         case Crawl: return "Crawl";
         case DropCameraAtPlayer: return "Drop Camera At Player";
         case DropPlayerAtCamera: return "Drop Player At Camera";
+        case CycleSeat: return "Next Vehicle Seat";
         default: return "Other error";
     }
 }
@@ -121,6 +122,8 @@ InputMap::InputMap(std::shared_ptr<SettingManager> settings)
         //The free camera, which only admins have unless the server's Lua says otherwise, see LoopClient::setFreeCamera
         bindKey(DropCameraAtPlayer, SDL_SCANCODE_F7);
         bindKey(DropPlayerAtCamera, SDL_SCANCODE_F8);
+        //Moves to the next free seat of the vehicle being ridden. Shares the comma with lowering the ghost brick, which isn't out while riding
+        bindKey(CycleSeat, SDL_SCANCODE_COMMA);
 
         //Number keys 1 through 9 then 0, SDL's scancodes for them are in that order
         for (int a = 0; a < 10; a++)

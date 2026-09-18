@@ -48,6 +48,36 @@ std::shared_ptr<Dynamic> Item::getHolder() const
 	return carrier->controllers[0].target.lock();
 }
 
+void Item::makeDisplay(netIDType brickID)
+{
+	display = true;
+	displayBrickID = brickID;
+	applyDisplayBody();
+}
+
+void Item::applyDisplayBody()
+{
+	if (!body)
+		return;
+
+	/*
+		No contact response keeps it out of everyone's way while rays still find it, like a brick that doesn't collide, and
+		with no gravity and nothing pushing it (see LoopServer's water and Lua's radiusImpulse) it stays put and soon falls asleep
+		It isn't taken out of the simulation altogether: Bullet only refreshes the broadphase box of an active body, and a body
+		is added to the world before it's moved to where it starts, so a body that never simulates keeps a box at the origin
+		and rays never find it. The server refreshes the box here as well, so Lua can raycast it the same tick it's made;
+		a client's copy is refreshed by its first physics step, long before anyone's crosshair looks for it
+	*/
+	body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_NO_CONTACT_RESPONSE);
+	body->setGravity(btVector3(0, 0, 0));
+	body->setLinearVelocity(btVector3(0, 0, 0));
+	body->setAngularVelocity(btVector3(0, 0, 0));
+	gravityUpdated = true;
+
+	if (world && inWorld && type->getModel()->isServerSide())
+		world->getDynamicsWorld()->updateSingleAabb(body);
+}
+
 bool Item::isEquipped() const
 {
 	std::shared_ptr<ClientData> carrier = owner.lock();
@@ -86,7 +116,7 @@ void Item::writeState(enet_uint8* dest) const
 	memcpy(dest, &holderNetID, sizeof(netIDType));
 	unsigned int at = sizeof(netIDType);
 
-	dest[at++] = (isHeld() ? ItemFlag_Held : 0) | (isEquipped() ? ItemFlag_Equipped : 0);
+	dest[at++] = (isHeld() ? ItemFlag_Held : 0) | (isEquipped() ? ItemFlag_Equipped : 0) | (display ? ItemFlag_Display : 0);
 	dest[at++] = slot < 0 ? 255 : (unsigned char)slot;
 	dest[at++] = encodeAnimation(loopAnimation);
 	dest[at++] = encodeAnimation(oneShotItemAnimation);
@@ -143,6 +173,13 @@ void Item::readState(enet_uint8* src, bool creating, float idealBufferSize)
 	held = flags & ItemFlag_Held;
 	equipped = flags & ItemFlag_Equipped;
 	slot = slotByte == 255 ? -1 : slotByte;
+
+	//Our own body stops bumping our player around too, since we simulate our player against what's here
+	if ((flags & ItemFlag_Display) && !display)
+	{
+		display = true;
+		applyDisplayBody();
+	}
 
 	if (held && isInWorld())
 		removeFromWorld();

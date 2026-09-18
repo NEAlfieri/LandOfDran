@@ -671,6 +671,24 @@ adminCommands["/clearallbricks"] = function(client)
 	playSound("BrickClear")
 end
 
+--Items lying around on the ground, not ones anyone carries or the ones bricks offer
+adminCommands["/clearallitems"] = function(client)
+	local count = 0
+	for i = getNumItems() - 1, 0, -1 do
+		local item = getItemIdx(i)
+		if not item:isHeld() and not item:isDisplay() then
+			item:destroy()
+			count = count + 1
+		end
+	end
+	if count == 0 then
+		client:message("There are no items on the ground to clear.")
+		return
+	end
+	messageAll(client:getName() .. " cleared all " .. count .. (count == 1 and " item" or " items") .. " on the ground.")
+	playSound("BrickClear")
+end
+
 adminCommands["/kick"] = function(client, name)
 	local target, why = findClientByName(name)
 	if not target then
@@ -785,6 +803,7 @@ end
 
 registerChatSuggestion("clearallvehicles", "/clearAllVehicles - admins: remove every vehicle")
 registerChatSuggestion("clearallbricks", "/clearAllBricks - admins: remove every brick")
+registerChatSuggestion("clearallitems", "/clearAllItems - admins: remove every item lying on the ground")
 registerChatSuggestion("kick", "/kick <player> - admins: disconnect a player")
 registerChatSuggestion("rain", "/rain - admins: start or stop the rain")
 registerChatSuggestion("settimescale", "/setTimeScale <scale> - admins: 1 is normal, 0 freezes time")

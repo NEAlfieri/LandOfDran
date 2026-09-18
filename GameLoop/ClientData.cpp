@@ -124,7 +124,8 @@ void ClientData::removeEffects(const ServerProgramData* pd)
 
 int ClientData::addItem(const ServerProgramData* pd, const std::shared_ptr<Item>& item, int slot)
 {
-	if (item->isHeld())
+	//A display item stays over its brick, players get a copy of it instead, see Inventory.lua
+	if (item->isHeld() || item->display)
 		return -1;
 
 	if (slot == -1)

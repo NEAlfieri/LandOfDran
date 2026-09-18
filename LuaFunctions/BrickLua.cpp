@@ -2,9 +2,89 @@
 
 #include "SoundLua.h"
 #include "EmitterLua.h"
+#include "VehicleLua.h"
 #include "../Bricks/BrickSaves.h"
 
 #include <cmath>
+
+//How far above a Vehicle Spawn brick's top its vehicle's origin is put, world units, enough for a jeep's wheels to hang below it and land
+static constexpr float vehicleSpawnHeight = 3.0f;
+
+//How often bricks with a vehicle spawn are checked for a vehicle that's gone, and how long a spawner that failed waits before it's tried again, milliseconds
+static constexpr unsigned int vehicleRespawnCheckMS = 1000;
+static constexpr unsigned int vehicleSpawnRetryMS = 10000;
+
+bool brickIsVehicleSpawn(const Brick* brick)
+{
+	if (!LUA_pd || !brick || !brick->isSpecial())
+		return false;
+
+	const SpecialBrickType* type = LUA_pd->brickTypes.getSpecial(brick->typeID - 1);
+	return type && type->vehicleSpawn;
+}
+
+std::shared_ptr<Vehicle> getBrickSpawnedVehicle(const Brick* brick)
+{
+	if (!LUA_pd || !brick || !brick->attachments || brick->attachments->spawnedVehicleID == NO_ID)
+		return nullptr;
+
+	std::shared_ptr<Vehicle> vehicle = LUA_pd->vehicles->find(brick->attachments->spawnedVehicleID);
+	return vehicle && vehicle->spawnBrickID == brick->netId ? vehicle : nullptr;
+}
+
+std::shared_ptr<Item> getBrickDisplayItem(const Brick* brick)
+{
+	if (!LUA_pd || !brick || !brick->attachments || brick->attachments->displayItemID == NO_ID)
+		return nullptr;
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->find(brick->attachments->displayItemID);
+	if (!dynamic || dynamic->getKind() != DynamicKind_Item)
+		return nullptr;
+
+	std::shared_ptr<Item> item = std::static_pointer_cast<Item>(dynamic);
+	return item->display && item->displayBrickID == brick->netId ? item : nullptr;
+}
+
+//The middle of a brick's top face, world units
+static glm::vec3 brickTop(const Brick* brick)
+{
+	return brick->getWorldCenter() + glm::vec3(0, brick->height * PLATE_SIZE * 0.5f, 0);
+}
+
+//Spawns the brick's vehicle above it, remembering it, or when to try again if the spawner didn't make one
+static void spawnBrickVehicle(Brick* brick)
+{
+	BrickAttachments& settings = *brick->attachments;
+
+	std::shared_ptr<Vehicle> vehicle = spawnRegisteredVehicle(settings.vehicleSpawnName, brickTop(brick) + glm::vec3(0, vehicleSpawnHeight, 0), brick);
+	settings.spawnedVehicleID = vehicle ? vehicle->getID() : NO_ID;
+	settings.nextVehicleSpawnMS = getTicksMS() + (vehicle ? 0 : vehicleSpawnRetryMS);
+}
+
+//Makes the display item floating over the brick, a copy of the item type named by its item spawn, NO_ID if there's no such item type
+static netIDType makeDisplayItem(Brick* brick, const std::string& typeName)
+{
+	std::shared_ptr<DynamicType> type = nullptr;
+	for (const std::shared_ptr<DynamicType>& candidate : LUA_pd->dynamicTypes)
+	{
+		if (candidate->isItemType && candidate->scriptName == typeName)
+			type = candidate;
+	}
+
+	if (!type)
+	{
+		error("Brick " + std::to_string(brick->netId) + " offers an item of type " + typeName + ", which isn't an item type here, see newItemType");
+		return NO_ID;
+	}
+
+	//Its collision box floats displayHover above the brick, wherever that box sits on the model
+	std::shared_ptr<Model> model = type->getModel();
+	glm::vec3 position = brickTop(brick) + glm::vec3(0, Item::displayHover + model->getColHalfExtents().y - model->getColOffset().y, 0);
+
+	std::shared_ptr<Item> item = LUA_pd->dynamics->createDerived<Item>(type, g2b3(position), btQuaternion::getIdentity());
+	item->makeDisplay(brick->netId);
+	return item->getID();
+}
 
 static unsigned char colorByte(double value)
 {
@@ -89,6 +169,64 @@ void updateBrickAttachments(Brick* brick)
 			}
 		}
 	}
+
+	//The item floating over it, made again if Lua destroyed it, or for a different item type than before
+	if (LUA_pd->dynamics)
+	{
+		std::shared_ptr<Item> item = getBrickDisplayItem(brick);
+		if (item && (settings.itemSpawnName.empty() || item->getType()->scriptName != settings.itemSpawnName))
+		{
+			std::shared_ptr<Dynamic> dynamic = item;
+			LUA_pd->dynamics->destroy(dynamic);
+			item = nullptr;
+		}
+
+		if (!item)
+			settings.displayItemID = settings.itemSpawnName.empty() ? NO_ID : makeDisplayItem(brick, settings.itemSpawnName);
+	}
+
+	/*
+		The vehicle it keeps spawned, taken away if it's not to spawn one anymore, or when what it spawns changes
+		A brick whose vehicle was destroyed gets another from respawnBrickVehicles, which waits a moment rather than doing it mid-explosion
+	*/
+	if (LUA_pd->vehicles)
+	{
+		std::shared_ptr<Vehicle> vehicle = getBrickSpawnedVehicle(brick);
+		if (vehicle && settings.vehicleSpawnName.empty())
+		{
+			destroyVehicle(vehicle);
+			vehicle = nullptr;
+		}
+
+		if (!vehicle)
+			settings.spawnedVehicleID = NO_ID;
+
+		//Changed to another vehicle: the old one stays until it's gone, then the new kind takes its place, rather than pulling a vehicle out from under its driver
+		if (!vehicle && !settings.vehicleSpawnName.empty())
+			spawnBrickVehicle(brick);
+	}
+}
+
+void respawnBrickVehicles()
+{
+	static unsigned int lastCheckMS = 0;
+
+	if (!LUA_pd || !LUA_pd->bricks || !LUA_pd->vehicles || getTicksMS() - lastCheckMS < vehicleRespawnCheckMS)
+		return;
+	lastCheckMS = getTicksMS();
+
+	//A spawner can add or remove bricks, so the list is walked by index and stops if it shrinks
+	for (size_t a = 0; a < LUA_pd->bricks->size(); a++)
+	{
+		Brick* brick = LUA_pd->bricks->get(a);
+		if (!brick->attachments || brick->attachments->vehicleSpawnName.empty())
+			continue;
+
+		if (getBrickSpawnedVehicle(brick) || getTicksMS() < brick->attachments->nextVehicleSpawnMS)
+			continue;
+
+		spawnBrickVehicle(brick);
+	}
 }
 
 void removeBrickAttachments(Brick* brick)
@@ -99,6 +237,8 @@ void removeBrickAttachments(Brick* brick)
 	brick->attachments->musicName = "";
 	brick->attachments->hasLight = false;
 	brick->attachments->emitterName = "";
+	brick->attachments->itemSpawnName = "";
+	brick->attachments->vehicleSpawnName = "";
 	updateBrickAttachments(brick);
 }
 
@@ -110,12 +250,19 @@ void setBrickAttachments(Brick* brick, const BrickAttachments& requested)
 	settings->musicLoopID = NO_ID;
 	settings->lightID = NO_ID;
 	settings->emitterID = NO_ID;
+	settings->spawnedVehicleID = NO_ID;
+	settings->displayItemID = NO_ID;
+	settings->nextVehicleSpawnMS = 0;
 
 	if (const BrickAttachments* old = brick->attachments.get())
 	{
 		settings->musicLoopID = old->musicLoopID;
 		settings->lightID = old->lightID;
 		settings->emitterID = old->emitterID;
+		settings->spawnedVehicleID = old->spawnedVehicleID;
+		settings->displayItemID = old->displayItemID;
+		//Picking a vehicle again doesn't wait out a failed try
+		settings->nextVehicleSpawnMS = old->vehicleSpawnName == settings->vehicleSpawnName ? old->nextVehicleSpawnMS : 0;
 
 		//Loops can't be changed while they play, so different music, volume, or pitch starts it over
 		bool musicChanged = old->musicName != settings->musicName || old->musicVolume != settings->musicVolume || old->musicPitch != settings->musicPitch;
@@ -146,6 +293,8 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
 		4 bytes		-	net ID of the light the brick already has, NO_ID for none
+		1 byte		-	how many vehicle spawns follow, 0 unless the brick is a Vehicle Spawn brick
+		Each		-	a length byte and the name of a vehicle spawn the dialog can pick, see registerVehicleSpawn
 	*/
 	std::string name = brick->name.substr(0, 255);
 
@@ -163,6 +312,16 @@ void openWrenchDialog(ClientData& client, const Brick* brick)
 	size_t lightAt = bytes.size();
 	bytes.resize(lightAt + sizeof(netIDType));
 	memcpy(bytes.data() + lightAt, &lightID, sizeof(netIDType));
+
+	//What a Vehicle Spawn brick can spawn, any other brick gets none and no section for it
+	size_t spawnCount = brickIsVehicleSpawn(brick) ? std::min<size_t>(LUA_pd->vehicleSpawns.size(), 255) : 0;
+	bytes.push_back((unsigned char)spawnCount);
+	for (size_t a = 0; a < spawnCount; a++)
+	{
+		std::string spawnName = LUA_pd->vehicleSpawns[a].name.substr(0, 255);
+		bytes.push_back((unsigned char)spawnName.length());
+		bytes.insert(bytes.end(), spawnName.begin(), spawnName.end());
+	}
 
 	client.client->send(enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable)), OtherReliable);
 	client.wrenchedBrickID = brick->netId;
@@ -1259,6 +1418,171 @@ static int LUA_brickSetEmitter(lua_State* L)
 	return 0;
 }
 
+static int LUA_brickGetVehicleSpawn(lua_State* L)
+{
+	scope("(LUA) brick:getVehicleSpawn");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:getVehicleSpawn()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	if (!brick->attachments || brick->attachments->vehicleSpawnName.empty())
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, brick->attachments->vehicleSpawnName.c_str());
+	return 1;
+}
+
+static int LUA_brickSetVehicleSpawn(lua_State* L)
+{
+	scope("(LUA) brick:setVehicleSpawn");
+
+	if (lua_gettop(L) != 2 || !(lua_isnil(L, 2) || lua_type(L, 2) == LUA_TSTRING))
+	{
+		error("Expected brick:setVehicleSpawn(spawnName) or brick:setVehicleSpawn(nil)");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	BrickAttachments settings = brick->attachments ? *brick->attachments : BrickAttachments();
+	settings.vehicleSpawnName = lua_isnil(L, 2) ? "" : lua_tostring(L, 2);
+
+	if (!settings.vehicleSpawnName.empty() && !vehicleSpawnExists(settings.vehicleSpawnName))
+	{
+		error("There's no vehicle spawn named " + settings.vehicleSpawnName + ", see registerVehicleSpawn");
+		return 0;
+	}
+
+	setBrickAttachments(brick, settings);
+	return 0;
+}
+
+static int LUA_brickGetSpawnedVehicle(lua_State* L)
+{
+	scope("(LUA) brick:getSpawnedVehicle");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:getSpawnedVehicle()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	std::shared_ptr<Vehicle> vehicle = getBrickSpawnedVehicle(brick);
+	if (vehicle)
+		LUA_pd->vehicles->pushLua(L, vehicle);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+static int LUA_brickGetItemSpawn(lua_State* L)
+{
+	scope("(LUA) brick:getItemSpawn");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:getItemSpawn()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	if (!brick->attachments || brick->attachments->itemSpawnName.empty())
+		lua_pushnil(L);
+	else
+		lua_pushstring(L, brick->attachments->itemSpawnName.c_str());
+	return 1;
+}
+
+static int LUA_brickSetItemSpawn(lua_State* L)
+{
+	scope("(LUA) brick:setItemSpawn");
+
+	if (lua_gettop(L) != 2 || !(lua_isnil(L, 2) || lua_type(L, 2) == LUA_TSTRING))
+	{
+		error("Expected brick:setItemSpawn(itemTypeName) or brick:setItemSpawn(nil)");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	BrickAttachments settings = brick->attachments ? *brick->attachments : BrickAttachments();
+	settings.itemSpawnName = lua_isnil(L, 2) ? "" : lua_tostring(L, 2);
+
+	if (!settings.itemSpawnName.empty())
+	{
+		bool found = false;
+		for (const std::shared_ptr<DynamicType>& type : LUA_pd->dynamicTypes)
+			found = found || (type->isItemType && type->scriptName == settings.itemSpawnName);
+
+		if (!found)
+		{
+			error("There's no item type named " + settings.itemSpawnName + ", see newItemType");
+			return 0;
+		}
+	}
+
+	setBrickAttachments(brick, settings);
+	return 0;
+}
+
+static int LUA_brickGetDisplayItem(lua_State* L)
+{
+	scope("(LUA) brick:getDisplayItem");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:getDisplayItem()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	std::shared_ptr<Item> item = getBrickDisplayItem(brick);
+	if (item)
+		LUA_pd->dynamics->pushLua(L, item);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+static int LUA_brickIsVehicleSpawn(lua_State* L)
+{
+	scope("(LUA) brick:isVehicleSpawn");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument brick:isVehicleSpawn()");
+		return 0;
+	}
+
+	Brick* brick = brickArgument(L);
+	if (!brick)
+		return 0;
+
+	lua_pushboolean(L, brickIsVehicleSpawn(brick));
+	return 1;
+}
+
 static int LUA_brickRemove(lua_State* L)
 {
 	scope("(LUA) brick:remove");
@@ -1295,7 +1619,7 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	lua_register(L, "addBlocklandLight", LUA_addBlocklandLight);
 	lua_register(L, "addBlocklandEmitter", LUA_addBlocklandEmitter);
 
-	luaL_Reg* methods = new luaL_Reg[25];
+	luaL_Reg* methods = new luaL_Reg[32];
 	methods[0] = { "getPosition", LUA_brickGetPosition };
 	methods[1] = { "getDimensions", LUA_brickGetDimensions };
 	methods[2] = { "getAngleID", LUA_brickGetAngleID };
@@ -1320,6 +1644,13 @@ luaL_Reg* getBrickFunctions(lua_State* L)
 	methods[21] = { "getPrint", LUA_brickGetPrint };
 	methods[22] = { "setPrint", LUA_brickSetPrint };
 	methods[23] = { "canPrint", LUA_brickCanPrint };
-	methods[24] = { NULL, NULL };
+	methods[24] = { "getVehicleSpawn", LUA_brickGetVehicleSpawn };
+	methods[25] = { "setVehicleSpawn", LUA_brickSetVehicleSpawn };
+	methods[26] = { "getSpawnedVehicle", LUA_brickGetSpawnedVehicle };
+	methods[27] = { "getItemSpawn", LUA_brickGetItemSpawn };
+	methods[28] = { "setItemSpawn", LUA_brickSetItemSpawn };
+	methods[29] = { "getDisplayItem", LUA_brickGetDisplayItem };
+	methods[30] = { "isVehicleSpawn", LUA_brickIsVehicleSpawn };
+	methods[31] = { NULL, NULL };
 	return methods;
 }

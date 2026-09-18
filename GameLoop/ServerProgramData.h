@@ -121,6 +121,17 @@ struct ServerProgramData
 	//Lua's setVehicleDirtEmitter: the emitter type new vehicles' wheels throw dirt with, "" for none
 	std::string vehicleDirtEmitter = "vehicleDirtEmitter";
 
+	/*
+		Lua's registerVehicleSpawn: the vehicles a Vehicle Spawn brick's wrench dialog can pick from, in the order they were registered
+		Each is a name for the dialog and the global Lua function that spawns one, called with x, y, z and the brick, see spawnRegisteredVehicle
+	*/
+	struct VehicleSpawnType
+	{
+		std::string name = "";
+		std::string functionName = "";
+	};
+	std::vector<VehicleSpawnType> vehicleSpawns;
+
 	//ObjHolders created and destroyed with ServerLoop class
 	//All dynamic objects:
 	ObjHolder<Dynamic>* dynamics = nullptr;

@@ -59,7 +59,8 @@ enum InputCommand
     Crawl = 47,
     DropCameraAtPlayer = 48,
     DropPlayerAtCamera = 49,
-    EndOfCommands = 50
+    CycleSeat = 50,
+    EndOfCommands = 51
 };
 
 //For user interface

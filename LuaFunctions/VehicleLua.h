@@ -28,8 +28,28 @@ bool enterVehicle(ClientData& client, const std::shared_ptr<Vehicle>& vehicle, i
 //Lets the client's player out of whatever they drive or ride, just above where they were, firing ClientExitVehicle with callEvent
 void exitVehicle(ClientData& client, bool callEvent);
 
+/*
+	Moves the client's player from the seat they're in to another of the same vehicle's, the driver's for Vehicle::driverSeat, without
+	getting out in between. With callEvent a ClientEnterVehicle listener can say no. False if they aren't in a vehicle, that's the seat
+	they're in, or it's taken or broken
+*/
+bool switchSeat(ClientData& client, int seat, bool callEvent);
+
+//The next free seat after the one the client is in, going driver's seat then passenger seats in order and around again, or the seat they're in if there's no other
+int nextFreeSeat(const ClientData& client, const Vehicle& vehicle);
+
 //Lets out its driver, removes the lights, emitters, and music loop it has, and destroys it
 void destroyVehicle(std::shared_ptr<Vehicle> vehicle);
+
+//Whether Lua's registerVehicleSpawn registered a spawner by that name, for a Vehicle Spawn brick's wrench dialog to pick from
+bool vehicleSpawnExists(const std::string& name);
+
+/*
+	Spawns the vehicle a registered spawner makes, by calling its Lua function with a position and the brick spawning it, see registerVehicleSpawn
+	The vehicle is turned to drive the way the brick faces and remembers the brick as its spawnBrickID
+	nullptr with an error logged if there's no spawner by that name, its function is missing, or it didn't return a vehicle
+*/
+std::shared_ptr<Vehicle> spawnRegisteredVehicle(const std::string& name, const glm::vec3& position, const Brick* brick);
 
 //Every vehicle's bricks, to a client that just finished loading, after the vehicles themselves
 void sendVehicleState(const ServerProgramData* pd, JoinedClient* client);

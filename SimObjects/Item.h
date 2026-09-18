@@ -74,6 +74,28 @@ class Item : public Dynamic
 	//Client: holderID's dynamic, once it's been looked up
 	std::weak_ptr<Dynamic> holder;
 
+	/*
+		Whether it's a display item: a copy of its type floating over a brick wrenched to offer that item, which spins slowly
+		(clients turn it themselves, see LoopClient::placeHeldItems), never falls or moves, collides with nothing, and is
+		outlined on a client's screen while their crosshair is on it within reach. Raycasts and clicks still hit it, so
+		Inventory.lua can hand whoever clicks it an item of the same type. It can't be picked up itself, see ClientData::addItem
+		Made by the server with makeDisplay, which clients learn from ItemFlag_Display in its state
+	*/
+	bool display = false;
+
+	//Server: the brick it floats over, see BrickAttachments::itemSpawnName
+	netIDType displayBrickID = NO_ID;
+
+	//How far over a brick a display item's collision box floats, world units, and how long one turn takes it on clients, like the item bar's icons
+	static constexpr float displayHover = 0.5f;
+	static constexpr double displaySpinMS = 6000.0;
+
+	//Server: turns it into a display item over that brick, see display
+	void makeDisplay(netIDType brickID);
+
+	//Both sides: its body stops colliding, falling, or being simulated at all, while rays still hit it, for a display item
+	void applyDisplayBody();
+
 	//The animation it keeps playing, see itemNoAnimation
 	int loopAnimation = itemNoAnimation;
 

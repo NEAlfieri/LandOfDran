@@ -231,6 +231,46 @@ static int LUA_itemIsHeld(lua_State* L)
 	return 1;
 }
 
+static int LUA_itemIsDisplay(lua_State* L)
+{
+	scope("(LUA) item:isDisplay");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument item:isDisplay()");
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = popItem(L, "item:isDisplay()");
+	if (!item)
+		return 0;
+
+	lua_pushboolean(L, item->display);
+	return 1;
+}
+
+static int LUA_itemGetDisplayBrick(lua_State* L)
+{
+	scope("(LUA) item:getDisplayBrick");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument item:getDisplayBrick()");
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = popItem(L, "item:getDisplayBrick()");
+	if (!item)
+		return 0;
+
+	Brick* brick = item->display && item->displayBrickID != NO_ID ? LUA_pd->bricks->find(item->displayBrickID) : nullptr;
+	if (brick)
+		LUA_pd->bricks->pushLua(L, brick);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
 static int LUA_itemGetHolder(lua_State* L)
 {
 	scope("(LUA) item:getHolder");
@@ -682,6 +722,13 @@ static int LUA_clientAddItem(lua_State* L)
 		return 1;
 	}
 
+	if (item->display)
+	{
+		error("client:addItem was given a display item, which stays over its brick: make them one of the same type with createItem instead");
+		lua_pushnil(L);
+		return 1;
+	}
+
 	int added = client->addItem(LUA_pd, item, slot);
 	if (added == -1)
 		lua_pushnil(L);
@@ -922,6 +969,8 @@ void registerItemFunctions(lua_State* L)
 
 	luaL_Reg itemRegs[] = {
 		{ "isHeld", LUA_itemIsHeld },
+		{ "isDisplay", LUA_itemIsDisplay },
+		{ "getDisplayBrick", LUA_itemGetDisplayBrick },
 		{ "getHolder", LUA_itemGetHolder },
 		{ "getSlot", LUA_itemGetSlot },
 		{ "isEquipped", LUA_itemIsEquipped },

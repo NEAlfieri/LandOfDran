@@ -633,6 +633,7 @@ void BrickTypes::load(const std::string& typesFolder)
 		std::string subCategory = "";
 		bool listed = true;
 		VehiclePart vehiclePart = VehiclePart_None;
+		bool vehicleSpawn = false;
 	};
 	std::vector<NamedFile> namedFiles;
 	std::unordered_set<std::string> claimedFiles;
@@ -694,6 +695,10 @@ void BrickTypes::load(const std::string& typesFolder)
 			else if (part == "seat")
 				vehiclePart = VehiclePart_Seat;
 
+			//Also ours: a brick whose wrench dialog picks a vehicle to keep spawned above it
+			std::string spawn = lowercase(field("vehiclespawn"));
+			bool vehicleSpawn = spawn == "true" || spawn == "1";
+
 			if (!claimedFiles.insert(blb).second)
 			{
 				//test.cs names most of the same files, and its names stay for old saves, but it has no icons: Blockland's are named after the ui name ("25 Ramp 1x.png" beside 1x3ramp.blb) so only the datablock's iconName finds them
@@ -713,11 +718,14 @@ void BrickTypes::load(const std::string& typesFolder)
 						claimed.subCategory = blocklandTextToUtf8(field("subcategory"));
 						claimed.listed = !field("category").empty();
 					}
+
+					if (vehicleSpawn)
+						claimed.vehicleSpawn = true;
 				}
 				continue;
 			}
 
-			namedFiles.push_back({ uiName, blb, resolve(csPath, field("iconname"), ".png"), blocklandTextToUtf8(field("category")), blocklandTextToUtf8(field("subcategory")), !field("category").empty(), vehiclePart });
+			namedFiles.push_back({ uiName, blb, resolve(csPath, field("iconname"), ".png"), blocklandTextToUtf8(field("category")), blocklandTextToUtf8(field("subcategory")), !field("category").empty(), vehiclePart, vehicleSpawn });
 		}
 	}
 
@@ -770,6 +778,7 @@ void BrickTypes::load(const std::string& typesFolder)
 			type->subCategory = named.subCategory;
 			type->listed = named.listed;
 			type->vehiclePart = named.vehiclePart;
+			type->vehicleSpawn = named.vehicleSpawn;
 			type->blbPath = named.blb.string();
 			type->iconPath = icon;
 			type->width = width;

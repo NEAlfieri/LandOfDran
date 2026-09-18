@@ -10,6 +10,8 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		0-255 bytes	-	name
 		Then		-	BrickAttachments::write
 		4 bytes		-	net ID of the light the brick already has, NO_ID for none
+		1 byte		-	how many vehicle spawns follow, 0 unless the brick is a Vehicle Spawn brick
+		Each		-	a length byte and the name of a vehicle spawn the dialog can pick
 	*/
 
 	if (cmdArgs.gameState != InGame)
@@ -45,6 +47,39 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 	memcpy(&editing.lightID, packet->data + at, sizeof(netIDType));
 	at += sizeof(netIDType);
 
+	//The vehicles a Vehicle Spawn brick can pick from, which only the server knows, see registerVehicleSpawn
+	std::vector<std::string> vehicleSpawns;
+	if (at >= packet->dataLength)
+	{
+		error("Wrench dialog packet was too short");
+		return true;
+	}
+	size_t spawnCount = packet->data[at++];
+	for (size_t a = 0; a < spawnCount; a++)
+	{
+		if (at >= packet->dataLength)
+		{
+			error("Wrench dialog packet was too short");
+			return true;
+		}
+		size_t spawnLength = packet->data[at++];
+		if (at + spawnLength > packet->dataLength)
+		{
+			error("Wrench dialog packet was too short");
+			return true;
+		}
+		vehicleSpawns.emplace_back((char*)packet->data + at, spawnLength);
+		at += spawnLength;
+	}
+
+	//Every item type the server has, by script name with the name its item bar shows, for the Item section to pick from
+	std::vector<std::pair<std::string, std::string>> itemTypes;
+	for (const std::shared_ptr<DynamicType>& type : simulation.dynamicTypes)
+	{
+		if (type && type->isItemType)
+			itemTypes.emplace_back(type->scriptName, type->itemName.empty() ? type->scriptName : type->itemName);
+	}
+
 	std::string label = "Brick";
 	if (const Brick* brick = simulation.bricks ? simulation.bricks->find(editing.brickID) : nullptr)
 	{
@@ -53,6 +88,7 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 		{
 			label = type->uiName;
 			editing.part = type->vehiclePart;
+			editing.vehicleSpawnBrick = type->vehicleSpawn;
 		}
 		else
 			label = std::to_string(brick->width) + "x" + std::to_string(brick->length) + " brick, " + std::to_string(brick->height) + (brick->height == 1 ? " plate" : " plates") + " tall";
@@ -62,7 +98,7 @@ bool OpenWrenchDialogPacket::applyPacket(const ClientProgramData& pd, Simulation
 	if (!editing.attachments.hasLight)
 		editing.attachments.resetLight();
 
-	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames(), pd.audio->getEffectNames());
+	pd.wrenchDialog->openFor(editing, label, pd.audio->getMusicNames(), pd.particles->getEmitterTypeNames(), pd.audio->getEffectNames(), vehicleSpawns, itemTypes);
 	pd.context->setMouseLock(false);
 
 	return true;

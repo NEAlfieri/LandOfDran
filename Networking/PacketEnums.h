@@ -90,6 +90,7 @@ enum FromClientPacketType : unsigned char
 	PaintCanRequest = 25,	//Whether the client's paint palette wants a paint can in their hand, see Networking/PacketsFromClient/Inventory.cpp
 	PrintSubmit = 26,		//The print the client picked in the print menu the server last sent them, see Networking/PacketsFromClient/Print.cpp
 	FreeCameraRequest = 27,	//Whether the client's camera has come loose from their player to fly around, see Networking/PacketsFromClient/FreeCamera.cpp
+	SeatCycleRequest = 28,	//The client pressed their next seat key in a vehicle, so they move to its next free seat, see Networking/PacketsFromClient/SeatCycle.cpp
 };
 
 //Flags byte after the mask of a ClickDetails packet
@@ -109,6 +110,7 @@ enum DynamicKind : unsigned char
 //Flags byte of an item's state, see Item::writeState
 #define ItemFlag_Held 1				//In someone's inventory
 #define ItemFlag_Equipped 2			//In their hand: their item bar is out with its slot picked
+#define ItemFlag_Display 4			//A copy floating over a brick for players to take one of, spinning and colliding with nothing, see Item::display
 
 //Second flags byte of a dynamic in UpdateSimObjects and ControlledPhysics packets
 #define DynamicExtra_Look 1			//2 bytes follow: where a player looks, see Dynamic::lookDirection

@@ -265,6 +265,21 @@ bool Vehicle::drive(bool forwardHeld, bool backwardHeld, bool leftHeld, bool rig
 	return speeding;
 }
 
+void Vehicle::coast()
+{
+	if (!raycastVehicle)
+		return;
+
+	throwsDirt = false;
+
+	for (int a = 0; a < (int)wheels.size(); a++)
+	{
+		raycastVehicle->setBrake(0.0f, a);
+		raycastVehicle->setSteeringValue(0.0f, a);
+		raycastVehicle->applyEngineForce(0.0f, a);
+	}
+}
+
 void Vehicle::park()
 {
 	if (!raycastVehicle)

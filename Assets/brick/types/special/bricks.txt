@@ -71,4 +71,6 @@ datablock fxDTSBrickData(brickvehicleSpawnData)
 	subCategory = "";
 	uiName = "Vehicle Spawn";
 	iconName = "./Vehicle Spawn";
+	//Our own field: its wrench dialog picks a vehicle that's kept spawned above it, see BrickAttachments::vehicleSpawnName
+	vehicleSpawn = "true";
 };

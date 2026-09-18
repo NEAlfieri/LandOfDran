@@ -274,6 +274,18 @@ inline ENetPacket* makeFreeCameraPacket(bool on)
 
 /*
 	1 byte		-	packet type
+
+	Pressed the next seat key while riding a vehicle
+*/
+inline ENetPacket* makeSeatCyclePacket()
+{
+	ENetPacket* ret = enet_packet_create(NULL, 1, getFlagsFromChannel(OtherReliable));
+	ret->data[0] = (unsigned char)SeatCycleRequest;
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
 */
 inline ENetPacket* makePlayerGrabPacket()
 {
@@ -354,12 +366,14 @@ inline ENetPacket* makeVehicleWrenchSubmitPacket(netIDType vehicleID, const Bric
 	bytes.resize(1 + sizeof(netIDType));
 	memcpy(bytes.data() + 1, &vehicleID, sizeof(netIDType));
 
-	//Its music, horn, and headlight as the light; a vehicle has no emitter or wheel to speak of
+	//Its music, horn, and headlight as the light; a vehicle has no emitter or wheel to speak of, and spawns nothing
 	BrickAttachments settings = attachments;
 	settings.emitterName = "";
 	settings.hasWheel = false;
 	settings.hasSteering = false;
 	settings.lightIsHeadlight = false;
+	settings.vehicleSpawnName = "";
+	settings.itemSpawnName = "";
 	settings.write(bytes);
 
 	return enet_packet_create(bytes.data(), bytes.size(), getFlagsFromChannel(OtherReliable));

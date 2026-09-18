@@ -23,6 +23,33 @@ static void nameCombo(const char* label, std::string& picked, const std::vector<
 	ImGui::EndCombo();
 }
 
+//A dropdown with None first for picking an item type, shown by the name its item bar shows but picked by its script name
+static void itemCombo(const char* label, std::string& picked, const std::vector<std::pair<std::string, std::string>>& items)
+{
+	std::string shown = picked.empty() ? "None" : picked;
+	for (const auto& [scriptName, uiName] : items)
+	{
+		if (scriptName == picked)
+			shown = uiName;
+	}
+
+	if (!ImGui::BeginCombo(label, shown.c_str()))
+		return;
+
+	if (ImGui::Selectable("None", picked.empty()))
+		picked = "";
+
+	for (size_t a = 0; a < items.size(); a++)
+	{
+		ImGui::PushID((int)a);
+		if (ImGui::Selectable(items[a].second.c_str(), items[a].first == picked))
+			picked = items[a].first;
+		ImGui::PopID();
+	}
+
+	ImGui::EndCombo();
+}
+
 /*
 	A light's direction as the dialog's yaw and pitch see it: for a brick that's the world, where yaw 0 is +z, and for a vehicle
 	it's turned so yaw 0 is the way the vehicle drives, in its body's space, which is the space its headlight's direction is kept in
@@ -158,6 +185,11 @@ void WrenchDialog::applyCopy()
 
 	copyLight(to, from);
 	to.emitterName = from.emitterName;
+	to.itemSpawnName = from.itemSpawnName;
+
+	//Only a Vehicle Spawn brick can spawn a vehicle
+	if (editing.vehicleSpawnBrick)
+		to.vehicleSpawnName = from.vehicleSpawnName;
 
 	if (editing.part == VehiclePart_Wheel && from.hasWheel)
 		to.wheel = from.wheel;
@@ -166,7 +198,8 @@ void WrenchDialog::applyCopy()
 		to.steering = from.steering;
 }
 
-void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds)
+void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds,
+	const std::vector<std::string>& vehicleSpawns, const std::vector<std::pair<std::string, std::string>>& items)
 {
 	//Opening one dialog right on top of another still counts as closing the first
 	stashCopy();
@@ -180,6 +213,8 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	musicNames = music;
 	emitterNames = emitters;
 	soundNames = sounds;
+	vehicleSpawnNames = vehicleSpawns;
+	itemTypes = items;
 
 	//Applying a wheel or steering wheel's dialog keeps its settings, even the defaults it opened with, and the horn it shows is the one it gets
 	if (editing.part == VehiclePart_Wheel)
@@ -201,6 +236,18 @@ void WrenchDialog::openFor(const WrenchSubmission& settings, const std::string& 
 	const std::string& emitterName = editing.attachments.emitterName;
 	if (!emitterName.empty() && std::find(emitterNames.begin(), emitterNames.end(), emitterName) == emitterNames.end())
 		emitterNames.push_back(emitterName);
+
+	//Same for a vehicle spawn or item type the server has since lost, so applying keeps them
+	const std::string& vehicleSpawnName = editing.attachments.vehicleSpawnName;
+	if (!vehicleSpawnName.empty() && std::find(vehicleSpawnNames.begin(), vehicleSpawnNames.end(), vehicleSpawnName) == vehicleSpawnNames.end())
+		vehicleSpawnNames.push_back(vehicleSpawnName);
+
+	const std::string& itemSpawnName = editing.attachments.itemSpawnName;
+	bool itemListed = false;
+	for (const auto& [scriptName, uiName] : itemTypes)
+		itemListed = itemListed || scriptName == itemSpawnName;
+	if (!itemSpawnName.empty() && !itemListed)
+		itemTypes.emplace_back(itemSpawnName, itemSpawnName);
 
 	glm::vec3 direction = directionToDialog(editing.attachments.lightDirection, editing.vehicleID != NO_ID ? editing.vehicleForward : glm::vec3(0, 0, 1));
 	lightPitch = glm::degrees(std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
@@ -482,6 +529,30 @@ void WrenchDialog::render(ImGuiIO* io)
 			ImGui::TextDisabled("The server has no emitters");
 		else
 			nameCombo("Type##Emitter", settings.emitterName, emitterNames);
+	}
+
+	//A Vehicle Spawn brick keeps a vehicle above it, from whatever the server's scripts registered
+	if (!forVehicle && editing.vehicleSpawnBrick && sectionHeader("Vehicle spawn"))
+	{
+		if (vehicleSpawnNames.empty())
+			ImGui::TextDisabled("The server has no vehicles to spawn");
+		else
+		{
+			nameCombo("Vehicle", settings.vehicleSpawnName, vehicleSpawnNames);
+			tooltip("Spawned above the brick facing the way it does. Another comes once it's destroyed, and removing the brick removes it");
+		}
+	}
+
+	//Any brick can offer an item: a copy of it floats over the brick, and clicking it hands out one
+	if (!forVehicle && sectionHeader("Item"))
+	{
+		if (itemTypes.empty())
+			ImGui::TextDisabled("The server has no items");
+		else
+		{
+			itemCombo("Item##Spawn", settings.itemSpawnName, itemTypes);
+			tooltip("A copy floats over the brick, spinning, for anyone to click and take one of, as long as they have an empty item slot");
+		}
 	}
 
 	//A model vehicle has no bricks to save, see WrenchSubmission::madeOfBricks

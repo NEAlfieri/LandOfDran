@@ -11,6 +11,10 @@
 //8 is a print in saves, see Bricks/BrickSaves.cpp, so the vehicle horn and headlight take the last bit
 #define BrickAttachment_Horn 128
 
+//The first byte is full, so what a brick spawns rides in a second flags byte, see BrickAttachments::getExtraFlags
+#define BrickAttachmentExtra_VehicleSpawn 1
+#define BrickAttachmentExtra_ItemSpawn 2
+
 //How a wheel brick's wheel drives once its bricks are sliced into a vehicle, from the old game's wheel wrench dialog
 struct WheelSettings
 {
@@ -102,14 +106,37 @@ struct BrickAttachments
 	std::string hornName = "";
 	bool lightIsHeadlight = false;
 
+	/*
+		The vehicle a Vehicle Spawn brick keeps in the world: the name Lua's registerVehicleSpawn gave a spawner, "" for none
+		The engine spawns it above the brick, spawns another whenever it's destroyed, and removes it with the brick, see LuaFunctions/BrickLua.h
+	*/
+	std::string vehicleSpawnName = "";
+
+	/*
+		An item type's script name, "" for none: a copy of that item floats over the brick, spinning, not colliding with anything,
+		and a player clicks it to take one of their own (Inventory.lua does the taking), see Item::display
+	*/
+	std::string itemSpawnName = "";
+
 	//Server only: the loop, light, and emitter made from the settings above, never saved or sent
 	unsigned int musicLoopID = NO_ID;
 	netIDType lightID = NO_ID;
 	netIDType emitterID = NO_ID;
 
+	//Server only: the vehicle spawned for vehicleSpawnName and the display item made for itemSpawnName, NO_ID for none yet
+	netIDType spawnedVehicleID = NO_ID;
+	netIDType displayItemID = NO_ID;
+
+	//Server only: getTicksMS before which the vehicle isn't spawned again, so a spawner that keeps failing isn't called every tick
+	unsigned int nextVehicleSpawnMS = 0;
+
 	//BrickAttachment bits for the parts it has
 	unsigned char getFlags() const;
-	bool isEmpty() const { return getFlags() == 0; }
+
+	//BrickAttachmentExtra bits for the spawn parts it has
+	unsigned char getExtraFlags() const;
+
+	bool isEmpty() const { return getFlags() == 0 && getExtraFlags() == 0; }
 
 	//Keeps every value in the range the loop, light, and emitter take them in, and names to maxNameLength
 	void clampValues();
@@ -126,13 +153,17 @@ struct BrickAttachments
 		Light: lightFloatCount floats, color, brightness, flicker, corona width, cone angle, direction, spin, offset, blink speed, blink strength
 		Emitter: name length byte, name
 		Horn: name length byte, name, then a byte with 1 for a headlight and 2 for a horn that was set (see hasHorn)
+		Then the parts in getExtraFlags, vehicle spawn and item spawn, each a name length byte and the name
 	*/
 	void writeParts(const std::function<void(const void*, size_t)>& writeBytes) const;
 
-	//Reads the parts flags says follow, false if readBytes runs out. lightFloats is how many floats the light part has, older saves have fewer
-	bool readParts(unsigned char flags, const std::function<bool(void*, size_t)>& readBytes, size_t lightFloats = lightFloatCount);
+	/*
+		Reads the parts flags and extraFlags say follow, false if readBytes runs out
+		lightFloats is how many floats the light part has, older saves have fewer, and saves from before spawns have no extra flags at all
+	*/
+	bool readParts(unsigned char flags, unsigned char extraFlags, const std::function<bool(void*, size_t)>& readBytes, size_t lightFloats = lightFloatCount);
 
-	//For packets: the flags byte then writeParts
+	//For packets: the flags byte, the extra flags byte, then writeParts
 	void write(std::vector<unsigned char>& bytes) const;
 	bool read(const unsigned char* data, size_t length, size_t& at);
 };

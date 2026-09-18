@@ -405,6 +405,7 @@ add_executable (LandOfDran
 "Networking/PacketsFromClient/PaintChoice.cpp"
 "Networking/PacketsFromClient/FlashlightRequest.cpp"
 "Networking/PacketsFromClient/FreeCamera.cpp"
+"Networking/PacketsFromClient/SeatCycle.cpp"
 "Networking/PacketsFromClient/AppearanceChoice.cpp"
 "GameLoop/PlayerAppearance.h"
 "Interface/AppearanceEditor.h"

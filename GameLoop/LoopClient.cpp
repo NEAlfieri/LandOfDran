@@ -211,6 +211,48 @@ void LoopClient::hostSinglePlayer(ExecutableArguments& cmdArgs, std::shared_ptr<
 	connectToServer("127.0.0.1", DEFAULT_PORT, userName, cmdArgs, settings);
 }
 
+void LoopClient::updateDisplayItemHighlight()
+{
+	//How far from our player a click takes an item from a brick offering one, the same reach Inventory.lua allows, and how far the crosshair looks for one
+	static constexpr float displayItemReach = 10.0f;
+	static constexpr float displayItemLook = 60.0f;
+	//A faint outline, enough to say it can be taken
+	static const glm::vec4 displayItemOutline = glm::vec4(1.0f, 1.0f, 1.0f, 0.35f);
+	static constexpr float displayItemOutlineThickness = 0.12f;
+
+	std::shared_ptr<Dynamic> hovered = nullptr;
+	std::shared_ptr<Dynamic> player = getOwnPlayer();
+	if (simulation.dynamics && simulation.camera && pd.physicsWorld && player && player->body && pd.context->getMouseLocked())
+	{
+		glm::vec3 start = simulation.camera->getPosition();
+		btVector3 hitPosition, hitNormal;
+		btRigidBody* hit = pd.physicsWorld->doRaycast(g2b3(start), g2b3(start + simulation.camera->getDirection() * displayItemLook), player->body, hitPosition, hitNormal);
+		if (hit && hit->getUserIndex() == dynamicBody)
+		{
+			std::shared_ptr<Dynamic> dynamic = dynamicFromBody(hit);
+			if (dynamic && dynamic->getKind() == DynamicKind_Item && std::static_pointer_cast<Item>(dynamic)->display
+				&& glm::distance(b2g3(hitPosition), b2g3(player->getPosition())) <= displayItemReach)
+				hovered = dynamic;
+		}
+	}
+
+	netIDType hoveredID = hovered ? hovered->getID() : NO_ID;
+	if (hoveredID == highlightedDisplayItem)
+		return;
+
+	//The last one loses its outline, if it's still around
+	if (highlightedDisplayItem != NO_ID && simulation.dynamics)
+	{
+		if (std::shared_ptr<Dynamic> last = simulation.dynamics->find(highlightedDisplayItem))
+			last->setHighlight(glm::vec4(0), 0.0f);
+	}
+
+	if (hovered)
+		hovered->setHighlight(displayItemOutline, displayItemOutlineThickness);
+
+	highlightedDisplayItem = hoveredID;
+}
+
 //Puts the ghost brick on whatever the camera is pointing at, if anything is in reach
 static void spawnGhostFromCamera(ClientProgramData& pd, Simulation& simulation)
 {
@@ -709,6 +751,13 @@ void LoopClient::placeHeldItems(float deltaT)
 		{
 			if (item->getHidden())
 				item->setHidden(false);
+
+			//An item a brick offers turns slowly on the spot, standing up the way the item bar's icons do, whatever way its body is turned
+			if (item->display && item->renderedTransformInitialized)
+			{
+				float spin = (float)fmod(getTicksMS() / Item::displaySpinMS, 1.0) * 6.2831853f;
+				item->setDrawnTransform(item->renderedPosition, glm::angleAxis(spin, glm::vec3(0, 1, 0)));
+			}
 			continue;
 		}
 
@@ -1629,6 +1678,10 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 	//Like undo, Ctrl plus the bound key, which is W by default, so walking doesn't drop anything
 	if (pd.input->pollCommand(DropItem) && ctrlDown && client)
 		client->send(makeDropItemPacket(pd.itemHotbar->getSelected()), OtherReliable);
+
+	//The next free seat of the vehicle we ride, the server picks which
+	if (pd.input->pollCommand(CycleSeat) && client && getRiddenVehicle())
+		client->send(makeSeatCyclePacket(), OtherReliable);
 }
 
 void LoopClient::predictLocalCollisions()
@@ -2444,6 +2497,7 @@ void LoopClient::renderEverything(float deltaT)
 	simulation.camera->render(pd.shaders, deltaT, pd.physicsWorld);
 
 	placeHeldItems(deltaT);
+	updateDisplayItemHighlight();
 
 	/*
 		Anything a predicted click started keeps going here: its later sounds, and its muzzle flash and

@@ -130,6 +130,11 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 			freeCameraRequest(source, this, packet, pd);
 			return;
 		}
+		case SeatCycleRequest:
+		{
+			seatCycleRequest(source, this, packet, pd);
+			return;
+		}
 		case PlayerGrab:
 		{
 			playerGrab(source, this, packet, pd);

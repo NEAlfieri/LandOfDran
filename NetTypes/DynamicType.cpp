@@ -115,13 +115,13 @@ bool DynamicType::loadFromPacket(ENetPacket const* const packet, const ClientPro
 		model->addAnimation(anim, animID);
 	}
 
-	//Item types, with their name, icon, and how they sit in a hand
+	//Item types, with their name, icon, script name (which the wrench dialog picks an item to offer by), and how they sit in a hand
 	if (byteIterator < (int)packet->dataLength && packet->data[byteIterator] == 1)
 	{
 		byteIterator++;
 		isItemType = true;
 
-		for (std::string* text : { &itemName, &itemIconPath })
+		for (std::string* text : { &itemName, &itemIconPath, &scriptName })
 		{
 			if (byteIterator >= (int)packet->dataLength)
 				break;
@@ -213,10 +213,10 @@ ENetPacket* DynamicType::createTypePacket() const
 		animationSize += 5 * sizeof(float) + sizeof(int) + 1 + std::min(animation.name.length(), (size_t)255);
 	animationSize++; //Extra byte for number of animations
 
-	//A byte for whether it's an item type, then its name and icon each with a length byte, grip, and rotation
+	//A byte for whether it's an item type, then its name, icon, and script name each with a length byte, grip, and rotation
 	unsigned int itemSize = 1;
 	if (isItemType)
-		itemSize += 2 + std::min(itemName.length(), (size_t)255) + std::min(itemIconPath.length(), (size_t)255) + sizeof(float) * 7;
+		itemSize += 3 + std::min(itemName.length(), (size_t)255) + std::min(itemIconPath.length(), (size_t)255) + std::min(scriptName.length(), (size_t)255) + sizeof(float) * 7;
 
 	//unsigned int packetSize = model->loadedPath.length() + sizeof(netIDType) + 3 + PositionBytes + animationSize;
 	unsigned int packetSize = model->loadedPath.length() + sizeof(netIDType) + 3 + sizeof(float)*3 + animationSize + itemSize;
@@ -283,7 +283,7 @@ ENetPacket* DynamicType::createTypePacket() const
 
 	if (isItemType)
 	{
-		for (const std::string* text : { &itemName, &itemIconPath })
+		for (const std::string* text : { &itemName, &itemIconPath, &scriptName })
 		{
 			size_t length = std::min(text->length(), (size_t)255);
 			ret->data[byteIterator] = (unsigned char)length;

@@ -29,11 +29,14 @@ struct WrenchSubmission
 	//Client only, never sent back: the brick's light as the server has it, or the vehicle's headlight while it's on, so the dialog can leave it out
 	//while it shines the one being edited instead, see WrenchDialog::getLightPreview
 	netIDType lightID = NO_ID;
+
+	//Client only, never sent back: whether the brick is a Vehicle Spawn brick, which gets a section picking the vehicle it keeps spawned above it
+	bool vehicleSpawnBrick = false;
 };
 
 /*
-	Changes a brick's collision, name, music loop, light, and emitter. Its print isn't here, the print gun's menu
-	puts that on, see Interface/PrintMenu.h
+	Changes a brick's collision, name, music loop, light, emitter, and the item it offers, and on a Vehicle Spawn brick the vehicle it keeps
+	spawned. Its print isn't here, the print gun's menu puts that on, see Interface/PrintMenu.h
 	For a vehicle: its music, horn, and headlight, and a steering wheel brick gets the horn and a headlight too, for once it's sliced
 	The server opens it when a player wrenches a brick, or when Lua calls client:openWrenchDialog, see OpenWrenchDialogPacket
 */
@@ -49,6 +52,12 @@ class WrenchDialog : public Window
 	std::vector<std::string> emitterNames;
 	//Sounds that aren't music, for the horn
 	std::vector<std::string> soundNames;
+
+	//What a Vehicle Spawn brick can keep spawned, from the server's registerVehicleSpawn list, plus the brick's own pick if it isn't listed
+	std::vector<std::string> vehicleSpawnNames;
+
+	//Every item type by script name, with the name the item bar shows for it, for the Item section
+	std::vector<std::pair<std::string, std::string>> itemTypes;
 
 	//The spotlight's direction as sliders, in degrees, a pitch of -90 points straight down
 	float lightYaw = 0;
@@ -87,8 +96,12 @@ class WrenchDialog : public Window
 
 	public:
 
-	//Shows a brick's settings from the server, replacing anything that was being edited. sounds are the ones that aren't music, for a horn
-	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds);
+	/*
+		Shows a brick's settings from the server, replacing anything that was being edited. sounds are the ones that aren't music, for a horn
+		vehicleSpawns are what a Vehicle Spawn brick can pick, and items every item type as its script name and the name its item bar shows
+	*/
+	void openFor(const WrenchSubmission& settings, const std::string& label, const std::vector<std::string>& music, const std::vector<std::string>& emitters, const std::vector<std::string>& sounds,
+		const std::vector<std::string>& vehicleSpawns = {}, const std::vector<std::pair<std::string, std::string>>& items = {});
 
 	//True once after Apply is clicked, with what to send
 	bool takeSubmission(WrenchSubmission& submission);

@@ -37,11 +37,18 @@ unsigned char BrickAttachments::getFlags() const
 		(hasWheel ? BrickAttachment_Wheel : 0) | (hasSteering ? BrickAttachment_Steering : 0) | (hasHorn || lightIsHeadlight ? BrickAttachment_Horn : 0);
 }
 
+unsigned char BrickAttachments::getExtraFlags() const
+{
+	return (vehicleSpawnName.empty() ? 0 : BrickAttachmentExtra_VehicleSpawn) | (itemSpawnName.empty() ? 0 : BrickAttachmentExtra_ItemSpawn);
+}
+
 void BrickAttachments::clampValues()
 {
 	musicName = musicName.substr(0, maxNameLength);
 	emitterName = emitterName.substr(0, maxNameLength);
 	hornName = hornName.substr(0, maxNameLength);
+	vehicleSpawnName = vehicleSpawnName.substr(0, maxNameLength);
+	itemSpawnName = itemSpawnName.substr(0, maxNameLength);
 
 	//Same ranges as Lua's startSoundLoop
 	musicVolume = std::clamp(finiteOr(musicVolume, 1.0f), 0.0f, 1.0f);
@@ -147,9 +154,15 @@ void BrickAttachments::writeParts(const std::function<void(const void*, size_t)>
 		unsigned char bits = (lightIsHeadlight ? 1 : 0) | (hasHorn ? 2 : 0);
 		writeBytes(&bits, 1);
 	}
+
+	if (!vehicleSpawnName.empty())
+		writeName(vehicleSpawnName);
+
+	if (!itemSpawnName.empty())
+		writeName(itemSpawnName);
 }
 
-bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(void*, size_t)>& readBytes, size_t lightFloats)
+bool BrickAttachments::readParts(unsigned char flags, unsigned char extraFlags, const std::function<bool(void*, size_t)>& readBytes, size_t lightFloats)
 {
 	auto readName = [&](std::string& name) -> bool
 	{
@@ -164,6 +177,8 @@ bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(v
 	musicName = "";
 	emitterName = "";
 	hornName = "";
+	vehicleSpawnName = "";
+	itemSpawnName = "";
 	hasHorn = false;
 	lightIsHeadlight = false;
 	hasLight = flags & BrickAttachment_Light;
@@ -235,12 +250,19 @@ bool BrickAttachments::readParts(unsigned char flags, const std::function<bool(v
 		hasHorn = bits & 2;
 	}
 
+	if ((extraFlags & BrickAttachmentExtra_VehicleSpawn) && !readName(vehicleSpawnName))
+		return false;
+
+	if ((extraFlags & BrickAttachmentExtra_ItemSpawn) && !readName(itemSpawnName))
+		return false;
+
 	return true;
 }
 
 void BrickAttachments::write(std::vector<unsigned char>& bytes) const
 {
 	bytes.push_back(getFlags());
+	bytes.push_back(getExtraFlags());
 	writeParts([&bytes](const void* data, size_t count)
 	{
 		bytes.insert(bytes.end(), (const unsigned char*)data, (const unsigned char*)data + count);
@@ -249,11 +271,12 @@ void BrickAttachments::write(std::vector<unsigned char>& bytes) const
 
 bool BrickAttachments::read(const unsigned char* data, size_t length, size_t& at)
 {
-	if (at >= length)
+	if (at + 1 >= length)
 		return false;
 
 	unsigned char flags = data[at++];
-	return readParts(flags, [&](void* out, size_t count)
+	unsigned char extraFlags = data[at++];
+	return readParts(flags, extraFlags, [&](void* out, size_t count)
 	{
 		if (at + count > length)
 			return false;

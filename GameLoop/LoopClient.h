@@ -54,6 +54,12 @@ class LoopClient
 	//The mouse goes back to playing the frame the wrench dialog closes
 	bool wrenchDialogWasOpen = false;
 
+	//The display item our crosshair is on within reach, outlined so it's clear it can be taken, NO_ID for none, see updateDisplayItemHighlight
+	netIDType highlightedDisplayItem = NO_ID;
+
+	//Outlines the display item (an item a brick offers, see Item::display) under our crosshair within reach, and takes the outline off the last one
+	void updateDisplayItemHighlight();
+
 	//Same for the print menu the print gun opens
 	bool printMenuWasOpen = false;
 

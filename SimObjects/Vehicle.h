@@ -170,6 +170,13 @@ class Vehicle : public SimObject
 	//Server: what a model vehicle weighs, the way a brick vehicle weighs one per colliding brick
 	float bodyMass = 40.0f;
 
+	/*
+		Server: what Lua's radiusImpulse pushes it as if it weighed, 0 for its real mass. A model vehicle's mass is picked for how it
+		drives (the jeep's 150 is what keeps it planted), which would leave it barely moving where a brick car of a few dozen bricks
+		flies, so spawnModelVehicle gives it a weight like a brick car's here instead, see its impulseMass
+	*/
+	float impulseMass = 0.0f;
+
 	//Whether it's a model rather than bricks
 	bool isModelVehicle() const { return bodyTypeID != NO_ID; }
 
@@ -196,6 +203,9 @@ class Vehicle : public SimObject
 
 	//Server: net ID of the client that sliced it, NO_ID if Lua did
 	netIDType builderID = NO_ID;
+
+	//Server: the Vehicle Spawn brick that spawned it and spawns another once it's gone, NO_ID for a vehicle that didn't come from one, see BrickAttachments::vehicleSpawnName
+	netIDType spawnBrickID = NO_ID;
 
 	//Server: whether Lua's radiusImpulse breaks its bricks off, see vehicle:setDestructable
 	bool destructable = false;
@@ -262,6 +272,9 @@ class Vehicle : public SimObject
 
 	//Server: no engine or steering, and every wheel's brakes on, for a vehicle nobody is driving
 	void park();
+
+	//Server: no engine, steering, or brakes either, for a vehicle nobody drives that a player is pushing along, see LoopServer::pushVehicle
+	void coast();
 
 	/*
 		Server: stands it back on its wheels facing the way it was, still, and lifts it clear of whatever it was stuck in,

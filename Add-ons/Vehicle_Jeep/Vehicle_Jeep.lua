@@ -10,7 +10,8 @@
 
 		dofile("Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua")
 
-	and then spawnJeep() puts one in the world.
+	and then spawnJeep() puts one in the world, and a Vehicle Spawn brick wrenched to "Jeep" keeps one
+	above itself, see registerVehicleSpawn at the bottom.
 
 	Where everything on it goes is read out of the shape's own nodes rather than written down here,
 	the way jeep_*.cs reads them: hub0 to hub3 are the wheels and Mount0 to Mount6 are the seven
@@ -186,3 +187,9 @@ function spawnJeep(x, y, z)
 		builder = builder
 	})
 end
+
+--[[
+	A Vehicle Spawn brick's wrench dialog lists this as "Jeep": the engine calls spawnJeep(x, y, z, brick) with a spot
+	above the brick, turns the jeep to face the way the brick does, and calls it again whenever that jeep is destroyed
+]]
+registerVehicleSpawn("Jeep", "spawnJeep")

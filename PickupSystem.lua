@@ -123,6 +123,11 @@ function pickupClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 		return client, posX, posY, posZ, dirX, dirY, dirZ, mask
 	end
 
+	--The item a brick offers stays over its brick, Inventory.lua hands out copies of it
+	if result:isItem() and result:isDisplay() then
+		return client, posX, posY, posZ, dirX, dirY, dirZ, mask
+	end
+
 	pickupItem(client, result)
 
 	return client, posX, posY, posZ, dirX, dirY, dirZ, mask

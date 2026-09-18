@@ -232,6 +232,8 @@ static std::shared_ptr<Vehicle> buildVehicle(ClientData* builder, const std::vec
 			copy.attachments->musicLoopID = NO_ID;
 			copy.attachments->lightID = NO_ID;
 			copy.attachments->emitterID = NO_ID;
+			copy.attachments->spawnedVehicleID = NO_ID;
+			copy.attachments->displayItemID = NO_ID;
 		}
 		return copy;
 	};
@@ -515,6 +517,88 @@ void exitVehicle(ClientData& client, bool callEvent)
 		vehicleEventVetoed("ClientExitVehicle", client, vehicle, seat);
 }
 
+bool switchSeat(ClientData& client, int seat, bool callEvent)
+{
+	std::shared_ptr<Vehicle> vehicle = client.vehicle.lock();
+	if (!LUA_pd || !vehicle || !vehicle->body || seat == client.vehicleSeat)
+		return false;
+
+	bool driving = seat == Vehicle::driverSeat;
+	if (!driving && (seat < 0 || seat >= (int)vehicle->passengerSeats.size()))
+		return false;
+
+	auto seatTaken = [&]() { return driving ? vehicle->driverID != NO_ID : (vehicle->passengerSeats[seat].riderID != NO_ID || vehicle->passengerSeats[seat].broken); };
+	if (seatTaken())
+		return false;
+
+	std::shared_ptr<Dynamic> player = client.controllers.empty() ? nullptr : client.controllers[0].target.lock();
+	if (!player || player->isInWorld())
+		return false;
+
+	if (callEvent && client.client)
+	{
+		if (vehicleEventVetoed("ClientEnterVehicle", client, vehicle, seat))
+			return false;
+
+		if (seatTaken() || client.vehicle.lock() != vehicle || player->isInWorld() || !LUA_pd->vehicles->find(vehicle->getID()))
+			return false;
+	}
+
+	//Out of the old seat
+	int from = client.vehicleSeat;
+	if (from == Vehicle::driverSeat)
+	{
+		vehicle->driverID = NO_ID;
+		vehicle->driver.reset();
+		vehicle->park();
+	}
+	else if (from >= 0 && from < (int)vehicle->passengerSeats.size())
+	{
+		vehicle->passengerSeats[from].riderID = NO_ID;
+		vehicle->passengerSeats[from].rider.reset();
+	}
+
+	//And into the new, the way enterVehicle seats them
+	if (driving)
+	{
+		player->body->setWorldTransform(vehicle->getSeatTransform(false));
+		vehicle->driverID = player->getID();
+		vehicle->driver = client.me;
+	}
+	else
+	{
+		player->body->setWorldTransform(vehicle->getPassengerTransform(seat, *player, player->lookDirection, false));
+		vehicle->passengerSeats[seat].riderID = player->getID();
+		vehicle->passengerSeats[seat].rider = client.me;
+	}
+
+	client.vehicleSeat = seat;
+	vehicle->body->activate();
+
+	if (LUA_server)
+		LUA_server->broadcast(vehicle->makeDriverPacket(), OtherReliable);
+
+	playSoundOn("PlayerMount", player, 1.0f, 1.0f);
+	return true;
+}
+
+int nextFreeSeat(const ClientData& client, const Vehicle& vehicle)
+{
+	//The driver's seat first, then the passenger seats in order, as one ring
+	int seatCount = (int)vehicle.passengerSeats.size() + 1;
+	int current = client.vehicleSeat + 1;
+
+	for (int step = 1; step < seatCount; step++)
+	{
+		int seat = (current + step) % seatCount - 1;
+		bool free = seat == Vehicle::driverSeat ? vehicle.driverID == NO_ID : (vehicle.passengerSeats[seat].riderID == NO_ID && !vehicle.passengerSeats[seat].broken);
+		if (free)
+			return seat;
+	}
+
+	return client.vehicleSeat;
+}
+
 void destroyVehicle(std::shared_ptr<Vehicle> vehicle)
 {
 	if (!vehicle || !LUA_pd)
@@ -566,6 +650,103 @@ void destroyVehicle(std::shared_ptr<Vehicle> vehicle)
 	}
 
 	LUA_pd->vehicles->destroy(vehicle);
+}
+
+bool vehicleSpawnExists(const std::string& name)
+{
+	if (!LUA_pd)
+		return false;
+
+	for (const ServerProgramData::VehicleSpawnType& spawn : LUA_pd->vehicleSpawns)
+	{
+		if (spawn.name == name)
+			return true;
+	}
+	return false;
+}
+
+//Unturned, a brick faces +x, the way an unturned steering wheel drives, see steeringForward
+static glm::vec3 brickFacing(const Brick& brick)
+{
+	float angle = brick.getAngle();
+	return glm::round(glm::vec3(std::cos(angle), 0.0f, -std::sin(angle)));
+}
+
+std::shared_ptr<Vehicle> spawnRegisteredVehicle(const std::string& name, const glm::vec3& position, const Brick* brick)
+{
+	scope("spawnRegisteredVehicle");
+
+	if (!LUA_pd || !brick)
+		return nullptr;
+
+	const ServerProgramData::VehicleSpawnType* spawn = nullptr;
+	for (const ServerProgramData::VehicleSpawnType& registered : LUA_pd->vehicleSpawns)
+	{
+		if (registered.name == name)
+			spawn = &registered;
+	}
+
+	if (!spawn)
+	{
+		error("No vehicle spawn named " + name + " is registered, see registerVehicleSpawn");
+		return nullptr;
+	}
+
+	//Whatever a Lua function that led here left on the stack stays as it was
+	lua_State* L = LUA_pd->luaState;
+	int top = lua_gettop(L);
+
+	lua_getglobal(L, spawn->functionName.c_str());
+	if (!lua_isfunction(L, -1))
+	{
+		lua_settop(L, top);
+		error("Vehicle spawn " + name + " names a function " + spawn->functionName + " that doesn't exist");
+		return nullptr;
+	}
+
+	//The spawner gets where the vehicle goes and the brick putting it there, and gives back the vehicle it made
+	lua_pushnumber(L, position.x);
+	lua_pushnumber(L, position.y);
+	lua_pushnumber(L, position.z);
+	LUA_pd->bricks->pushLua(L, brick);
+	if (lua_pcall(L, 4, 1, 0) != 0)
+	{
+		const char* message = lua_tostring(L, -1);
+		error("Error in vehicle spawn " + name + "'s function " + spawn->functionName + ": " + (message ? message : ""));
+		lua_settop(L, top);
+		return nullptr;
+	}
+
+	std::shared_ptr<Vehicle> vehicle = lua_istable(L, -1) ? LUA_pd->vehicles->popLua(L) : nullptr;
+	lua_settop(L, top);
+
+	if (!vehicle)
+	{
+		error("Vehicle spawn " + name + "'s function " + spawn->functionName + " didn't return a vehicle");
+		return nullptr;
+	}
+
+	//The spawner could have been given a brick that's since been removed, but this one is the world's, so it still exists
+	vehicle->spawnBrickID = brick->netId;
+
+	//Whoever planted the brick owns what it spawns, so /clearvehicles takes it with their others, unless nobody did (Lua, or a save)
+	if (brick->ownerID >= 0)
+		vehicle->builderID = (netIDType)brick->ownerID;
+
+	//Facing the way the brick does, the way a sliced vehicle faces its steering wheel
+	if (vehicle->body)
+	{
+		glm::vec3 facing = brickFacing(*brick);
+		float turn = std::atan2(facing.x, facing.z) - std::atan2(vehicle->forward.x, vehicle->forward.z);
+		btTransform transform = vehicle->body->getWorldTransform();
+		transform.setRotation(btQuaternion(btVector3(0, 1, 0), turn));
+		vehicle->body->setWorldTransform(transform);
+		vehicle->body->setLinearVelocity(btVector3(0, 0, 0));
+		vehicle->body->setAngularVelocity(btVector3(0, 0, 0));
+		vehicle->body->activate();
+	}
+
+	return vehicle;
 }
 
 void sendVehicleState(const ServerProgramData* pd, JoinedClient* client)
@@ -1020,6 +1201,15 @@ static int breakVehicleBricks(const std::shared_ptr<Vehicle>& vehicle, const glm
 	return (int)broken.size();
 }
 
+/*
+	A vehicle is pushed this many times harder than a dynamic of the same mass would be, and its push always has at least this much
+	lift in it (as a fraction of its direction, before it's made unit length again). A car that only gets shoved sideways goes nowhere:
+	its tires' grip eats the whole thing within a frame, so a launcher shell that sends a player flying left a car where it stood
+	The lift hops its wheels clear of the ground, and then the shove has something to work with
+*/
+static constexpr float vehicleImpulseScale = 5.0f;
+static constexpr float vehicleImpulseLift = 0.6f;
+
 static int LUA_radiusImpulse(lua_State* L)
 {
 	scope("(LUA) radiusImpulse");
@@ -1062,23 +1252,33 @@ static int LUA_radiusImpulse(lua_State* L)
 		if (distance > radius)
 			continue;
 
+		//The blast hits the whole vehicle at once, so it's pushed by what it weighed before any bricks came off it
+		float massBefore = 1.0f / vehicle->body->getInvMass();
+
 		if (vehicle->destructable)
 		{
 			brokenBricks += breakVehicleBricks(vehicle, center, strength, radius);
-			if (!vehicle->body || !LUA_pd->vehicles->find(vehicle->getID()))
+			if (!vehicle->body || !LUA_pd->vehicles->find(vehicle->getID()) || vehicle->body->getInvMass() <= 0)
 				continue;
 		}
 
+		//A model vehicle is pushed as if it weighed its impulseMass rather than the mass it drives with, see Vehicle::impulseMass
+		float pushedAs = vehicle->impulseMass > 0.0f ? vehicle->impulseMass : massBefore;
+		float scale = vehicleImpulseScale / (pushedAs * vehicle->body->getInvMass());
 		glm::vec3 direction = impulseDirection(center, b2g3(vehicle->body->getCenterOfMassPosition()));
-		vehicle->body->applyCentralImpulse(g2b3(direction * strength * impulseFalloff(distance, radius)));
+		direction.y = std::max(direction.y, vehicleImpulseLift * (strength < 0 ? -1.0f : 1.0f));
+		direction = glm::normalize(direction);
+		vehicle->body->applyCentralImpulse(g2b3(direction * strength * impulseFalloff(distance, radius) * scale));
 		vehicle->body->activate();
 		pushed++;
 	}
 
 	for (const std::shared_ptr<Dynamic>& dynamic : dynamics)
 	{
-		//Carried items and players riding vehicles go wherever what they're on goes
+		//Carried items and players riding vehicles go wherever what they're on goes, and a display item stays over its brick
 		if (!LUA_pd->dynamics->find(dynamic->getID()) || !dynamic->isInWorld() || dynamic->isSnappedToCursor() || dynamic->body->getInvMass() <= 0)
+			continue;
+		if (dynamic->getKind() == DynamicKind_Item && static_cast<const Item*>(dynamic.get())->display)
 			continue;
 
 		btVector3 low, high;
@@ -1243,6 +1443,13 @@ static int LUA_spawnModelVehicle(lua_State* L)
 		mass = 40.0f;
 	mass = std::clamp(mass, 1.0f, 100000.0f);
 
+	//What radiusImpulse pushes it as, a small brick car's worth unless told otherwise
+	float impulseMass = 30.0f;
+	tableNumber(L, "impulseMass", impulseMass);
+	if (!std::isfinite(impulseMass))
+		impulseMass = 30.0f;
+	impulseMass = std::clamp(impulseMass, 1.0f, 100000.0f);
+
 	glm::vec3 seat(0);
 	tableVector(L, "seat", seat);
 
@@ -1366,6 +1573,7 @@ static int LUA_spawnModelVehicle(lua_State* L)
 	vehicle->bodyHalfExtents = halfExtents;
 	vehicle->bodyOffset = boxOffset;
 	vehicle->bodyMass = mass;
+	vehicle->impulseMass = impulseMass;
 	vehicle->forward = forward;
 	vehicle->steering = steering;
 	vehicle->seat = seat;
@@ -1943,6 +2151,66 @@ static int LUA_vehicleGetBuilder(lua_State* L)
 	return 1;
 }
 
+static int LUA_vehicleGetSpawnBrick(lua_State* L)
+{
+	scope("(LUA) vehicle:getSpawnBrick");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:getSpawnBrick()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	Brick* brick = vehicle->spawnBrickID != NO_ID ? LUA_pd->bricks->find(vehicle->spawnBrickID) : nullptr;
+	if (brick)
+		LUA_pd->bricks->pushLua(L, brick);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+static int LUA_registerVehicleSpawn(lua_State* L)
+{
+	scope("(LUA) registerVehicleSpawn");
+
+	const std::string usage = "registerVehicleSpawn(name, functionName) or registerVehicleSpawn(name, nil)";
+	if (lua_gettop(L) != 2 || lua_type(L, 1) != LUA_TSTRING || !(lua_isnil(L, 2) || lua_type(L, 2) == LUA_TSTRING))
+	{
+		error("Expected " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 1);
+	std::string functionName = lua_isnil(L, 2) ? "" : lua_tostring(L, 2);
+	lua_settop(L, 0);
+
+	if (name.empty() || name.length() > BrickAttachments::maxNameLength)
+	{
+		error("A vehicle spawn's name has to be 1 to " + std::to_string(BrickAttachments::maxNameLength) + " characters: " + usage);
+		return 0;
+	}
+
+	//Registering a name again replaces its function, nil takes it off the list. Bricks already set to it keep the name, and spawn nothing until it's back
+	std::vector<ServerProgramData::VehicleSpawnType>& spawns = LUA_pd->vehicleSpawns;
+	for (size_t a = 0; a < spawns.size(); a++)
+	{
+		if (spawns[a].name != name)
+			continue;
+
+		if (functionName.empty())
+			spawns.erase(spawns.begin() + a);
+		else
+			spawns[a].functionName = functionName;
+		return 0;
+	}
+
+	if (functionName.empty())
+		return 0;
+
+	spawns.push_back({ name, functionName });
+	return 0;
+}
+
 static int LUA_vehicleGetBuilderID(lua_State* L)
 {
 	scope("(LUA) vehicle:getBuilderID");
@@ -2260,6 +2528,7 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 	lua_register(L, "clearAllVehicles", LUA_clearAllVehicles);
 	lua_register(L, "setVehicleDirtEmitter", LUA_setVehicleDirtEmitter);
 	lua_register(L, "radiusImpulse", LUA_radiusImpulse);
+	lua_register(L, "registerVehicleSpawn", LUA_registerVehicleSpawn);
 
 	//Added to the client metatable registerClientFunctions made
 	lua_getglobal(L, "metatable_client");
@@ -2301,6 +2570,7 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "ejectDriver", LUA_vehicleEjectDriver },
 		{ "getBuilder", LUA_vehicleGetBuilder },
 		{ "getBuilderID", LUA_vehicleGetBuilderID },
+		{ "getSpawnBrick", LUA_vehicleGetSpawnBrick },
 		{ "getMusic", LUA_vehicleGetMusic },
 		{ "setMusic", LUA_vehicleSetMusic },
 		{ "getHorn", LUA_vehicleGetHorn },
