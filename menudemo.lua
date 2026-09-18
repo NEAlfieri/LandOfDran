@@ -228,9 +228,13 @@ local function buildPlaza()
 	brick(-half, FLOOR_PLATES, -half, size, PLAZA_HEIGHT, size, C.plaza)
 	brick(-half, FLOOR_PLATES + PLAZA_HEIGHT, -half, size, 1, size, C.plazaTrim)
 
-	--Stepped ramps either side, since a stack of plates reads as a slope well enough at this size
+	--[[
+		Stepped ramps either side, since a stack of plates reads as a slope well enough at this size. One
+		plate up per stud along, which is well under the four plates a walking player steps onto, and keeps
+		the ramps short enough that the jeep's lap passes outside them
+	]]
 	for step = 1, PLAZA_HEIGHT do
-		local depth = 2
+		local depth = 1
 		local z = half + (PLAZA_HEIGHT - step) * depth
 		brick(-half, FLOOR_PLATES, z, size, step, depth, C.plaza)
 		brick(-half, FLOOR_PLATES, -z - depth, size, step, depth, C.plaza)
@@ -249,18 +253,32 @@ local function buildPlaza()
 	createLight(0, (y + 4) * PLATE, 0, 0.55, 0.75, 1.0, 1800, 0, 1.6)
 end
 
---Blocks to run between and shoot from behind, all of them clear of the plaza and its ramps
+--[[
+	Blocks to run between and shoot from behind. They sit either well inside the jeep's lap or right out
+	against the wall, never on it: nobody drives the jeep and it can't steer round anything, so whatever is
+	left in its way is what it spends the rest of the demo stuck against
+
+	The ones inside stand in two columns either side of the plaza: they have to be at least 12 studs out to
+	miss the plaza and its ramps, and no more than 16 to stay out of the jeep's way, which leaves nowhere
+	for them along the other two sides
+]]
 local function buildCover()
-	--All well clear of the plaza's ramps, which reach out to 23 studs either side of the middle along z
-	local spots = {
-		{-30, -16}, {-16, -30}, {18, -26}, {28, -12},
-		{26, 18}, {12, 28}, {-20, 26}, {-30, 12},
-		{-24, -2}, {20, 2}, {-26, -26}, {24, 24},
+	local inside = {
+		{-16, -16}, {-16, -8}, {-16, 4}, {-16, 12},
+		{12, -16}, {12, -8}, {12, 4}, {12, 12},
 	}
-	for i, spot in ipairs(spots) do
-		local w = (i % 3 == 0) and 6 or 4
-		local height = (i % 4 == 0) and 12 or 8
-		brick(spot[1], FLOOR_PLATES, spot[2], w, height, 4, COVER_COLORS[(i - 1) % #COVER_COLORS + 1])
+	local against = {
+		{34, -20}, {34, 14}, {-38, -20}, {-38, 14},
+		{-20, 34}, {14, 34}, {-20, -38}, {14, -38},
+	}
+
+	local i = 0
+	for _, spots in ipairs({inside, against}) do
+		for _, spot in ipairs(spots) do
+			i = i + 1
+			local height = (i % 4 == 0) and 12 or 8
+			brick(spot[1], FLOOR_PLATES, spot[2], 4, height, 4, COVER_COLORS[(i - 1) % #COVER_COLORS + 1])
+		end
 	end
 end
 
@@ -589,12 +607,34 @@ end
 --------------------------------------------------------------------------------------------------------
 
 --Its lap of the island, in studs, just inside the wall
-local JEEP_LAP = {
-	{-34, -34}, {34, -34}, {34, 34}, {-34, 34},
-}
+--[[
+	Its lap of the island, in studs. The corner towers fill everything from 28 studs out, so a lap any wider
+	than this drives the jeep straight into one and leaves it wedged there for good, and buildCover keeps
+	the band around it clear
+
+	It's a point every few studs all the way round rather than the four corners, because a jeep heading
+	for a corner from a long way off starts turning as soon as it's near enough and cuts the corner right
+	across the middle of the island, into whatever is standing there
+]]
+local JEEP_LAP_HALF = 24
+local JEEP_LAP_STEP = 6
+
+local JEEP_LAP = {}
+do
+	local half, step = JEEP_LAP_HALF, JEEP_LAP_STEP
+	for x = -half, half - step, step do table.insert(JEEP_LAP, {x, -half}) end
+	for z = -half, half - step, step do table.insert(JEEP_LAP, {half, z}) end
+	for x = half, -half + step, -step do table.insert(JEEP_LAP, {x, half}) end
+	for z = half, -half + step, -step do table.insert(JEEP_LAP, {-half, z}) end
+end
 
 demoJeep = nil
 local jeepLeg = 1
+
+--How slowly it has to be going, and for how long, before it's taken to be stuck on something
+local JEEP_STUCK_SPEED = 4
+local JEEP_STUCK_MS = 2500
+local jeepStuckForMS = 0
 
 local function startJeep()
 	--spawnJeep puts one down and gives it wheels, lights and a horn, all from the add-on
@@ -630,9 +670,32 @@ local function driveJeep(deltaMS)
 	local dx, dz = corner[1] - x, corner[2] - z
 	local distance = math.sqrt(dx * dx + dz * dz)
 
-	if distance < 8 then
+	--Close spacing along the lap, so this has to be smaller than the gap between two of them
+	if distance < 4 then
 		jeepLeg = jeepLeg % #JEEP_LAP + 1
+		jeepStuckForMS = 0
 		return
+	end
+
+	--[[
+		Caught on something anyway: give it a lift and send it at the next corner instead of the one it
+		can't reach. The lap is meant to be clear, but one loose brick or a player under a wheel would
+		otherwise leave it parked in a corner for as long as the game is open
+	]]
+	local vx, _, vz = demoJeep:getVelocity()
+	if math.sqrt(vx * vx + vz * vz) < JEEP_STUCK_SPEED then
+		jeepStuckForMS = jeepStuckForMS + deltaMS
+		if jeepStuckForMS >= JEEP_STUCK_MS then
+			jeepStuckForMS = 0
+			jeepLeg = jeepLeg % #JEEP_LAP + 1
+			demoJeep:setPosition(x, y + 2, z)
+			demoJeep:setRotation(1, 0, 0, 0)
+			demoJeep:setVelocity(0, 0, 0)
+			demoJeep:setAngularVelocity(0, 0, 0)
+			return
+		end
+	else
+		jeepStuckForMS = 0
 	end
 
 	dx, dz = dx / distance, dz / distance
@@ -736,6 +799,20 @@ end
 --Whoever the over-the-shoulder shot is following, picked again at each cut to it
 demoStar = nil
 
+--[[
+	The way the camera thinks that player is facing, which lags the way they really are. A bot works out
+	where to look once a brain tick and can turn right round in one of them when it loses sight of whoever
+	it was shooting at; the camera is placed behind that direction, so following it exactly swings the
+	camera a full 26 studs round them in a single frame. This turns instead, over about a fifth of a second
+]]
+local STAR_TURN_MS = 220
+
+--Eases one angle toward another the short way round, so turning past pi doesn't go the long way
+local function easeAngle(current, target, k)
+	local difference = (target - current + math.pi) % (2 * math.pi) - math.pi
+	return current + difference * k
+end
+
 --One of the bots in a fight if any of them are, otherwise any of them at all
 local function pickStar()
 	local fighting = {}
@@ -749,19 +826,64 @@ local function pickStar()
 	elseif #demoBots > 0 then
 		demoStar = demoBots[math.random(#demoBots)]
 	end
+
+	--The shot opens behind whoever it picked, rather than turning to get there
+	if demoStar and demoStar.lookX then
+		demoStar.camAngle = math.atan(demoStar.lookZ, demoStar.lookX)
+	end
 end
 
---Wherever the action is right now: the middle of everyone still on their feet, or the island's middle
-local function crowdCenter()
+--Turns the followed player's camera-facing toward the way they're really looking, once a frame
+local function turnStar(msPerTick)
+	local bot = demoStar
+	if not bot or not bot.lookX then
+		return
+	end
+
+	local want = math.atan(bot.lookZ, bot.lookX)
+	if not bot.camAngle then
+		bot.camAngle = want
+	else
+		bot.camAngle = easeAngle(bot.camAngle, want, 1 - math.exp(-msPerTick / STAR_TURN_MS))
+	end
+end
+
+--[[
+	Wherever the action is right now: the middle of everyone still on their feet, or the island's middle.
+	Eased rather than taken straight, because a bot that falls in the sea is put back where it started, and
+	that teleport moves the average of eight of them several studs in one frame
+]]
+local CROWD_EASE_MS = 400
+local crowdX, crowdY, crowdZ = 0, FLOOR_TOP + 3, 0
+local crowdKnown = false
+
+local function updateCrowdCenter(msPerTick)
 	local x, y, z, count = 0, 0, 0, 0
 	for _, bot in ipairs(demoBots) do
 		local bx, by, bz = bot:getPosition()
 		x, y, z, count = x + bx, y + by, z + bz, count + 1
 	end
+
 	if count == 0 then
-		return 0, FLOOR_TOP + 3, 0
+		return
 	end
-	return x / count, y / count + 3, z / count
+
+	x, y, z = x / count, y / count + 3, z / count
+
+	if not crowdKnown then
+		crowdKnown = true
+		crowdX, crowdY, crowdZ = x, y, z
+		return
+	end
+
+	local k = 1 - math.exp(-msPerTick / CROWD_EASE_MS)
+	crowdX = crowdX + (x - crowdX) * k
+	crowdY = crowdY + (y - crowdY) * k
+	crowdZ = crowdZ + (z - crowdZ) * k
+end
+
+local function crowdCenter()
+	return crowdX, crowdY, crowdZ
 end
 
 --[[
@@ -779,8 +901,13 @@ local BAND_HIGH = 19
 local OUTSIDE = 62
 
 --[[
-	The shots. Each runs for ms and is asked, with t from 0 at its start to 1 at its end, where the camera
-	is and what it looks at. They're cut between rather than blended, the way a trailer cuts
+	The shots. Each runs for ms and is asked, with t from 0 at its start to 1 at its end, for where the
+	camera is and the spot it's watching, as six numbers. They're cut between rather than blended, the way
+	a trailer cuts
+
+	A shot gives a spot to watch rather than a direction to point in because both are then eased toward
+	frame by frame, see demoTick: a shot placed off something that moves in steps (a bot's facing, which is
+	only worked out every brain tick) would otherwise jump every time that step lands
 ]]
 local DEMO_SHOTS = {
 	--High and slow, round the outside: what the place is
@@ -792,8 +919,7 @@ local DEMO_SHOTS = {
 			local radius = mix(98, 84, ease(t))
 			local height = mix(46, 32, ease(t))
 			local x, z = math.cos(angle) * radius, math.sin(angle) * radius
-			local dirX, dirY, dirZ = lookFrom(x, height, z, 0, PLAZA_TOP + 4, 0)
-			return x, height, z, dirX, dirY, dirZ
+			return x, height, z, 0, PLAZA_TOP + 4, 0
 		end
 	},
 
@@ -806,12 +932,13 @@ local DEMO_SHOTS = {
 		ms = 11000,
 		camera = function(t)
 			local bot = demoStar
-			if not bot or not bot.lookX then
+			if not bot or not bot.camAngle then
 				return DEMO_SHOTS[1].camera(t)
 			end
 
 			local bx, by, bz = bot:getPosition()
-			local lookX, lookZ = bot.lookX, bot.lookZ
+			--The turned-toward facing, not the real one, see turnStar
+			local lookX, lookZ = math.cos(bot.camAngle), math.sin(bot.camAngle)
 
 			--Behind and above them, swinging round to one side over the shot
 			local side = mix(-0.35, 0.35, ease(t))
@@ -825,8 +952,7 @@ local DEMO_SHOTS = {
 
 			--Looking past them at whatever they're shooting at, rather than at the back of their head
 			--Aimed at head height, so the player sits in the frame rather than half out of the bottom of it
-			local dirX, dirY, dirZ = lookFrom(x, y, z, bx + lookX * 9, by + 5.5, bz + lookZ * 9)
-			return x, y, z, dirX, dirY, dirZ
+			return x, y, z, bx + lookX * 9, by + 5.5, bz + lookZ * 9
 		end
 	},
 
@@ -846,8 +972,7 @@ local DEMO_SHOTS = {
 			local x = math.cos(angle) * radius
 			local z = math.sin(angle) * radius
 			local y = mix(BAND_HIGH + 7, BAND_HIGH - 2, ease(t))
-			local dirX, dirY, dirZ = lookFrom(x, y, z, jx, jy + 1.5, jz)
-			return x, y, z, dirX, dirY, dirZ
+			return x, y, z, jx, jy + 1.5, jz
 		end
 	},
 
@@ -861,8 +986,7 @@ local DEMO_SHOTS = {
 			local x = math.cos(angle) * radius
 			local z = math.sin(angle) * radius
 			local y = mix(46, BAND_HIGH - 3, pull)
-			local dirX, dirY, dirZ = lookFrom(x, y, z, 0, PLAZA_TOP + mix(10, 5, pull), 0)
-			return x, y, z, dirX, dirY, dirZ
+			return x, y, z, 0, PLAZA_TOP + mix(10, 5, pull), 0
 		end
 	},
 
@@ -878,14 +1002,27 @@ local DEMO_SHOTS = {
 			local angle = mix(3.7, 3.3, pull)
 			local x = atX + math.cos(angle) * back
 			local z = atZ + math.sin(angle) * back
-			local dirX, dirY, dirZ = lookFrom(x, height, z, atX, atY, atZ)
-			return x, height, z, dirX, dirY, dirZ
+			return x, height, z, atX, atY, atZ
 		end
 	},
 }
 
 local shotIndex = 1
 local shotStartedMS = 0
+
+--[[
+	Where the camera actually is, as opposed to where the shot asked for it this frame. It eases toward
+	what the shot wants over about this many milliseconds, which is what takes the steps out of anything a
+	shot is placed off: a bot's facing only changes on a brain tick, and pushClear moves in jumps as people
+	walk in and out of range, so a close shot following either of those judders without this
+
+	Small enough that the cameras still feel like they're on rails rather than trailing behind
+]]
+local SMOOTH_MS = 110
+local camX, camY, camZ = 0, 0, 0
+local aimX, aimY, aimZ = 0, 0, 0
+--Nothing to ease from on the first frame of a shot, and a cut should be a cut
+local camSnap = true
 
 --------------------------------------------------------------------------------------------------------
 -- Running it
@@ -912,9 +1049,14 @@ function demoCalibrate()
 	schedule(CALIBRATE_MS, "demoCalibrate")
 
 	if ticksSinceCalibration > 0 then
-		--Eased toward the new measurement so one stuttering half second doesn't jolt the camera
+		--[[
+			Eased toward the new measurement so one stuttering half second doesn't jolt the camera, and
+			clamped: a half second in which the game managed two frames (loading something, or the window
+			being dragged) would otherwise measure 250 ms a tick and throw the camera across the island on
+			the next one
+		]]
 		local measured = CALIBRATE_MS / ticksSinceCalibration
-		msPerTick = msPerTick * 0.5 + measured * 0.5
+		msPerTick = math.max(5, math.min(100, msPerTick * 0.5 + measured * 0.5))
 	end
 	ticksSinceCalibration = 0
 end
@@ -954,13 +1096,35 @@ function demoTick()
 		elapsed = 0
 		--A new player for the over-the-shoulder shot to follow every time round
 		pickStar()
+		--A cut lands where it lands, with nothing swinging into place after it
+		camSnap = true
 		--Only with logger/verbose on, which is how a shot that ends up inside the build gets found
 		debug("Menu demo cut to shot " .. shotIndex)
 	end
 
+	turnStar(msPerTick)
+	updateCrowdCenter(msPerTick)
+
 	local t = math.min(elapsed / shot.ms, 1)
-	local x, y, z, dirX, dirY, dirZ = shot.camera(t)
-	demoViewer:staticCamera(x, y, z, dirX, dirY, dirZ)
+	local x, y, z, atX, atY, atZ = shot.camera(t)
+
+	if camSnap then
+		camSnap = false
+		camX, camY, camZ = x, y, z
+		aimX, aimY, aimZ = atX, atY, atZ
+	else
+		--Eased by time rather than by frames, so it settles the same way whatever the frame rate is
+		local k = 1 - math.exp(-msPerTick / SMOOTH_MS)
+		camX = camX + (x - camX) * k
+		camY = camY + (y - camY) * k
+		camZ = camZ + (z - camZ) * k
+		aimX = aimX + (atX - aimX) * k
+		aimY = aimY + (atY - aimY) * k
+		aimZ = aimZ + (atZ - aimZ) * k
+	end
+
+	local dirX, dirY, dirZ = lookFrom(camX, camY, camZ, aimX, aimY, aimZ)
+	demoViewer:staticCamera(camX, camY, camZ, dirX, dirY, dirZ)
 end
 
 --The client watching gets no player, only the camera
