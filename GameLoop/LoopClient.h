@@ -157,6 +157,11 @@ class LoopClient
 	*/
 	bool freeCamera = false;
 
+	//What the last "Input state" log line said, so only changes are logged
+	bool loggedSuppressed = false;
+	bool loggedMouseLocked = false;
+	std::string loggedCaptureReason;
+
 	//What the camera was bound to before it came loose, put back when our player is dropped at it
 	std::weak_ptr<Dynamic> cameraTargetBeforeFlying;
 	bool cameraFreePositionBeforeFlying = false;

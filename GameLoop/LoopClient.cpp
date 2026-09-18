@@ -1046,6 +1046,12 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 		}
 		else if (e.type == SDL_WINDOWEVENT)
 		{
+			//Keys stop arriving without this, so it's worth a line in the log when they seem to have gone missing
+			if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+				info("Window lost keyboard focus");
+			else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+				info("Window gained keyboard focus");
+
 			if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
 			{
 				pd.context->setSize(e.window.data1, e.window.data2);
@@ -1209,6 +1215,16 @@ void LoopClient::handleInput(float deltaT, ExecutableArguments& cmdArgs, std::sh
 
 	//Interacting with gui, don't move around in-game
 	pd.input->supressed = pd.gui->wantsSuppression();
+
+	//Every change to what's taking the keys away from the game goes in the log, with ImGui's reason while it has them
+	std::string captureReason = pd.input->supressed ? pd.gui->keyboardCaptureReason() : "";
+	if (pd.input->supressed != loggedSuppressed || pd.context->getMouseLocked() != loggedMouseLocked || captureReason != loggedCaptureReason)
+	{
+		loggedSuppressed = pd.input->supressed;
+		loggedMouseLocked = pd.context->getMouseLocked();
+		loggedCaptureReason = captureReason;
+		info(std::string("Input state: keys ") + (loggedSuppressed ? "held by gui (" + captureReason + ")" : "to game") + ", mouse " + (loggedMouseLocked ? "locked" : "free") + ", " + std::to_string(pd.gui->getOpenWindowCount()) + " windows open");
+	}
 
 	//Someone just applied setting changes
 	if (pd.settingsMenu->pollForChanges())

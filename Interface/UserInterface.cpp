@@ -1,5 +1,6 @@
 #include "UserInterface.h"
 #include "../External/Imgui/imgui_internal.h"
+#include "../External/Imgui/imgui_internal.h"
 
 //ImGui windows can restore a saved position from imgui.ini that no longer fits the current
 //display (e.g. imgui.ini was written on a larger monitor). Pull any window fully back onto the
@@ -114,6 +115,23 @@ void UserInterface::updateSettings(std::shared_ptr<SettingManager> settings)
 bool UserInterface::wantsSuppression() const
 {
 	return io->WantCaptureKeyboard;
+}
+
+std::string UserInterface::keyboardCaptureReason() const
+{
+	ImGuiContext* context = ImGui::GetCurrentContext();
+	if (!context)
+		return "none";
+
+	if (io->WantTextInput)
+		return "text input";
+	if (context->ActiveId != 0)
+		return "item held in " + std::string(context->ActiveIdWindow ? context->ActiveIdWindow->Name : "no window");
+	if (ImGui::GetTopMostPopupModal())
+		return "modal popup";
+	if (io->NavActive)
+		return "nav focus on " + std::string(context->NavWindow ? context->NavWindow->Name : "no window");
+	return "none";
 }
 
 //If mouselock should be forced on
