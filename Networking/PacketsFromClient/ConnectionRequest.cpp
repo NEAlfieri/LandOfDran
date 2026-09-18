@@ -4,6 +4,7 @@
 #include "../../LuaFunctions/SoundLua.h"
 #include "../../LuaFunctions/EmitterLua.h"
 #include "../../LuaFunctions/ClientLua.h"
+#include "../../LuaFunctions/DecalLua.h"
 
 /*	
 	Do not attempt to assign a handle to JoinedClient to other objects directly
@@ -88,6 +89,7 @@ void applyConnectionRequest(JoinedClient * source,Server const * const server, E
 	pd->bricks->sendSpecialTypes(source);
 	pd->prints.sendTypes(source);
 	sendParticleEmitterTypes(pd, source);
+	sendDecalTypes(pd, source);
 
 	//Send types to client:
 	for (size_t a = 0; a < pd->allNetTypes.size(); a++)

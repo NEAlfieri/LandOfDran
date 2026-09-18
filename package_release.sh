@@ -78,6 +78,8 @@ cp serverstart.lua "$PKG_DIR/"
 cp EmitterDefaults.lua "$PKG_DIR/"
 cp BlocklandImports.lua "$PKG_DIR/"
 cp Inventory.lua "$PKG_DIR/"
+cp Damage.lua "$PKG_DIR/"
+cp Hats.lua "$PKG_DIR/"
 
 # Saves/ is gitignored, so this packages whatever builds are in the local copy, if there is one
 if [[ -d Saves ]]; then

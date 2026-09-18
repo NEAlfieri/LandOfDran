@@ -37,6 +37,9 @@ registerWeapon("pumpShotgun", {
 	muzzleEmitter = "TTMuzzleFlashEmitter",
 	muzzleEmitterMS = 80,
 	impactEmitter = "TTImpactEmitter",
+	--Not in the original: the hole it leaves in a brick, see weaponImpactEffect
+	impactDecal = "bulletHole",
+	impactDecalSize = 0.35,
 
 
 	--PumpShotgunShellDebris, its own shell, out of the shape's ejectPoint along "1 0.1 1" at shellVelocity 5

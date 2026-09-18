@@ -1,4 +1,5 @@
 #include "Dynamic.h"
+#include "../GameLoop/PlayerAppearance.h"
 #include "ClientLua.h"
 #include "SoundLua.h"
 
@@ -358,6 +359,25 @@ static int LUA_getDynamicId(lua_State* L)
 
 	LUA_pd->dynamics->pushLua(L, dynamic);
 
+	return 1;
+}
+
+static int LUA_dynamicExists(lua_State* L)
+{
+	scope("(LUA) dynamicExists");
+
+	int args = lua_gettop(L);
+	if (args != 1 || !lua_isinteger(L, 1))
+	{
+		error("Expected dynamicExists(netId)");
+		lua_pop(L, args);
+		return 0;
+	}
+
+	lua_Integer id = lua_tointeger(L, 1);
+	lua_pop(L, args);
+
+	lua_pushboolean(L, LUA_pd->dynamics && id >= 0 && LUA_pd->dynamics->find((netIDType)id) != nullptr);
 	return 1;
 }
 
@@ -1051,6 +1071,94 @@ static int LUA_dynamicSetMeshDecal(lua_State* L)
 	return 0;
 }
 
+static int LUA_dynamicSetPart(lua_State* L)
+{
+	scope("(LUA) dynamic:setPart");
+
+	int args = lua_gettop(L);
+	bool okay = args == 3 || args == 7 || args == 8;
+	okay = okay && lua_type(L, 2) == LUA_TSTRING && lua_type(L, 3) == LUA_TSTRING;
+	for (int a = 4; a <= args && okay; a++)
+		okay = lua_isnumber(L, a);
+
+	if (!okay)
+	{
+		error("Expected dynamic:setPart(slot, partName[, r, g, b, a[, scale]])");
+		lua_pop(L, args);
+		return 0;
+	}
+
+	std::string slot = lua_tostring(L, 2);
+	std::string partName = lua_tostring(L, 3);
+
+	//Alpha 0 leaves the part its own look, the same as a hat nobody painted
+	glm::vec4 color(0);
+	if (args >= 7)
+		color = glm::clamp(glm::vec4(lua_tonumber(L, 4), lua_tonumber(L, 5), lua_tonumber(L, 6), lua_tonumber(L, 7)), 0.0f, 1.0f);
+	float scale = args >= 8 ? (float)lua_tonumber(L, 8) : 1.0f;
+	lua_settop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	//Clients look it up by file name in their own parts folder, so it can't be a path
+	if (partName.find('/') != std::string::npos || partName.find('\\') != std::string::npos)
+	{
+		error("A part is the file name of a descriptor in " + std::string(PlayerAppearance::partsFolder) + ", not a path: " + partName);
+		return 0;
+	}
+
+	scale = glm::clamp(scale, PlayerAppearance::minHatScale, PlayerAppearance::maxHatScale);
+
+	//Nothing to take off
+	if (partName.empty() && !dynamic->parts.count(slot.substr(0, Dynamic::maxSlotLength)))
+		return 0;
+
+	ENetPacket* packet = dynamic->setPart(slot, partName, color, scale);
+	if (packet)
+		LUA_server->broadcast(packet, OtherReliable);
+
+	return 0;
+}
+
+static int LUA_dynamicGetPart(lua_State* L)
+{
+	scope("(LUA) dynamic:getPart");
+
+	if (lua_gettop(L) != 2 || lua_type(L, 2) != LUA_TSTRING)
+	{
+		error("Expected dynamic:getPart(slot)");
+		lua_pop(L, lua_gettop(L));
+		return 0;
+	}
+
+	std::string slot = lua_tostring(L, 2);
+	lua_settop(L, 1);
+
+	std::shared_ptr<Dynamic> dynamic = LUA_pd->dynamics->popLua(L);
+	if (!dynamic)
+	{
+		error("Invalid dynamic object passed, was it deleted already?");
+		return 0;
+	}
+
+	auto part = dynamic->parts.find(slot.substr(0, Dynamic::maxSlotLength));
+	if (part == dynamic->parts.end())
+		return 0;
+
+	lua_pushstring(L, part->second.name.c_str());
+	lua_pushnumber(L, part->second.color.r);
+	lua_pushnumber(L, part->second.color.g);
+	lua_pushnumber(L, part->second.color.b);
+	lua_pushnumber(L, part->second.color.a);
+	lua_pushnumber(L, part->second.scale);
+	return 6;
+}
+
 static int LUA_dynamicSetHighlight(lua_State* L)
 {
 	scope("(LUA) dynamic:setHighlight");
@@ -1325,6 +1433,41 @@ static int LUA_addAnimation(lua_State* L)
 	type->getModel()->addAnimation(anim);
 
 	return 0;
+}
+
+static int LUA_getTypeMeshBounds(lua_State* L)
+{
+	scope("(LUA) getTypeMeshBounds");
+
+	int args = lua_gettop(L);
+	if (args != 2 || !lua_isinteger(L, 1) || lua_type(L, 2) != LUA_TSTRING)
+	{
+		error("Expected getTypeMeshBounds(typeID, meshName)");
+		lua_pop(L, args);
+		return 0;
+	}
+
+	lua_Integer typeID = lua_tointeger(L, 1);
+	std::string meshName = lua_tostring(L, 2);
+	lua_pop(L, args);
+
+	if (typeID < 0 || typeID >= (lua_Integer)LUA_pd->dynamicTypes.size() || !LUA_pd->dynamicTypes[typeID] || !LUA_pd->dynamicTypes[typeID]->getModel())
+	{
+		error("Invalid typeID passed");
+		return 0;
+	}
+
+	glm::vec3 low, high;
+	if (!LUA_pd->dynamicTypes[typeID]->getModel()->getMeshBounds(meshName, low, high))
+		return 0;
+
+	lua_pushnumber(L, low.x);
+	lua_pushnumber(L, low.y);
+	lua_pushnumber(L, low.z);
+	lua_pushnumber(L, high.x);
+	lua_pushnumber(L, high.y);
+	lua_pushnumber(L, high.z);
+	return 6;
 }
 
 static int LUA_getTypeNodePosition(lua_State* L)
@@ -2020,17 +2163,19 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	//Register dynamic global functions:
 	lua_register(L, "createDynamic", LUA_createDynamic);
 	lua_register(L, "getDynamicId", LUA_getDynamicId);
+	lua_register(L, "dynamicExists", LUA_dynamicExists);
 	lua_register(L, "getDynamicIdx", LUA_getDynamicIdx);
 	lua_register(L, "getNumDynamics", LUA_getNumDynamics);
 	lua_register(L, "newDynamicType", LUA_newDynamicType);
 	lua_register(L, "getTypeNodePosition", LUA_getTypeNodePosition);
+	lua_register(L, "getTypeMeshBounds", LUA_getTypeMeshBounds);
 	lua_register(L, "getDynamicType", LUA_getDynamicType);
 	lua_register(L, "addAnimation", LUA_addAnimation);
 	lua_register(L, "raycast", LUA_raycast);
 	lua_register(L, "addProjectile", LUA_addProjectile);
 
 	//Create table of dynamic metatable functions:
-	luaL_Reg* regs = new luaL_Reg[41];
+	luaL_Reg* regs = new luaL_Reg[43];
 
 	int iter = 0;
 	regs[iter++] = { "destroy",     LUA_dynamicDestroy };
@@ -2058,6 +2203,8 @@ luaL_Reg* getDynamicFunctions(lua_State *L)
 	regs[iter++] = { "playAnimation",    LUA_dynamicPlayAnimation };
 	regs[iter++] = { "stopAnimation",    LUA_dynamicStopAnimation };
 	regs[iter++] = { "setMeshDecal",    LUA_dynamicSetMeshDecal };
+	regs[iter++] = { "setPart",    LUA_dynamicSetPart };
+	regs[iter++] = { "getPart",    LUA_dynamicGetPart };
 	regs[iter++] = { "setHighlight",    LUA_dynamicSetHighlight };
 	regs[iter++] = { "clearHighlight",    LUA_dynamicClearHighlight };
 	regs[iter++] = { "setNameTag",    LUA_dynamicSetNameTag };

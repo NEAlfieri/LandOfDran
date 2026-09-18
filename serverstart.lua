@@ -128,6 +128,8 @@ dofile("BlocklandImports.lua")
 dofile("Inventory.lua")
 --Health, dying, and respawning, after Inventory.lua so a click that respawns someone isn't also a click with their new tools
 dofile("Damage.lua")
+--Hats that a shot knocks off and anyone bare headed can click to put on, after the add-on weapons it listens to
+dofile("Hats.lua")
 
 setSkybox("Assets/skyboxes/bluecloud","Assets/skyboxes/space")
 

@@ -1,0 +1,9 @@
+#A hat lying on the ground, see Hats.lua: nothing of this is drawn, it only wears the hat as its part, the way a player does,
+#so every hat in Assets/brickhead/parts sits and is sized right with nothing written for it. The Head mesh is what a hat is
+#worn on, its top about as far over the ground as a hat is sunk into a head, and the Collision mesh is what it collides as
+file	droppedHat.obj
+Triangulate	true
+JoinIdenticalVertices	true
+GenSmoothNormals	true
+singlematerial	Assets/brickhead/partplastic.txt
+hide	Head

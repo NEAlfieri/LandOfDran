@@ -9,6 +9,7 @@
 #include "PacketsFromServer/DeleteSimObjects.h"
 #include "PacketsFromServer/ChatMessageFromServer.h"
 #include "PacketsFromServer/ChatSuggestion.h"
+#include "PacketsFromServer/DecalUpdate.h"
 #include "PacketsFromServer/Vignette.h"
 #include "PacketsFromServer/EvalLoginResponse.h"
 #include "PacketsFromServer/DisplayConsoleLine.h"

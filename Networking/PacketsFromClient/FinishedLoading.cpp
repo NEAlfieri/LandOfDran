@@ -3,6 +3,7 @@
 #include "../../LuaFunctions/ClientLua.h"
 #include "../../LuaFunctions/SoundLua.h"
 #include "../../LuaFunctions/SkyLua.h"
+#include "../../LuaFunctions/DecalLua.h"
 #include "../../LuaFunctions/VehicleLua.h"
 
 /*
@@ -49,6 +50,8 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 	pd->vehicles->sendAll(source);
 	sendVehicleState(pd, source);
 	pd->bricks->sendAll(source);
+	//After the bricks they're on, on the same channel
+	sendDecals(pd, source);
 
 	//Loops already playing and the reverb preset
 	sendSoundState(pd, source);

@@ -37,6 +37,9 @@ registerWeapon("submachinegun", {
 	muzzleEmitter = "TTMuzzleFlashEmitter",
 	muzzleEmitterMS = 50,
 	impactEmitter = "TTImpactEmitter",
+	--Not in the original: the hole it leaves in a brick, see weaponImpactEffect
+	impactDecal = "bulletHole",
+	impactDecalSize = 0.45,
 
 
 	--GunShellDebris out of the shape's ejectPoint along shellExitDir "1 0.1 1" at shellVelocity 5

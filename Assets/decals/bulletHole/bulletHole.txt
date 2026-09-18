@@ -1,0 +1,7 @@
+#A bullet hole left in a brick, see addDecalType in LuaAPI.md. All four images come out of one height field, so they line up
+#The albedo is multiplied by the color of the brick, and its alpha is how much of the decal shows
+albedo	bulletHole_albedo.png
+normal	bulletHole_normal.png
+occlusion	bulletHole_ao.png
+roughness	bulletHole_rough.png
+metalness	0

@@ -7,6 +7,7 @@
 #include "../LuaFunctions/EmitterLua.h"
 #include "../LuaFunctions/BrickLua.h"
 #include "../LuaFunctions/SkyLua.h"
+#include "../LuaFunctions/DecalLua.h"
 #include "../LuaFunctions/ItemLua.h"
 #include "../LuaFunctions/VehicleLua.h"
 
@@ -66,6 +67,7 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 	pd.vehicles->sendRecent();
 	sendNewVehicleBricks();
 	pd.bricks->sendRecent();
+	sendNewDecals(&pd, server);
 	respawnBrickVehicles();
 	updateVehicles(deltaT);
 	applyWaterForces(deltaT);
@@ -634,7 +636,7 @@ void LoopServer::sweepProjectiles(btScalar timeStep)
 		body->setLinearVelocity(btVector3(0, 0, 0));
 
 		dynamic->projectileHitRecorded = true;
-		pendingProjectileHits.push_back({ dynamic, result.body, result.point });
+		pendingProjectileHits.push_back({ dynamic, result.body, result.point, result.normal });
 	}
 }
 
@@ -647,13 +649,13 @@ void LoopServer::recordProjectileHits()
 			continue;
 
 
-		btVector3 point;
-		btRigidBody* hit = pd.physicsWorld->getFirstContact(dynamic->body, projectileHitDistance, point, anotherProjectile);
+		btVector3 point, normal;
+		btRigidBody* hit = pd.physicsWorld->getFirstContact(dynamic->body, projectileHitDistance, point, normal, anotherProjectile);
 		if (!hit)
 			continue;
 
 		dynamic->projectileHitRecorded = true;
-		pendingProjectileHits.push_back({ dynamic, hit, point });
+		pendingProjectileHits.push_back({ dynamic, hit, point, normal });
 	}
 }
 
@@ -685,8 +687,8 @@ void LoopServer::updateProjectiles()
 			projectile->ignoredShooterBody = nullptr;
 		}
 
-		btVector3 point;
-		btRigidBody* hit = pd.physicsWorld->getFirstContact(projectile->body, projectileHitDistance, point, anotherProjectile);
+		btVector3 point, normal;
+		btRigidBody* hit = pd.physicsWorld->getFirstContact(projectile->body, projectileHitDistance, point, normal, anotherProjectile);
 		if (!hit)
 		{
 			projectile->faceVelocity();
@@ -694,7 +696,7 @@ void LoopServer::updateProjectiles()
 		}
 
 		projectile->projectileHitRecorded = true;
-		hits.push_back({ projectile, hit, point });
+		hits.push_back({ projectile, hit, point, normal });
 	}
 
 	for (ProjectileHit& touched : hits)
@@ -716,7 +718,12 @@ void LoopServer::updateProjectiles()
 			lua_pushnumber(L, touched.point.y());
 			lua_pushnumber(L, touched.point.z());
 			lua_pushstring(L, projectile->projectileTag.c_str());
-			pd.eventManager->callEvent(L, "ProjectileHit", 6);
+			//Out of what it hit, after the tag so listeners written before there was one still line up
+			btVector3 normal = touched.normal.fuzzyZero() ? btVector3(0, 1, 0) : touched.normal.normalized();
+			lua_pushnumber(L, normal.x());
+			lua_pushnumber(L, normal.y());
+			lua_pushnumber(L, normal.z());
+			pd.eventManager->callEvent(L, "ProjectileHit", 9);
 			lua_settop(L, 0);
 		}
 
@@ -960,6 +967,7 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	registerClientFunctions(pd.luaState);
 	registerSoundFunctions(pd.luaState);
 	registerSkyFunctions(pd.luaState);
+	registerDecalFunctions(pd.luaState);
 
 	///Server just has one physics world that's started when the program starts and stays until shutdown, unlike client
 	pd.physicsWorld = std::make_shared<PhysicsWorld>();

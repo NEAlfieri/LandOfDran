@@ -15,6 +15,7 @@
 #include "../Bricks/BrickTypes.h"
 #include "../Bricks/PrintTypes.h"
 #include "../Graphics/DayCycle.h"
+#include "../Graphics/WorldDecals.h"
 #include "ClientData.h"
 
 /*
@@ -88,6 +89,26 @@ struct ServerProgramData
 		std::string text = "";
 	};
 	std::vector<ChatSuggestion> chatSuggestions;
+
+	//Lua's addDecalType: a name and the material descriptor clients load for it, a type's index is the ID clients know it by
+	struct DecalType
+	{
+		std::string name = "";
+		std::string materialPath = "";
+	};
+	std::vector<DecalType> decalTypes;
+
+	/*
+		Every decal in the world like a bullet hole, oldest first, kept so clients who join later see them too
+		They don't fade with time: no more than maxDecals exist at once and the oldest make room, which clients do for
+		themselves in the same order, see WorldDecals::trim. One on a brick goes when its brick does
+	*/
+	mutable std::deque<WorldDecal> decals;
+	unsigned int maxDecals = 256;
+	//Made since the last tick, they go out after that tick's new bricks so none arrives before the brick it's on, see sendNewDecals
+	mutable std::vector<WorldDecal> pendingDecals;
+	//Lua's setMaxDecals lowered the limit, which clients hear about after whatever is still in pendingDecals
+	mutable bool decalLimitChanged = false;
 
 	//Looping sounds started from Lua, kept so clients who join later hear them too
 	struct ActiveSoundLoop

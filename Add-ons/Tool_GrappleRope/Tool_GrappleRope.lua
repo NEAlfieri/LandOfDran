@@ -345,7 +345,7 @@ local function hookLanded(hook, x, y, z)
 	state.sinceChainMS = CHAIN_PERIOD_MS
 end
 
-function grappleProjectileHit(projectile, hit, x, y, z, tag)
+function grappleProjectileHit(projectile, hit, x, y, z, tag, normalX, normalY, normalZ)
 	if tag == HOOK_TAG then
 		local hook = hooks[projectile.id]
 		if hook ~= nil then
@@ -356,7 +356,7 @@ function grappleProjectileHit(projectile, hit, x, y, z, tag)
 		chains[projectile.id] = nil
 	end
 
-	return projectile, hit, x, y, z, tag
+	return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
 end
 registerEventListener("ProjectileHit", "grappleProjectileHit")
 

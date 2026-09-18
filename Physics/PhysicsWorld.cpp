@@ -103,7 +103,7 @@ std::vector<btRigidBody*> PhysicsWorld::getTouching(const btRigidBody* body) con
   return touching;
 }
 
-btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar within, btVector3& point,
+btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar within, btVector3& point, btVector3& normal,
 	const std::function<bool(const btRigidBody*)>& skip) const
 {
   int numManifolds = dispatcher->getNumManifolds();
@@ -128,6 +128,8 @@ btRigidBody* PhysicsWorld::getFirstContact(const btRigidBody* body, btScalar wit
       if (contact.getDistance() < within)
       {
         point = bodyIsFirst ? contact.getPositionWorldOnB() : contact.getPositionWorldOnA();
+        //Bullet's contact normal points from the second body to the first
+        normal = bodyIsFirst ? contact.m_normalWorldOnB : -contact.m_normalWorldOnB;
         return (btRigidBody*)other;
       }
     }

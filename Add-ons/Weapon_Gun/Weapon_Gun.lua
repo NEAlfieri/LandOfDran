@@ -243,6 +243,9 @@ registerWeapon("gun", {
 	impactFlashEmitter = "GunHitFlashEmitter",
 	impactFlashMS = 50,
 	impactSound = "BulletHit",
+	--Not in the original: the hole it leaves in a brick, see weaponImpactEffect
+	impactDecal = "bulletHole",
+	impactDecalSize = 0.55,
 	impactLight = { color = {0.5, 0.8, 0.9}, brightness = 20, coronaWidth = 0, forMS = 150 },
 
 	--gunShellDebris, out of the shape's ejectPoint along shellExitDir "1 -1.3 1" at shellVelocity 7

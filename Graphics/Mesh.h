@@ -675,6 +675,9 @@ class Model
 	*/
 	bool getDrawnBounds(glm::vec3& low, glm::vec3& high) const;
 
+	//The same for one mesh by its name, ignoring case. False if there's no such mesh or it has no vertices
+	bool getMeshBounds(const std::string& meshName, glm::vec3& low, glm::vec3& high) const;
+
 	//Calls renderSingleInstance(bufferOffset) on each mesh, assumes the outline shader is already bound.
 	//Used for the highlight/outline X-ray effect - see ModelInstance::renderSelfOutline
 	void renderSingleInstance(unsigned int bufferOffset) const;

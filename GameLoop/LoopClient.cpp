@@ -94,6 +94,8 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	simulation.bricks = nullptr;
 	delete simulation.brickDebris;
 	simulation.brickDebris = nullptr;
+	delete simulation.worldDecals;
+	simulation.worldDecals = nullptr;
 	simulation.brickTypeFromServer.clear();
 	simulation.brickTypeToServer.clear();
 	simulation.printFromServer.clear();
@@ -2173,6 +2175,10 @@ void LoopClient::renderScene(bool clipAtWater)
 	if (!clipAtWater && simulation.brickDebris)
 		simulation.brickDebris->render(pd.shaders, pd.brickRenderer);
 
+	//Bullet holes and the like blend over the opaque bricks under them, and any see-through brick they're on is drawn over them later
+	if (simulation.worldDecals)
+		simulation.worldDecals->render(pd.shaders, pd.lightSpaceMatricies, pd.shadowSoftness, pd.tintShadowsActive);
+
 	if (timePasses)
 		pd.profiler.end();
 
@@ -3570,6 +3576,8 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		//Start up systems needed to play
 		pd.physicsWorld = std::make_shared<PhysicsWorld>();
 		SimObject::world = pd.physicsWorld;
+		if (!simulation.worldDecals)
+			simulation.worldDecals = new WorldDecals();
 		cmdArgs.gameState = LoadingTypes; 
 	}
 
@@ -3632,6 +3640,9 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 
 	if (simulation.brickDebris)
 		simulation.brickDebris->update(deltaT);
+
+	if (simulation.worldDecals)
+		simulation.worldDecals->update(simulation.bricks);
 
 	predictLocalCollisions();
 	pd.profiler.end();

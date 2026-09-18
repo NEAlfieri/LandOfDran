@@ -37,6 +37,9 @@ registerWeapon("sportRifle", {
 	muzzleEmitter = "TTMuzzleFlashEmitter",
 	muzzleEmitterMS = 70,
 	impactEmitter = "TTImpactEmitter",
+	--Not in the original: the hole it leaves in a brick, see weaponImpactEffect
+	impactDecal = "bulletHole",
+	impactDecalSize = 0.6,
 
 	fireAnimation = "fire",
 

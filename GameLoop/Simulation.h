@@ -12,6 +12,7 @@
 #include "../GameLoop/PlayerController.h"
 #include "../Bricks/BrickHolder.h"
 #include "../Bricks/BrickDebris.h"
+#include "../Graphics/WorldDecals.h"
 #include "../Graphics/DayCycle.h"
 
 /*
@@ -103,6 +104,9 @@ struct Simulation
 	unsigned int staticsChanged = 0;
 	BrickHolder* bricks = nullptr;
 	BrickDebris* brickDebris = nullptr;
+
+	//Bullet holes and the like, made as we're accepted since their types arrive before anything else does, see DecalUpdatePacket
+	WorldDecals* worldDecals = nullptr;
 
 	/*
 		Special brick types are matched by name, since the server and client may have found theirs in a different order

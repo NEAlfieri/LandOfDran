@@ -162,6 +162,10 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new DynamicPartPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case DecalUpdate:
+					packets.push_back(new DecalUpdatePacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				case ServerPerformanceDetails:
 					packets.push_back(new ServerPerformanceDetailsPacket(packetHoldTime, event.packet));
 					return NotKicked;

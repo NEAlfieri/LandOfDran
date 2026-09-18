@@ -206,6 +206,15 @@ enum FromServerPacketType : unsigned char
 	DynamicPart = 45,		//Put a model worn on a dynamic in one of its slots, like a hat on a player, or take it off, see Dynamic::setPart
 	BrickSaveData = 46,		//Part of a save of every brick the client asked for, see BrickSaveDataPacket
 	PlayerList = 47,		//Everyone on the server with their ping and score text, whenever any of it changes and every couple of seconds, see PlayerListPacket
+	DecalUpdate = 48,		//A decal type, new decals like bullet holes, or all of them cleared away, see DecalUpdateKind and Graphics/WorldDecals.h
+};
+
+//Second byte of a DecalUpdate packet
+enum DecalUpdateKind : unsigned char
+{
+	DecalUpdateType = 0,	//A type's ID (2 bytes), name and material descriptor path, each a length byte then text, as a client joins and whenever Lua adds one
+	DecalUpdateAdd = 1,		//How many decals can exist at once (2 bytes), how many follow (2 bytes), then a WorldDecal::recordBytes record each, on BrickLoading so they arrive after their bricks
+	DecalUpdateClear = 2	//Nothing follows, every decal goes
 };
 
 //Flags byte of each player in a PlayerList packet

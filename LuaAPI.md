@@ -164,7 +164,7 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientLoadBricks` | `function(client, fileName, clearFirst, x, y, z) ... return client, fileName, clearFirst, x, y, z end` | Fires once an admin's upload of a `.lod` or `.bls` save from their own computer has fully arrived and is about to be loaded, with the name they gave it, whether they asked for every brick to be taken away first, and the offset they typed (studs, plates, studs, 0 by default). Return `client, nil` to stop it, which tells the client nothing. The server refuses uploads from clients without admin before any of it is kept. Loads go through `loadLodSave` / `loadBlocklandSave`'s code with that offset. Not fired by those functions. |
 | `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `Inventory.lua` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
 | `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `Inventory.lua` throws the item in their hand. |
-| `ProjectileHit` | `function(projectile, hit, x, y, z, tag) ... return projectile, hit, x, y, z, tag end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, and `tag` is the tag it was fired with. It's removed right after its listeners run, unless one already removed it. Return values are ignored. `Inventory.lua` bursts launcher shells here. |
+| `ProjectileHit` | `function(projectile, hit, x, y, z, tag, normalX, normalY, normalZ) ... return projectile, hit, x, y, z, tag, normalX, normalY, normalZ end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, which for anything but a tiny projectile is a corner of the box it collides as rather than its middle, `tag` is the tag it was fired with, and the normal is that of the surface it hit, pointing out of it, like `raycast`'s. It's removed right after its listeners run, unless one already removed it, so `projectile:getPosition()` still works in one. Return values are ignored, but like every event all nine have to be returned or the listeners after this one aren't called. `Inventory.lua` bursts launcher shells here. |
 | `RadiusImpulseHit` | `function(dynamic, x, y, z, strength) ... return dynamic, x, y, z, strength end` | Fires from `radiusImpulse` for each dynamic it pushes (players, items on the ground, projectiles, the rest, not vehicles), with the middle of the impulse and the impulse that reached the dynamic where it stood: `strength * (1 - distance / reach)`, before its mass, negative for a pull. Fired as it's pushed, so a listener can move or destroy it. Return values are ignored. `Damage.lua`'s `damageByImpulse` takes health off the player of anyone pushed here. |
 
 ---
@@ -179,11 +179,13 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 |---|---|---|---|
 | `createDynamic(typeID, x, y, z)` | `typeID` from `newDynamicType`/`getDynamicType`; spawn position | Dynamic | Spawns a new dynamic of the given type at the given position. |
 | `getDynamicId(netId)` | net ID | Dynamic | Looks up a dynamic by its net ID. Errors if it doesn't exist. |
+| `dynamicExists(netId)` | net ID | boolean | Whether there's still a dynamic with that net ID, without the error `getDynamicId` logs for one that's gone. For a script that keeps IDs of things that are removed out from under it, like rounds in the air. |
 | `getDynamicIdx(index)` | 0-based index | Dynamic | Looks up a dynamic by its position in the internal list (see `getNumDynamics`). |
 | `getNumDynamics()` | none | count | How many dynamics currently exist. |
 | `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. `modelFilePath` is normally a `.txt` descriptor, but a `.dts` (the shapes Blockland add-ons ship their models in) can be given straight to it with no descriptor next to it, see [DTS models](#dts-models). |
 | `getDynamicType(scriptName)` | string | typeID | Looks up a previously-registered type's ID by its script name. |
 | `getTypeNodePosition(typeID, nodeName)` | a dynamic or item type; the name of a node in its model, case insensitive | x, y, z, or nothing | Where that node sits in the model's own space with nothing animating, the type's scale applied. Nothing at all if the model has no node by that name. Shapes name the spots an add-on cares about, so this is how a script finds them without writing the numbers down: a Blockland jeep hangs its wheels from `hub0` to `hub3` and seats its riders on `Mount0` and up, and a weapon's hand goes on its `mountPoint`. See [Model vehicles](#model-vehicles) and [DTS models](#dts-models). |
+| `getTypeMeshBounds(typeID, meshName)` | dynamic type ID; mesh name within its model, case doesn't matter | lowX, lowY, lowZ, highX, highY, highZ; or `nil` | The box one mesh of a type's model fills, in the model's own space with its scale applied, in the pose it was loaded in. So for a dynamic standing upright these are studs from its position: the player model's `Head` is about 3.55 to 5.15 up, which is how `Hats.lua` knows where a hat is. `nil` if the model has no such mesh. |
 | `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type, which `dynamic:playAnimation` plays by name. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone, and one named `sit` loops on a player while they ride in a model vehicle, see [Model vehicles](#model-vehicles). While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. A `.dts` model needs none of these lines: it registers every sequence it came with under its own name, see [DTS models](#dts-models). |
 | `raycast(startX, startY, startZ, endX, endY, endZ[, dynamicToIgnore])` | ray start/end points; optionally a Dynamic to exclude from the hit test | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Casts a ray through the physics world. Returns the Dynamic, Static, or Brick it hit first, then the world position of the hit, the normal of the surface it hit (pointing out of it), and the distance from the start point. If it hit the ground, which has no object, the hit object is `nil` and the rest still follow. Returns just `nil` if it hit nothing. `local hit = raycast(...)` still works if you only need the object. |
 | `addProjectile(typeID, x, y, z, velX, velY, velZ[, tag[, shooter]])` | dynamic type ID; position; velocity in studs per second; any string, `""` by default, or `nil`; a Dynamic, or `nil` | Dynamic | Fires a dynamic that falls with gravity and is turned every tick so its model's +Y points the way it's going (while faster than 8 studs a second). A `.dts` model is turned along its -Z instead, which is the +Y forward Torque built it with, see [DTS models](#dts-models). It never falls asleep, and is swept along what each physics substep is about to move it before the substep runs, and stopped on the first thing in the way, so it doesn't skip through thin bricks however fast it goes. It passes through `shooter`, usually the player who fired it, and through every other projectile, so a shotgun's pellets can all leave one spot at once. Clients only draw it where the server has it, it never bumps into their own player. The first time it touches anything that collides, the ground included, `ProjectileHit` fires with `tag` and it's removed. Bricks and statics with collision off don't count. |
@@ -218,6 +220,8 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:playAnimation(name[, loop])` | the name an `addAnimation` line gave its type; `loop` defaults to false | none | Plays an animation for everyone: once from its start, over the walk cycle and anything else playing, or looped until `stopAnimation`. Looping ones are remembered, so a client that joins later sees them too, and as many can loop at once as the model has animations. A player's own client plays its `grab` itself on the click, everything else reaches it from here like everyone else. An item in someone's hand plays through `item:playAnimation` instead, which its carrier's item bar knows about. Logs an error for a name the type has no animation by. |
 | `dynamic:stopAnimation([name])` | animation name, or nothing | none | Stops that looping animation, fading it out over the fade its `addAnimation` line gave it, or every one looping without a name. One playing once finishes on its own. |
 | `dynamic:setMeshDecal(meshName, decalName)` | mesh name within the model; file name of an image in `Assets/faces` or `Assets/shirts` (e.g. `"smiley.png"` or `"Mod-Police.png"`, up to 64 characters), or `""` to remove it | none | Shows a face or shirt on one mesh, drawn over its color, and broadcasts the change. The image covers the mesh's texture coordinates from 0 to 1, or only the rectangle a `decalarea` line in the model's `.txt` gives that mesh (`decalarea`, the mesh name, then the texture coordinates of the image's top left and bottom right corners, all tab separated), with nothing outside it; the default player's `Torso` has one covering its front. A model's face plate (a mesh named `Face1`, or `Face` without one) is see-through except for the face, so without a face it isn't drawn at all, and it casts no shadow or outline. Clients look the name up in their own `Assets/faces` folder, then `Assets/shirts`, so one they don't have isn't shown. |
+| `dynamic:setPart(slot, partName[, r, g, b, a[, scale]])` | slot name, up to 32 characters, `"hat"` is the one the appearance editor fills; file name of a model descriptor in `Assets/brickhead/parts` (like `"top_hat.txt"`), or `""` to take off what's in the slot; color 0-1, alpha 0 (the default) leaves the part its own look; size from 0.5 to 1.5 times the descriptor's (default 1) | none | Wears a model on the dynamic, the way `client:applyAppearance` puts a player's hat on, and broadcasts the change. The descriptor's `attach` lines say which mesh it's worn on and how it sits there, so the dynamic's model needs a mesh by that name (`Head` for the hats), though it doesn't have to be one that's drawn: `Hats.lua`'s hat lying on the ground is a model of nothing but a hidden `Head`, wearing the hat. Clients look the file up in their own parts folder, so one they don't have isn't shown. |
+| `dynamic:getPart(slot)` | slot name | partName, r, g, b, a, scale; or `nil` | What's worn in a slot, as `setPart` takes it, `nil` for nothing. |
 | `dynamic:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
 | `dynamic:clearHighlight()` | none | none | Removes the outline/highlight effect. |
 | `dynamic:setNameTag(text, r, g, b)` | text up to 64 characters, `""` for none; color, 0-1 each | none | Puts floating text over the object for every client, drawn over the world above its collision box, and broadcasts it. Clients don't draw the tag on the object they control, so you never see your own, a tag fades out past 150 world units and is left off past 256, and one is only drawn while the camera has a clear line to the object (its middle or the spot the tag floats at), so a player behind a wall doesn't show a name over it. `serverstart.lua` gives each player their client's name in `ClientJoin`. |
@@ -400,6 +404,31 @@ When a player's health reaches 0:
   leave the server without having.
 
 The constants above are globals at the top of `Damage.lua`, so a script run after it can change them.
+
+---
+
+## Hats that can be shot off
+
+`Hats.lua`, run from `serverstart.lua` after the add-ons and `Damage.lua`, lets a shot knock off the hat a player picked in
+their appearance editor. A hat is only a part drawn on a head (`dynamic:setPart`), nothing in the physics world, so it works
+from where shots go: `Support_Weapons.lua` calls every function in the global `ShotPathListeners` table with each stretch a
+shot travels, `listener(fromX, fromY, fromZ, toX, toY, toZ, shooter, hit)`. A hitscan shot is one stretch from the camera to
+where it landed, a round is one every 25 ms and a last one up to what it hit; `shooter` is the player dynamic that fired, and
+`hit` is what the stretch ended on, or `nil`. Add one with `table.insert(ShotPathListeners, fn)`.
+
+- A stretch that crosses the box over a head where the hat's crown is takes the hat off, and so does a shot that lands on
+  the top of the head, which still hurts as much as ever. Brims, visors, and a jester cap's horns don't count. Nobody
+  shoots off their own hat, and anything wearing a hat can lose it, the body a dead player leaves behind included
+  (`Damage.lua` leaves the hat off a body whose player had lost it).
+- The hat flies off along the shot as a `droppedHat` dynamic, which draws nothing itself and wears the hat as its own part,
+  so every hat in `Assets/brickhead/parts` works without anything written for it. Crown sizes for the hit box are in
+  `HAT_SHAPES` at the top of `Hats.lua`, a hat that isn't listed gets a middling one.
+- Anyone with nothing on their head can left click a hat within 12 studs to put it on, whoever it came off of. A hat nobody
+  takes is cleared away after three minutes, and no more than 24 lie around at once. Respawning puts the hat from the
+  appearance editor back on, as it always has.
+
+`knockHatOff(player, dirX, dirY, dirZ)` does it from Lua, returning `false` for a bare head, and `removeDroppedHat(id)` clears
+one away by its dynamic's net ID.
 
 ---
 
@@ -852,6 +881,29 @@ plain for them either way.
 gun, sends a `LaserEmitterA` at what the player looks at, and, if that's a brick whose type has printed faces
 (`brick:canPrint`), opens that brick's print menu with `client:openPrintMenu`. Anything else it hits just makes
 the noise. What a player picks only reaches the brick in the last print menu they were sent, once.
+
+---
+
+## Decals
+
+Marks left on the world, like the bullet holes the add-on guns leave in bricks. A decal is a flat square lying on a surface,
+drawn with a material of its own through the same lighting as everything else, so its normal map is what makes a hole look
+dented in, and it's lit, shadowed, and rained on like the brick under it. Decals never fade with time. Instead only so many
+exist at once, 256 unless `setMaxDecals` says otherwise, and adding one past that takes away the oldest. One put on a brick
+goes when the brick does. Clients who join later see the ones already there.
+
+| Function | Arguments | Returns | Description |
+|---|---|---|---|
+| `addDecalType(name, materialPath)` | a name to add decals by; a material descriptor relative to the game folder, like `"Assets/decals/bulletHole/bulletHole.txt"` | type ID | Registers a kind of decal. Clients load the material from their own copy of the same path, one they don't have isn't drawn. The albedo image's alpha is how much of the decal shows, so it should fade to nothing well inside its edges: everything that shows ought to fit the circle touching the square's sides, since the square is turned at random. The albedo is multiplied by the color of the brick the decal is on, so white in it is "the brick's own plastic". The images of a material all have to be the same size, see `Assets/decals/bulletHole` and the script there that makes its four images from one height field. Adding a name again replaces its material. |
+| `addDecal(type, x, y, z, normalX, normalY, normalZ[, size[, brick[, roll]]])` | a type's name or ID; where, and the normal of the surface there pointing out of it, as `raycast` and `ProjectileHit` give them; studs along each side (default 1, up to 64); the Brick it's on, or `nil`; radians it's turned about the normal, random if left out | none | Leaves a decal. With a brick it takes the brick's color, goes when the brick does, is slid along the face so it doesn't hang off the brick's edge (by half its size at most), and whatever still doesn't fit a small face is cut off at the brick's sides. Without one it's left exactly where it was put until it's the oldest. It goes out to clients at the end of the tick, after any bricks made in the same tick. |
+| `clearDecals()` | none | none | Removes every decal. |
+| `setMaxDecals(amount)` | 0 to 65535 | none | How many decals can exist at once, 256 to start with. Lowering it takes away the oldest right away, and 0 turns decals off. |
+| `getMaxDecals()` | none | count | The limit above. |
+| `getNumDecals()` | none | count | How many decals there are now. |
+
+`Support_Weapons.lua` adds the `bulletHole` type, and a weapon with `impactDecal = "bulletHole"` (and an `impactDecalSize`
+in studs, default 0.5) leaves one in any brick it hits: the Gun and the four Tier+Tactical weapons do. A round touches with
+a corner of its collision box, so the hole goes where the round's middle meets the face instead.
 
 ---
 

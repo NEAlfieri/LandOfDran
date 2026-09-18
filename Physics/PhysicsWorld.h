@@ -116,10 +116,11 @@ class PhysicsWorld
 	//already computes these each step, just reads the dispatcher's cached manifolds rather than testing anything itself
 	std::vector<btRigidBody*> getTouching(const btRigidBody* body) const;
 
-	//The first body that collides and was within `within` of the given body as of the most recent step(), with where on that body, or nullptr
+	//The first body that collides and was within `within` of the given body as of the most recent step(), with where on that body
+	//and the normal of its surface there pointing out of it, or nullptr
 	//Reads the same cached manifolds as getTouching
 	//skip, if given, says which other bodies don't count as something to touch, like one projectile to another
-	btRigidBody* getFirstContact(const btRigidBody* body, btScalar within, btVector3& point,
+	btRigidBody* getFirstContact(const btRigidBody* body, btScalar within, btVector3& point, btVector3& normal,
 		const std::function<bool(const btRigidBody*)>& skip = nullptr) const;
 
 	//ignoreAlso skips a second body, like the vehicle a player is driving

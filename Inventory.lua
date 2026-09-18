@@ -531,9 +531,9 @@ function removeShellFog(fog)
 end
 
 --Where a launcher shell lands: a push that knocks people and things away and breaks bricks off destructable vehicles, then smoke and fog
-function launcherShellHit(projectile, hit, x, y, z, tag)
+function launcherShellHit(projectile, hit, x, y, z, tag, normalX, normalY, normalZ)
 	if tag ~= SHELL_TAG then
-		return projectile, hit, x, y, z, tag
+		return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
 	end
 
 	--Damage.lua's damageByImpulse hurts every player the blast pushes, and blames whoever impulseAttacker is while it runs
@@ -552,7 +552,7 @@ function launcherShellHit(projectile, hit, x, y, z, tag)
 		end
 	end
 
-	return projectile, hit, x, y, z, tag
+	return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
 end
 registerEventListener("ProjectileHit", "launcherShellHit")
 

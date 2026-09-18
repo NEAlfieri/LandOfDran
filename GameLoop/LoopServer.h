@@ -64,6 +64,8 @@ class LoopServer
 		std::weak_ptr<Dynamic> projectile;
 		btRigidBody* hit = nullptr;
 		btVector3 point;
+		//Out of what it touched
+		btVector3 normal;
 	};
 
 	//Hits seen during this frame's physics step, oldest first, taken by updateProjectiles

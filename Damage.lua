@@ -296,11 +296,16 @@ function killPlayer(player, attacker, fromX, fromY, fromZ)
 	client:staticCamera(camX, camY, camZ)
 
 	--Their player goes, leaving them with none, and a body nobody controls takes its place
+	local woreHat = player:getPart("hat") ~= nil
 	player:destroy()
 
 	local corpse = createDynamic(brickhead, x, y, z)
 	corpse:setRotation(rotW, rotX, rotY, rotZ)
 	client:applyAppearance(corpse)
+	--Less the hat, if theirs was shot off, see Hats.lua
+	if not woreHat then
+		corpse:setPart("hat", "")
+	end
 	corpse:setVelocity(velX + awayX * CORPSE_PUSH_SPEED, velY + CORPSE_LIFT_SPEED, velZ + awayZ * CORPSE_PUSH_SPEED)
 	--Turning around the level axis square to the way it falls tips its head that way
 	corpse:setAngularVelocity(awayZ * CORPSE_TIP_SPEED, 0, -awayX * CORPSE_TIP_SPEED)

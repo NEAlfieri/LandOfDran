@@ -77,6 +77,11 @@ local TRACER_TAG = "TT_tracer"
 
 --raycast and ProjectileHit give what was hit with this type field for a Dynamic, which a player is
 local DYNAMIC_TYPE_ID = 1
+--And with this one for a brick
+local BRICK_TYPE_ID = 4
+
+--What the guns leave in a brick, a weapon asks for it with impactDecal = "bulletHole", see weaponImpactEffect
+addDecalType("bulletHole", "Assets/decals/bulletHole/bulletHole.txt")
 
 --What the physics world pulls things down at, for scaling a round's drop by its gravityScale
 WORLD_GRAVITY = -70
@@ -89,6 +94,42 @@ local AMMO_PRINT_EVERY_MS = 700
 
 --Clients whose counter was shown too recently to show again, by client ID
 local ammoPrintBlocked = {}
+
+--[[
+	Functions to call with each stretch of the way a shot travels: listener(fromX, fromY, fromZ, toX, toY, toZ,
+	shooter, hit). A hitscan shot is one stretch from the camera to where it landed, a round is one every
+	SHOT_PATH_MS and a last one up to whatever it hit. shooter is the player dynamic who fired, and hit is what
+	the stretch ends on, nil for one that ends in the air or on the ground. They're called before the impact does
+	anything else. This is for what a shot goes through without the physics ever noticing, like the hat on
+	someone's head, see Hats.lua. Add one with table.insert(ShotPathListeners, fn)
+]]
+ShotPathListeners = ShotPathListeners or {}
+local SHOT_PATH_MS = 25
+
+--Rounds in the air by their ID, each with the round, who fired it, and where it was when last looked at
+local flyingShots = {}
+
+local function tellShotPath(fromX, fromY, fromZ, toX, toY, toZ, shooter, hit)
+	for _, listener in ipairs(ShotPathListeners) do
+		listener(fromX, fromY, fromZ, toX, toY, toZ, shooter, hit)
+	end
+end
+
+function weaponShotPathTick()
+	for id, flying in pairs(flyingShots) do
+		--Gone without hitting anything, its lifetime ran out or something else removed it
+		if not dynamicExists(id) then
+			flyingShots[id] = nil
+		else
+			local x, y, z = flying.shot:getPosition()
+			tellShotPath(flying.x, flying.y, flying.z, x, y, z, flying.shooter, nil)
+			flying.x, flying.y, flying.z = x, y, z
+		end
+	end
+
+	schedule(SHOT_PATH_MS, "weaponShotPathTick")
+end
+schedule(SHOT_PATH_MS, "weaponShotPathTick")
 
 --Rounds still flying from weapons with a projectileLifetimeMS, by their ID, so one that has already hit
 --and been removed by the engine isn't removed again when its time runs out
@@ -444,6 +485,7 @@ local function fireOneShot(client, weapon, item, player)
 		--Who fired it, for whoever it lands on, see weaponProjectileHit
 		if shot ~= nil then
 			shot.shooterClient = client
+			flyingShots[shot.id] = { shot = shot, shooter = player, x = muzzleX, y = muzzleY, z = muzzleZ }
 		end
 
 		--particleEmitter in the originals, what streams out behind the round, gone along with it
@@ -481,14 +523,16 @@ local function fireOneShot(client, weapon, item, player)
 	--Hitscan: where the shot lands is worked out right away along the crosshair
 	local camX, camY, camZ = client:getCameraPosition()
 	local range = weapon.range or MAX_TRACE
-	local hit, hitX, hitY, hitZ = raycast(camX, camY, camZ,
+	local hit, hitX, hitY, hitZ, normalX, normalY, normalZ = raycast(camX, camY, camZ,
 		camX + dirX * range, camY + dirY * range, camZ + dirZ * range, player)
 
 	--Nothing in the way, so the tracer runs out at the weapon's range
 	if hitX == nil then
 		hitX, hitY, hitZ = camX + dirX * range, camY + dirY * range, camZ + dirZ * range
+		tellShotPath(camX, camY, camZ, hitX, hitY, hitZ, player, nil)
 	else
-		weaponImpactEffect(weapon, hitX, hitY, hitZ)
+		tellShotPath(camX, camY, camZ, hitX, hitY, hitZ, player, hit)
+		weaponImpactEffect(weapon, hitX, hitY, hitZ, hit, normalX, normalY, normalZ)
 		hurtIfPlayer(hit, hitX, hitY, hitZ, weapon, client)
 	end
 
@@ -564,8 +608,17 @@ end
 --[[
 	What a shot leaves where it lands, the ExplosionData of the originals: a puff of dust, and for
 	weapons that had them a flash on top of it, a sound, and a light that lasts for the explosion
+
+	A weapon with an impactDecal also leaves that decal on a brick it hits, the bullet hole below for the
+	guns, facing out of the side it hit. Holes don't fade: the server keeps the newest few hundred of them,
+	see setMaxDecals in LuaAPI.md, and one goes when its brick does. hit and the normal are left out by
+	anything that only wants the puff, and holeX, holeY, holeZ are where the decal goes if that isn't x, y, z
 ]]
-function weaponImpactEffect(weapon, x, y, z)
+function weaponImpactEffect(weapon, x, y, z, hit, normalX, normalY, normalZ, holeX, holeY, holeZ)
+	if weapon.impactDecal ~= nil and hit ~= nil and hit.type == BRICK_TYPE_ID and normalX ~= nil then
+		addDecal(weapon.impactDecal, holeX or x, holeY or y, holeZ or z, normalX, normalY, normalZ, weapon.impactDecalSize or 0.5, hit)
+	end
+
 	if weapon.impactEmitter ~= nil then
 		local puff = addEmitter(weapon.impactEmitter, x, y, z)
 		if puff ~= nil then
@@ -597,14 +650,29 @@ end
 
 --Where a round lands. A tracer is only something to look at, so it leaves nothing behind; a real
 --round from one of the projectile weapons puffs where it hits. The engine removes either one
-function weaponProjectileHit(projectile, hit, x, y, z, tag)
+function weaponProjectileHit(projectile, hit, x, y, z, tag, normalX, normalY, normalZ)
 	--The engine removes it now, so its lifetime has nothing left to do
 	liveShots[projectile.id] = nil
+
+	--The last stretch of its way here
+	local flying = flyingShots[projectile.id]
+	if flying ~= nil then
+		flyingShots[projectile.id] = nil
+		tellShotPath(flying.x, flying.y, flying.z, x, y, z, flying.shooter, hit)
+	end
 
 	if tag ~= TRACER_TAG then
 		local weapon = Weapons[tag]
 		if weapon ~= nil then
-			weaponImpactEffect(weapon, x, y, z)
+			--A round touches with a corner of the box it collides as, so the hole goes where its middle meets that face instead
+			local holeX, holeY, holeZ = x, y, z
+			if weapon.impactDecal ~= nil and normalX ~= nil then
+				local midX, midY, midZ = projectile:getPosition()
+				local above = (midX - x) * normalX + (midY - y) * normalY + (midZ - z) * normalZ
+				holeX, holeY, holeZ = midX - normalX * above, midY - normalY * above, midZ - normalZ * above
+			end
+
+			weaponImpactEffect(weapon, x, y, z, hit, normalX, normalY, normalZ, holeX, holeY, holeZ)
 			hurtIfPlayer(hit, x, y, z, weapon, projectile.shooterClient)
 
 			--Anything else the weapon does where its round lands, like a rocket's blast or an arrow sticking in
@@ -614,7 +682,7 @@ function weaponProjectileHit(projectile, hit, x, y, z, tag)
 		end
 	end
 
-	return projectile, hit, x, y, z, tag
+	return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
 end
 registerEventListener("ProjectileHit", "weaponProjectileHit")
 

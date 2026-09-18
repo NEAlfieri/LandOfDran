@@ -27,6 +27,9 @@ const int MaterialGlow = 7;
 const int MaterialSlippery = 8;
 const int MaterialFoil = 9;
 const int MaterialRainbow = 10;
+//Not a brick material: a decal like a bullet hole from decal.vert. Its albedo's alpha is how much of it shows over
+//what's behind it, and preColor tints it instead of replacing its color, see Graphics/WorldDecals.h
+const int MaterialWorldDecal = 100;
 
 //About how far apart hologram bars are, in world units, a brick gets however many fit evenly around it
 const float hologramBarSpacing = 1.0;
@@ -573,7 +576,10 @@ void main()
 
 	float nonLinearAlbedoF = 1.0;											
 	vec3 albedo = pow(albedo_.rgb,vec3(1.0 + 1.2 * nonLinearAlbedoF));
-	albedo = mix(albedo.rgb,preColor.rgb,preColor.a);
+	if(material == MaterialWorldDecal)
+		albedo *= preColor.rgb;
+	else
+		albedo = mix(albedo.rgb,preColor.rgb,preColor.a);
 
 	/*
 		What the surface is painted, in the same space as the color that ends up drawn rather than the
@@ -763,7 +769,7 @@ void main()
 		color.rgb += skyReflection * wetFresnel * wet * mor.g * (1.0 - skyLight) * 0.5;
 	}
 
-	color.a = opacity;
+	color.a = material == MaterialWorldDecal ? opacity * albedo_.a : opacity;
 
 	//Tone maping
 	color.rgb = color.rgb / (color.rgb + vec3(1.0));

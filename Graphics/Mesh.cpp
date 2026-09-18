@@ -603,9 +603,7 @@ void ModelInstance::calculateMeshTransforms(float deltaT,glm::mat4 currentTransf
 
 	for (unsigned int a = 0; a < currentNode->meshes.size(); a++)
 	{
-		if (currentNode->meshes[a]->nonRenderingMesh)
-			continue;
-
+		//Meshes that are never drawn too: a part can be worn on one, like the hat on a hat lying on the ground, see placeAttachment
 		MeshTransforms[currentNode->meshes[a]->meshIndex] = glm::scale(type->baseScale) * currentTransform;
 
 		if (debugLayer != -1)
@@ -2263,6 +2261,20 @@ bool Model::getDrawnBounds(glm::vec3& low, glm::vec3& high) const
 	//A negative scale on an axis would turn that side of the box inside out
 	glm::vec3 scaledLow = low * baseScale;
 	glm::vec3 scaledHigh = high * baseScale;
+	low = glm::min(scaledLow, scaledHigh);
+	high = glm::max(scaledLow, scaledHigh);
+	return true;
+}
+
+bool Model::getMeshBounds(const std::string& meshName, glm::vec3& low, glm::vec3& high) const
+{
+	int meshIdx = getMeshIdxIgnoringCase(meshName);
+	if (meshIdx == -1 || !allMeshes[meshIdx]->hasBounds())
+		return false;
+
+	//A negative scale on an axis would turn that side of the box inside out
+	glm::vec3 scaledLow = allMeshes[meshIdx]->boundsLow * baseScale;
+	glm::vec3 scaledHigh = allMeshes[meshIdx]->boundsHigh * baseScale;
 	low = glm::min(scaledLow, scaledHigh);
 	high = glm::max(scaledLow, scaledHigh);
 	return true;
