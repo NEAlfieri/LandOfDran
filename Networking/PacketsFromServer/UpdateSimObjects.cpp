@@ -151,6 +151,7 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 
 			bool playWalkAnimation = flags & 64;	//Is this a player that is currently walking (will probably be expanded soon)
 			bool forcePlayerUpdate = flags & 128;	//Were the pos/rot/vel changes in this packet the result of an explicit lua command
+			bool velocityOnly = extraFlags & DynamicExtra_VelocityOnly;	//Lua set only the velocity, so our own player keeps its position, see Dynamic::forcePlayerVelocity
 		
 			//Often only 1-3 of these will be sent, but the order if these if statements is still important
 			glm::vec3 pos;
@@ -253,7 +254,11 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 					//for when prediction ends and Dynamic::handOffFromPrediction hands control back to it
 					bool predictingLocally = getTicksMS() < toUpdate->predictLocallyUntil;
 
-					if (needPosRot && havePos)
+					//A velocity Lua set on our own player: the position that came with it is where the server had us a round
+					//trip ago, and taking it every tick of something like a rope swing drags us back that far each time
+					bool keepOwnPosition = toUpdate->clientControlled && velocityOnly;
+
+					if (needPosRot && havePos && !keepOwnPosition)
 					{
 						//msSinceLastSend already accounts for how often this client is sent one, see SimObject::scaleUpdateInterval
 						toUpdate->interpolator.addSnapshot(pos, rot, simulation.idealBufferSize, msSinceLastSend);
@@ -273,12 +278,15 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 					if (needAngVel && !predictingLocally)
 						toUpdate->body->setAngularVelocity(btVector3(angVel.x, angVel.y, angVel.z));
 
-					//Also tilts a swimming player, see Dynamic::updateSnapshot
-					toUpdate->playWalkingAnimation = playWalkAnimation;
-					if (playWalkAnimation)
-						toUpdate->play(0, true);
-					else
-						toUpdate->stop(0);
+					//Also tilts a swimming player, see Dynamic::updateSnapshot. Our own player decides its walk from its keys
+					if (!keepOwnPosition)
+					{
+						toUpdate->playWalkingAnimation = playWalkAnimation;
+						if (playWalkAnimation)
+							toUpdate->play(0, true);
+						else
+							toUpdate->stop(0);
+					}
 
 					if (glm::length(linVel) > 0.1 || glm::length(angVel) > 0.1)
 						toUpdate->body->activate();

@@ -184,7 +184,7 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:getPosition()` | none | x, y, z | Current world position. |
 | `dynamic:setPosition(x, y, z)` | position | none | Teleports the dynamic. |
 | `dynamic:getVelocity()` | none | x, y, z | Current linear velocity. |
-| `dynamic:setVelocity(x, y, z)` | velocity | none | Sets linear velocity directly. |
+| `dynamic:setVelocity(x, y, z)` | velocity | none | Sets linear velocity directly. On a player it reaches their own game as a velocity-only correction: they take the new velocity but keep the position their game has, rather than being moved back to where the server last heard they were, so it can be called every tick (the way the grapple rope swings someone) without rubber-banding. `setPosition` and `setRotation` do move them. `radiusImpulse` pushes players the same way. |
 | `dynamic:getAngularVelocity()` | none | x, y, z | Current angular velocity. |
 | `dynamic:setAngularVelocity(x, y, z)` | angular velocity | none | Sets angular velocity directly. |
 | `dynamic:setAngularFactor(x, y, z)` | per-axis multiplier (0 = locked) | none | Restricts which axes the physics engine is allowed to rotate the object around, e.g. `(0,0,0)` to stop it tipping over. |

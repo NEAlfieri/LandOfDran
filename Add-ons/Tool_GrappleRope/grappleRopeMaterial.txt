@@ -1,0 +1,6 @@
+#The print gun's metal, see Assets/tools/printGunMaterial.txt, in GrappleRope's orange colorShiftColor
+#A number here instead of a file name is a flat value, see Material
+albedo	1.0 0.5 0.0
+metalness	0.94
+occlusion	../../Assets/brickhead/scuffed-plastic-ao.png
+roughness	../../Assets/brickhead/scuffed-plastic-rough.png

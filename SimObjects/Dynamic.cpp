@@ -470,7 +470,8 @@ void Dynamic::measurePendingUpdate()
 	//against geometry while swinging the held item around) that never gets corrected again. Keep forcing it
 	//while snapped so the client stays pinned at zero instead of visibly drifting (only shows up in the debug
 	//physics view, which renders the raw local body instead of the smoothed interpolator)
-	if ((lastSentVel.distance2(body->getLinearVelocity()) > velocityResendThreshold && !noVelUpdates) || isSnappedToCursor())
+	//A velocity Lua set on a player goes out even if it's what was sent last, their game may have drifted from it since
+	if ((lastSentVel.distance2(body->getLinearVelocity()) > velocityResendThreshold && !noVelUpdates) || isSnappedToCursor() || forcePlayerVelocity)
 		pendingUpdate.vel = true;
 
 	//More than like 6 degrees difference in rotation?
@@ -782,10 +783,13 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 	flags += restitutionUpdated ? 16 : 0;
 	flags += frictionUpdated ? 32 : 0;
 	flags += playWalkingAnimation ? 64 : 0;
-	flags += forcePlayerUpdate ? 128 : 0;
+	flags += (forcePlayerUpdate || forcePlayerVelocity) ? 128 : 0;
 	dest[1] = flags;
 
+	//Only the velocity was set, so the controlling client is told to keep its own position
+	const bool velocityOnly = forcePlayerVelocity && !forcePlayerUpdate;
 	forcePlayerUpdate = false;
+	forcePlayerVelocity = false;
 
 	bool needLook = pendingUpdate.look;
 	bool needOneShot = pendingUpdate.oneShot;
@@ -795,6 +799,7 @@ void Dynamic::addToUpdatePacket(enet_uint8 * dest)
 	extraFlags |= needLook ? DynamicExtra_Look : 0;
 	extraFlags |= needOneShot ? DynamicExtra_OneShot : 0;
 	extraFlags |= needLoops ? DynamicExtra_Loops : 0;
+	extraFlags |= velocityOnly ? DynamicExtra_VelocityOnly : 0;
 	dest[2] = extraFlags;
 
 	int byteIterator = 3;

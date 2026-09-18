@@ -1,0 +1,11 @@
+#The hook and the links of the rope are projectiles with nothing to see, the way GrappleRopeProjectile
+#and ChainProjectile had no shape in Blockland: only the trail of dots each link leaves is drawn. A
+#projectile needs a model for its collision box, so this is the cube loaded but never drawn
+file	../../Assets/cube/cube.fbx
+Triangulate	true
+FlipUVs	true
+CalcTangentSpace	true
+OptimizeGraph	true
+JoinIdenticalVertices	true
+singlematerial	Assets/cube/metal.txt
+hide	Cube

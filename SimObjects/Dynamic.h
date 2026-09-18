@@ -98,6 +98,14 @@ class Dynamic : public SimObject
 	//If lua changed the position/velocity/etc of a player controlled object
 	bool forcePlayerUpdate = false;
 
+	/*
+		If lua changed only the velocity of a player controlled object. Sent as a forced update too, but marked
+		DynamicExtra_VelocityOnly so the controlling client takes the velocity without being moved to the position
+		the server has for them, which is a round trip old: something setting a player's velocity every tick, like
+		a rope swinging them, would otherwise drag them back that far each time
+	*/
+	bool forcePlayerVelocity = false;
+
 	//What kind of dynamic this is, and what its creation packet carries after a plain dynamic's, see DynamicKind
 	virtual DynamicKind getKind() const { return isProjectile ? DynamicKind_Projectile : DynamicKind_Plain; }
 	virtual unsigned int getKindCreationBytes() const { return 0; }

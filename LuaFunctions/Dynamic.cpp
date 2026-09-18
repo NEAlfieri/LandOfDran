@@ -135,7 +135,8 @@ static int LUA_dynamicSetVelocity(lua_State* L)
 		return 0;
 
 	dynamic->setVelocity(btVector3(x, y, z));
-	dynamic->forcePlayerUpdate = true;
+	//A player's own game takes the velocity without being moved back to where the server has them, see Dynamic::forcePlayerVelocity
+	dynamic->forcePlayerVelocity = true;
 	dynamic->activate();
 
 	return 0;

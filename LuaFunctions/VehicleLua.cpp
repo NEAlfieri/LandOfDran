@@ -1092,7 +1092,7 @@ static int LUA_radiusImpulse(lua_State* L)
 		glm::vec3 direction = impulseDirection(center, b2g3(dynamic->body->getCenterOfMassPosition()));
 		glm::vec3 change = direction * reached * dynamic->body->getInvMass();
 		dynamic->setVelocity(dynamic->getVelocity() + g2b3(change));
-		dynamic->forcePlayerUpdate = true;
+		dynamic->forcePlayerVelocity = true;
 		dynamic->activate();
 		pushed++;
 

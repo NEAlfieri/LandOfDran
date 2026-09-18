@@ -1,0 +1,5 @@
+#The Grapple Rope is the print gun's shape with GrappleRope's colorShiftColor, "1 0.5 0 1", over it.
+#Blockland tinted the shape's own textures; here the print gun has none, so the whole thing is one
+#orange metal instead of the print gun's grey, see Assets/tools/printGun.txt
+file	../../Assets/tools/printGun.dts
+singlematerial	Add-ons/Tool_GrappleRope/grappleRopeMaterial.txt
