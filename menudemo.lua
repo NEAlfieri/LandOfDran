@@ -315,6 +315,19 @@ local WAYPOINT_REACHED = 4
 local BOT_RANGE = 70
 local BOT_FIRE_MS = 420
 
+--[[
+	How far off an enemy a bot is happy to be. Further than BOT_HOLD_FAR it carries on to wherever it was
+	going, between the two it stands its ground and strafes, and closer than BOT_HOLD_NEAR it backs off
+
+	Without this they walk into whoever they're shooting at, both teams end up in one scrum in the middle
+	of the island, and every shot of the demo is a pile of players standing in each other
+]]
+local BOT_HOLD_FAR = 46
+local BOT_HOLD_NEAR = 16
+
+--How long a bot strafes one way before turning round, so a fight moves instead of being two statues
+local BOT_STRAFE_MS = 2200
+
 --Roughly chest height on a brickhead, where its shots come from
 local BOT_MUZZLE_HEIGHT = 3.2
 
@@ -359,6 +372,9 @@ local function makeBot(team, x, z)
 	bot.waypoint = nil
 	bot.jetUntilMS = 0
 	bot.homeX, bot.homeZ = x, z
+	--Which way it sidesteps while it's holding its ground, and when it next turns round
+	bot.strafe = (math.random(2) == 1) and 1 or -1
+	bot.strafeUntilMS = 0
 
 	table.insert(demoBots, bot)
 	return bot
@@ -509,6 +525,9 @@ local function thinkBot(bot, nowMS)
 
 	local target = enemyInSight(bot)
 
+	--What they're doing with their feet: walking on to the waypoint unless a fight says otherwise
+	local forward, backward, left, right = true, false, false, false
+
 	--Shooting, they face whoever they're shooting at instead of where they're going
 	if target then
 		local tx, ty, tz = target:getPosition()
@@ -516,6 +535,27 @@ local function thinkBot(bot, nowMS)
 		local aim = math.sqrt(ax * ax + az * az)
 		if aim > 0.001 then
 			dx, dz = ax / aim, az / aim
+		end
+
+		--[[
+			Close enough to fight: stand off them and sidestep rather than walking into them. Strafing is
+			relative to where they're looking, which is at the enemy, so they circle each other
+		]]
+		if aim <= BOT_HOLD_FAR then
+			forward = false
+
+			if nowMS >= bot.strafeUntilMS then
+				bot.strafe = -bot.strafe
+				bot.strafeUntilMS = nowMS + BOT_STRAFE_MS + math.random(0, 1200)
+			end
+
+			if aim < BOT_HOLD_NEAR then
+				--Right on top of them, give ground while keeping them covered
+				backward = true
+			else
+				left = bot.strafe < 0
+				right = bot.strafe > 0
+			end
 		end
 
 		if nowMS >= nextRocketMS then
@@ -536,8 +576,12 @@ local function thinkBot(bot, nowMS)
 	end
 	local jetting = nowMS < bot.jetUntilMS
 
+	--Kept for the camera, which has no other way to ask which way a bot is facing
+	bot.lookX, bot.lookZ = dx, dz
+	bot.fighting = target ~= nil
+
 	--A bot's look direction is where its shots and its head go, and walking uses only the flat part of it
-	bot:setBotInput(dx, jetting and 0.35 or 0, dz, true, false, false, false, false, jetting, false)
+	bot:setBotInput(dx, jetting and 0.35 or 0, dz, forward, backward, left, right, false, jetting, false)
 end
 
 --------------------------------------------------------------------------------------------------------
@@ -666,22 +710,45 @@ end
 	in the demo right up until somebody walks into the lens, and then it's a wall of torso: they run where
 	they like and the camera is on a fixed path, so the two do meet
 ]]
-local function pushClear(x, y, z, minimum)
-	for _, bot in ipairs(demoBots) do
-		local bx, _, bz = bot:getPosition()
-		local dx, dz = x - bx, z - bz
-		local distance = math.sqrt(dx * dx + dz * dz)
-		if distance < minimum then
-			--Standing exactly on it, push it any which way rather than dividing by nothing
-			if distance < 0.001 then
-				dx, dz, distance = 1, 0, 1
+local function pushClear(x, y, z, minimum, except)
+	--Twice, since being shoved clear of one of them can put it inside the next
+	for pass = 1, 2 do
+		for _, bot in ipairs(demoBots) do
+			if bot ~= except then
+			local bx, _, bz = bot:getPosition()
+			local dx, dz = x - bx, z - bz
+			local distance = math.sqrt(dx * dx + dz * dz)
+			if distance < minimum then
+				--Standing exactly on it, push it any which way rather than dividing by nothing
+				if distance < 0.001 then
+					dx, dz, distance = 1, 0, 1
+				end
+				local push = (minimum - distance) / distance
+				x = x + dx * push
+				z = z + dz * push
 			end
-			local push = (minimum - distance) / distance
-			x = x + dx * push
-			z = z + dz * push
+			end
 		end
 	end
 	return x, y, z
+end
+
+--Whoever the over-the-shoulder shot is following, picked again at each cut to it
+demoStar = nil
+
+--One of the bots in a fight if any of them are, otherwise any of them at all
+local function pickStar()
+	local fighting = {}
+	for _, bot in ipairs(demoBots) do
+		if bot.fighting then
+			table.insert(fighting, bot)
+		end
+	end
+	if #fighting > 0 then
+		demoStar = fighting[math.random(#fighting)]
+	elseif #demoBots > 0 then
+		demoStar = demoBots[math.random(#demoBots)]
+	end
 end
 
 --Wherever the action is right now: the middle of everyone still on their feet, or the island's middle
@@ -695,31 +762,6 @@ local function crowdCenter()
 		return 0, FLOOR_TOP + 3, 0
 	end
 	return x / count, y / count + 3, z / count
-end
-
---The two bots nearest each other from opposite teams, which is where the shooting is
-local function firefightCenter()
-	local bestX, bestY, bestZ, bestDistance = nil, nil, nil, 9999
-	for _, a in ipairs(demoBots) do
-		if a.team == "red" then
-			for _, b in ipairs(demoBots) do
-				if b.team == "blue" then
-					local ax, ay, az = a:getPosition()
-					local bx, by, bz = b:getPosition()
-					local distance = math.sqrt((ax - bx) ^ 2 + (az - bz) ^ 2)
-					if distance < bestDistance then
-						bestDistance = distance
-						bestX, bestY, bestZ = (ax + bx) / 2, (ay + by) / 2 + 3, (az + bz) / 2
-					end
-				end
-			end
-		end
-	end
-
-	if not bestX then
-		return crowdCenter()
-	end
-	return bestX, bestY, bestZ
 end
 
 --[[
@@ -756,25 +798,34 @@ local DEMO_SHOTS = {
 	},
 
 	--[[
-		Down among them, drifting round the fighting. The camera swings round the island's middle rather
-		than round the fight itself, which keeps it in the open ring between the plaza and the wall wherever
-		the fight has wandered off to
+		Over one player's shoulder while they fight, which is the only close shot that can't be walked into:
+		the camera is always the same distance behind whoever it's following, wherever they go, rather than
+		sitting on a path of its own that they wander across
 	]]
 	{
 		ms = 11000,
 		camera = function(t)
-			local atX, atY, atZ = firefightCenter()
-			--Out past the fight from the middle of the island, at a fixed distance so it's never in a wall
-			--Inside the ring of pillars holding the catwalks up, which stand 32 studs out
-			local toward = math.atan(atZ, atX)
-			local angle = toward + mix(-0.45, 0.45, ease(t))
-			local radius = mix(27, 22, ease(t))
-			local x = math.cos(angle) * radius
-			local z = math.sin(angle) * radius
-			--Far enough off everyone that a whole player fits in the frame rather than filling it
-			local y
-			x, y, z = pushClear(x, BAND_LOW, z, 15)
-			local dirX, dirY, dirZ = lookFrom(x, y, z, atX, atY, atZ)
+			local bot = demoStar
+			if not bot or not bot.lookX then
+				return DEMO_SHOTS[1].camera(t)
+			end
+
+			local bx, by, bz = bot:getPosition()
+			local lookX, lookZ = bot.lookX, bot.lookZ
+
+			--Behind and above them, swinging round to one side over the shot
+			local side = mix(-0.35, 0.35, ease(t))
+			local back = mix(13, 10, ease(t))
+			local x = bx - lookX * back + lookZ * back * side
+			local z = bz - lookZ * back - lookX * back * side
+			local y = by + mix(6.5, 5, ease(t))
+
+			--Anyone else wandering into the lens shoves it aside, but never the one it's following
+			x, y, z = pushClear(x, y, z, 7, bot)
+
+			--Looking past them at whatever they're shooting at, rather than at the back of their head
+			--Aimed at head height, so the player sits in the frame rather than half out of the bottom of it
+			local dirX, dirY, dirZ = lookFrom(x, y, z, bx + lookX * 9, by + 5.5, bz + lookZ * 9)
 			return x, y, z, dirX, dirY, dirZ
 		end
 	},
@@ -901,6 +952,8 @@ function demoTick()
 		shotStartedMS = demoClockMS
 		shot = DEMO_SHOTS[shotIndex]
 		elapsed = 0
+		--A new player for the over-the-shoulder shot to follow every time round
+		pickStar()
 		--Only with logger/verbose on, which is how a shot that ends up inside the build gets found
 		debug("Menu demo cut to shot " .. shotIndex)
 	end

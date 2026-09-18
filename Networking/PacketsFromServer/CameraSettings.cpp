@@ -84,7 +84,6 @@ bool CameraSettingsPacket::applyPacket(const ClientProgramData& pd, Simulation& 
 
 	if (!boundToObject)
 	{
-		std::cout << "No object!\n";
 		simulation.camera->target.reset();
 		simulation.camera->freeDirection = !lockCamDir;
 		if (lockCamDir)
