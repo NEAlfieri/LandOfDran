@@ -58,6 +58,14 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	pd.selectionBox.cancel();
 	jetSuppressed = false;
 
+	//Before what they're tied to
+	if (simulation.ropes)
+	{
+		simulation.ropes->destroyAll();
+		delete simulation.ropes;
+		simulation.ropes = nullptr;
+	}
+
 	//destroyAll actually frees each object (and its ModelInstance, removing it from e.g. the highlight list)
 	//Deleting the holder alone would leak them, leaving their highlights drawn over the main menu
 	if (simulation.dynamics)
@@ -2188,6 +2196,9 @@ void LoopClient::renderScene(bool clipAtWater)
 	if (simulation.worldDecals)
 		simulation.worldDecals->render(pd.shaders, pd.lightSpaceMatricies, pd.shadowSoftness, pd.tintShadowsActive);
 
+	if (pd.ropeRenderer)
+		pd.ropeRenderer->render(pd.shaders, pd.lightSpaceMatricies);
+
 	if (timePasses)
 		pd.profiler.end();
 
@@ -2799,6 +2810,15 @@ void LoopClient::renderEverything(float deltaT)
 
 	placeHeldItems(deltaT);
 	updateDisplayItemHighlight();
+
+	//Once everything a rope can be tied to or drawn on is where it's drawn this frame
+	if (pd.ropeRenderer)
+	{
+		pd.ropeRenderer->begin();
+		for (unsigned int a = 0; simulation.ropes && a < simulation.ropes->size(); a++)
+			pd.ropeRenderer->add(*simulation.ropes->get(a), deltaT);
+		pd.ropeRenderer->upload();
+	}
 
 	/*
 		Anything a predicted click started keeps going here: its later sounds, and its muzzle flash and
@@ -3599,6 +3619,7 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 		simulation.lights = new ObjHolder<Light>(LightTypeId);
 		simulation.emitters = new ObjHolder<Emitter>(EmitterTypeId);
 		simulation.vehicles = new ObjHolder<Vehicle>(VehicleTypeId);
+		simulation.ropes = new ObjHolder<Rope>(RopeTypeId);
 		simulation.bricks = new BrickHolder(pd.physicsWorld, &pd.brickTypes);
 		simulation.bricks->setRenderer(pd.brickRenderer);
 		simulation.brickDebris = new BrickDebris(pd.physicsWorld, &pd.brickTypes);
@@ -3642,6 +3663,13 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	{
 		for (unsigned int a = 0; a < simulation.vehicles->size(); a++)
 			simulation.vehicles->get(a)->updateSnapshot(deltaT);
+	}
+
+	//Our own world gets every rope's pull too, so one on our player is part of what we simulate them with
+	if (pd.physicsWorld && simulation.ropes)
+	{
+		for (unsigned int a = 0; a < simulation.ropes->size(); a++)
+			simulation.ropes->get(a)->updatePhysics(simulation.dynamics, simulation.vehicles);
 	}
 
 	if (pd.physicsWorld)
@@ -3927,6 +3955,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 
 	pd.pointLights = new PointLights();
 	pd.particles = new ParticleSystem(pd.textures);
+	pd.ropeRenderer = new RopeRenderer();
 	pd.particles->setMaxParticles(settings->getInt("graphics/maxparticles"));
 	createShadowTarget(settings);
 	pd.rain.setQuality(settings->getInt("graphics/rainquality"), pd.textures);
@@ -4064,6 +4093,9 @@ LoopClient::~LoopClient()
 
 	delete pd.particles;
 	pd.particles = nullptr;
+
+	delete pd.ropeRenderer;
+	pd.ropeRenderer = nullptr;
 
 	delete pd.skybox;
 	pd.skybox = nullptr;

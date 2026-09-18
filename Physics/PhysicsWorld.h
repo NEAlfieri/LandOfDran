@@ -10,6 +10,7 @@
 #include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "SweepTest.h"
+#include "RopeConstraint.h"
 
 //glm::vec3 to btVector3
 inline btVector3 g2b3(const glm::vec3 &in)
@@ -73,6 +74,9 @@ class PhysicsWorld
 	btDefaultMotionState* planeState = nullptr;
 	btRigidBody* groundPlane = nullptr;
 	btGhostPairCallback* pairCallback = nullptr;
+
+	//Every rope in the world, so one can be taken out along with either of the bodies it's tied to, see removeBody
+	std::vector<RopeConstraint*> ropes;
 
 	//Bullet's internal tick callbacks, which hand each substep to beforeSubstep and afterSubstep
 	static void substepStarting(btDynamicsWorld* world, btScalar timeStep);
@@ -162,10 +166,15 @@ class PhysicsWorld
 		world->addRigidBody(body, group, mask);
 	}
 
-	void removeBody(btRigidBody* body)
-	{
-		world->removeRigidBody(body);
-	}
+	/*
+		Any rope tied to the body leaves the world first, since Bullet keeps a constraint's bodies by reference and
+		would go on solving it against one that's gone. Whoever owns the rope sees RopeConstraint::inWorld go false
+	*/
+	void removeBody(btRigidBody* body);
+
+	//The rope is still its owner's to delete, after removeRope, or once inWorld is false
+	void addRope(RopeConstraint* rope);
+	void removeRope(RopeConstraint* rope);
 
 	//I think it returns how many substeps were used or something? 
 	int step(float deltaT);

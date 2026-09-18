@@ -195,6 +195,36 @@ bool AddSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation& s
 			}
 			break;
 		}
+		case RopeTypeId:
+		{
+			unsigned int numObjects = packet->data[2];
+			unsigned int byteIterator = 3;
+			for (unsigned int a = 0; a < numObjects && simulation.ropes; a++)
+			{
+				if (byteIterator + sizeof(netIDType) > packet->dataLength)
+					break;
+
+				netIDType id;
+				memcpy(&id, packet->data + byteIterator, sizeof(netIDType));
+				byteIterator += sizeof(netIDType);
+
+				//How long a rope's state is depends on how many bends it has
+				unsigned int bytes = Rope::readStateBytes(packet->data + byteIterator, (unsigned int)packet->dataLength - byteIterator);
+				if (bytes == 0)
+					break;
+
+				//Can be sent twice, see the note on statics above
+				if (!simulation.ropes->find(id))
+				{
+					simulation.ropes->clientSetNextId(id);
+					std::shared_ptr<Rope> newRope = simulation.ropes->create();
+					newRope->readFromPacket(packet->data + byteIterator);
+				}
+
+				byteIterator += bytes;
+			}
+			break;
+		}
 		case VehicleTypeId:
 		{
 			unsigned int numObjects = packet->data[2];

@@ -55,6 +55,9 @@ class LoopServer
 	//Splash and ExitWater sounds for dynamics that just went into or came out of the water fast, after the physics step
 	void playWaterSounds();
 
+	//Before the physics step: removes ropes tied to something that's gone, and keeps the rest's constraints in the world, see Rope::updatePhysics
+	void updateRopes();
+
 	//Removes emitters whose type's lifetime is up, or whose dynamic or brick is gone
 	void updateEmitters();
 

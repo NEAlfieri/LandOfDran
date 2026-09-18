@@ -7,6 +7,7 @@
 #include "../SimObjects/Emitter.h"
 #include "../SimObjects/Item.h"
 #include "../SimObjects/Vehicle.h"
+#include "../SimObjects/Rope.h"
 #include "../Networking/ObjHolder.h"
 #include "../Graphics/PlayerCamera.h"
 #include "../GameLoop/PlayerController.h"
@@ -99,6 +100,7 @@ struct Simulation
 	ObjHolder<Light>* lights = nullptr;
 	ObjHolder<Emitter>* emitters = nullptr;
 	ObjHolder<Vehicle>* vehicles = nullptr;
+	ObjHolder<Rope>* ropes = nullptr;
 
 	//Goes up whenever statics are added, removed, or changed, so point light shadows know to redraw
 	unsigned int staticsChanged = 0;

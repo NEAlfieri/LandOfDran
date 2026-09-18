@@ -9,6 +9,44 @@ int PhysicsWorld::step(float deltaT)
   return world->stepSimulation(seconds, maxSubSteps, fixedTimeStep);
 }
 
+void PhysicsWorld::removeBody(btRigidBody* body)
+{
+  for (size_t a = 0; a < ropes.size();)
+  {
+    if (ropes[a]->involves(body))
+    {
+      world->removeConstraint(ropes[a]);
+      ropes[a]->inWorld = false;
+      ropes.erase(ropes.begin() + a);
+    }
+    else
+      a++;
+  }
+
+  world->removeRigidBody(body);
+}
+
+void PhysicsWorld::addRope(RopeConstraint* rope)
+{
+  if (rope->inWorld)
+    return;
+
+  //Whatever is on the ends of a rope can still bump into each other
+  world->addConstraint(rope, false);
+  rope->inWorld = true;
+  ropes.push_back(rope);
+}
+
+void PhysicsWorld::removeRope(RopeConstraint* rope)
+{
+  if (!rope->inWorld)
+    return;
+
+  world->removeConstraint(rope);
+  rope->inWorld = false;
+  ropes.erase(std::remove(ropes.begin(), ropes.end(), rope), ropes.end());
+}
+
 PhysicsWorld::PhysicsWorld()
 {
   collisionConfig = new btDefaultCollisionConfiguration();
@@ -55,6 +93,13 @@ void PhysicsWorld::substepFinished(btDynamicsWorld* world, btScalar timeStep)
 
 PhysicsWorld::~PhysicsWorld()
 {
+  for (RopeConstraint* rope : ropes)
+  {
+    world->removeConstraint(rope);
+    rope->inWorld = false;
+  }
+  ropes.clear();
+
   world->removeRigidBody(groundPlane);//?
   delete groundPlane;
   delete planeShape;

@@ -5,6 +5,7 @@
 #include "../LuaFunctions/LightLua.h"
 #include "../LuaFunctions/SoundLua.h"
 #include "../LuaFunctions/EmitterLua.h"
+#include "../LuaFunctions/RopeLua.h"
 #include "../LuaFunctions/BrickLua.h"
 #include "../LuaFunctions/SkyLua.h"
 #include "../LuaFunctions/DecalLua.h"
@@ -18,6 +19,7 @@ static constexpr unsigned int playerListRefreshMS = 2000;
 
 void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
+
 	//When embedded alongside a LoopClient in the same process (single player), both loops
 	//share this one static pointer. Reassert ours here since the client may have pointed it
 	//at its own PhysicsWorld since our last tick.
@@ -65,12 +67,14 @@ void LoopServer::run(float deltaT, ExecutableArguments& cmdArgs, std::shared_ptr
 	pd.lights->sendRecent();
 	pd.emitters->sendRecent();
 	pd.vehicles->sendRecent();
+	pd.ropes->sendRecent();
 	sendNewVehicleBricks();
 	pd.bricks->sendRecent();
 	sendNewDecals(&pd, server);
 	respawnBrickVehicles();
 	updateVehicles(deltaT);
 	applyWaterForces(deltaT);
+	updateRopes();
 	pd.physicsWorld->step(deltaT);
 
 	updateProjectiles();
@@ -732,6 +736,19 @@ void LoopServer::updateProjectiles()
 	}
 }
 
+void LoopServer::updateRopes()
+{
+	for (int a = (int)pd.ropes->size() - 1; a >= 0; a--)
+	{
+		std::shared_ptr<Rope> rope = pd.ropes->get(a);
+
+		if (rope->isAnchorGone(pd.bricks))
+			pd.ropes->destroy(rope);
+		else
+			rope->updatePhysics(pd.dynamics, pd.vehicles);
+	}
+}
+
 void LoopServer::updateEmitters()
 {
 	unsigned int now = SDL_GetTicks();
@@ -987,6 +1004,8 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.emitters->makeLuaMetatable(pd.luaState, "metatable_emitter", getEmitterFunctions(pd.luaState));
 	pd.vehicles = new ObjHolder<Vehicle>(SimObjectType::VehicleTypeId, server);
 	pd.vehicles->makeLuaMetatable(pd.luaState, "metatable_vehicle", getVehicleFunctions(pd.luaState));
+	pd.ropes = new ObjHolder<Rope>(SimObjectType::RopeTypeId, server);
+	pd.ropes->makeLuaMetatable(pd.luaState, "metatable_rope", getRopeFunctions(pd.luaState));
 	pd.bricks = new BrickHolder(pd.physicsWorld, &pd.brickTypes, server);
 	//Music, lights, and emitters put on bricks come and go with them
 	pd.bricks->spawnAttachments = updateBrickAttachments;
@@ -1037,6 +1056,14 @@ LoopServer::~LoopServer()
 
 	LUA_args = nullptr;
 	LUA_pd = nullptr;
+
+	//Before what they're tied to
+	if (pd.ropes)
+	{
+		pd.ropes->destroyAll();
+		delete pd.ropes;
+		pd.ropes = nullptr;
+	}
 
 	//Removes brick bodies, so it has to go before the physics world
 	delete pd.bricks;

@@ -92,6 +92,8 @@ bool ShaderManager::readShaderList(const std::string &filePath)
 				coronaShader = lastProgram;
 			else if (programName == "particle")
 				particleShader = lastProgram;
+			else if (programName == "rope")
+				ropeShader = lastProgram;
 			else if (programName == "skyPrefilter")
 				skyPrefilterShader = lastProgram;
 			else if (programName == "rain")

@@ -27,6 +27,8 @@ corona	vert	corona.vert.glsl
 corona	frag	corona.frag.glsl
 particle	vert	particle.vert.glsl
 particle	frag	particle.frag.glsl
+rope	vert	rope.vert.glsl
+rope	frag	rope.frag.glsl
 skyPrefilter	vert	skyPrefilter.vert.glsl
 skyPrefilter	frag	skyPrefilter.frag.glsl
 rain	vert	rain.vert.glsl

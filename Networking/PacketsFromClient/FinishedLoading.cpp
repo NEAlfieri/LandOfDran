@@ -48,6 +48,8 @@ void clientFinishedLoading(JoinedClient* source, Server const* const server, ENe
 	pd->lights->sendAll(source);
 	pd->emitters->sendAll(source);
 	pd->vehicles->sendAll(source);
+	//After everything they can be tied to
+	pd->ropes->sendAll(source);
 	sendVehicleState(pd, source);
 	pd->bricks->sendAll(source);
 	//After the bricks they're on, on the same channel

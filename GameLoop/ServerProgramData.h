@@ -9,6 +9,7 @@
 #include "../SimObjects/Light.h"
 #include "../SimObjects/Emitter.h"
 #include "../SimObjects/Vehicle.h"
+#include "../SimObjects/Rope.h"
 #include "../LuaFunctions/EventManager.h"
 #include "../Physics/PhysicsWorld.h"
 #include "../Bricks/BrickHolder.h"
@@ -165,6 +166,7 @@ struct ServerProgramData
 	ObjHolder<Light> * lights = nullptr;
 	ObjHolder<Emitter> * emitters = nullptr;
 	ObjHolder<Vehicle> * vehicles = nullptr;
+	ObjHolder<Rope> * ropes = nullptr;
 
 	//Vehicles made since the last tick, whose bricks go out once their creation packets have, see LoopServer::run
 	mutable std::vector<std::weak_ptr<Vehicle>> vehiclesAwaitingBricks;

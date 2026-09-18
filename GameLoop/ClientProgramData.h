@@ -21,6 +21,7 @@
 #include "ClickActionPlayer.h"
 #include "../Graphics/WaterRipples.h"
 #include "../Graphics/ParticleSystem.h"
+#include "../Graphics/RopeRenderer.h"
 #include "../Graphics/Rain.h"
 #include "../Graphics/GpuProfiler.h"
 #include "../Graphics/ItemIconRenderer.h"
@@ -91,6 +92,9 @@ struct ClientProgramData
 
 	//Lives for the whole program, particle and emitter types come from whichever server we're on, see LoopClient::updateParticles
 	ParticleSystem* particles = nullptr;
+
+	//Lives for the whole program, the ropes of whichever server we're on are handed to it each frame, see LoopClient::renderEverything
+	RopeRenderer* ropeRenderer = nullptr;
 
 	//Named brick sizes with icons, for the brick selector
 	BrickTypes brickTypes;

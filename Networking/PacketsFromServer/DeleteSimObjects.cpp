@@ -69,6 +69,20 @@ bool DeleteSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 			}
 			break;
 		}
+		case RopeTypeId:
+		{
+			unsigned int numObjects = packet->data[2];
+			for (unsigned int a = 0; a < numObjects && simulation.ropes; a++)
+			{
+				netIDType id;
+				memcpy(&id, packet->data + 3 + a * sizeof(netIDType), sizeof(netIDType));
+
+				//One we never made, because its creation packet was cut short, isn't worth an error
+				if (simulation.ropes->find(id))
+					simulation.ropes->destroyByID(id);
+			}
+			break;
+		}
 		case VehicleTypeId:
 		{
 			unsigned int numObjects = packet->data[2];

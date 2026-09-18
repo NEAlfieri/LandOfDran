@@ -173,6 +173,9 @@ class ShaderManager
 	//Program for drawing emitters' particles
 	Program* particleShader = new Program();
 
+	//Program for drawing ropes, ribbons lit the way a lit particle is, see Graphics/RopeRenderer.h
+	Program* ropeShader = new Program();
+
 	//Program for drawing normal meshes to screen will full PBR based lighting
 	Program* modelShader = new Program();
 

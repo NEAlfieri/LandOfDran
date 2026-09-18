@@ -7,9 +7,9 @@ source - if you add or change a binding, update this file too.
 
 ## Conventions
 
-- Every `Dynamic`, `StaticObject`, client, brick, light, and emitter table has an `id` field (its net ID) and a
+- Every `Dynamic`, `StaticObject`, client, brick, light, emitter, vehicle, and rope table has an `id` field (its net ID) and a
   `type` field you can compare against: `1` = Dynamic, `2` = Static, `3` = Client, `4` = Brick,
-  `5` = Light, `6` = Emitter (`NetTypes/NetType.h`'s `SimObjectType`). `raycast()` and `client:getCursorItem()` can
+  `5` = Light, `6` = Emitter, `7` = Vehicle, `8` = Rope (`NetTypes/NetType.h`'s `SimObjectType`). `raycast()` and `client:getCursorItem()` can
   return a Dynamic, a Static, or a Brick, so check `.type` before assuming which. Items are Dynamics too, with
   more methods, see [Items](#items).
 - An object is the same Lua table every time a script gets it, however it got it: `getClientIdx`, an event argument,
@@ -687,6 +687,68 @@ These use the strict argument count check.
 | `emitter:setColor(r, g, b[, a])` | 0-1, clamped; `a` defaults to 1 | none | Multiplies its particles' colors and opacity by this, white by default. Only sent to clients if it changed, so it's cheap to call often. Particles already out keep the color they left with. |
 | `emitter:getColor()` | none | r, g, b, a | Its color. |
 | `emitter:aimWith(dynamic, range)` / `emitter:aimWith(nil)` | a dynamic, usually a player; how far its aim reaches in studs, 0-1000 | none | Sends particles toward whatever the dynamic looks at, up to `range` studs from its eyes (its client's crosshair for a player's own game, where a third person camera reaches that much further), and they only last until they get there. The type's `thetaMin` and `thetaMax` spread particles around that direction instead of around up. Other clients use the way the player's head turns. `nil` ejects normally again. The paint can in `Inventory.lua` uses this. |
+
+---
+
+## Ropes
+
+A rope is tied between two things and keeps them from getting further apart than it is long. It hangs slack
+until it's pulled out to its length, then it holds, and it never pushes. Each end is tied to a **dynamic** or a
+**vehicle** (a spot on it, which goes along with it), a **brick** (a spot in the world, the rope is removed along with
+the brick), or just **a spot in the world**. A rope is also removed along with a dynamic or vehicle it's tied to.
+
+The old game's ropes were Bullet soft bodies only the server simulated, with every node's position sent to every
+client each tick. These are two separate things instead:
+
+- **The pull** is one physics constraint, which the server and every client each put in their own physics world from
+  the same few numbers. So a rope on a player is felt by that player's own game, which stays in charge of where they
+  are like it is for everything else they do, and they swing on it without being corrected. A rope between two
+  things no one controls is the server's to simulate, as those things are.
+- **The look** is a chain of `links` sections hanging between wherever the ends are drawn, which each client works out
+  for itself, so two players never see exactly the same curve. A rope pulled tight is a straight line. Ropes don't
+  collide with anything, as the old ones didn't.
+
+Nothing is sent but what the rope is tied to, its length, and how it's drawn, and only when one of those changes.
+
+**Bends** give a rope more than one straight section: fixed spots in the world it runs over between its ends, like
+the edge of a ledge or a pulley. Its length is measured along them, each end is pulled toward the bend nearest it,
+and lengthening one side shortens the other, so a weight hung over a bend can be hauled up from the other side.
+
+`Add-ons/Tool_GrappleRope` is a rope from wherever its hook lands to the player, drawn from the tool's barrel.
+
+### Global functions
+
+| Function | Arguments | Returns | Description |
+|---|---|---|---|
+| `createRope(endA, endB[, length[, links]])` | each end a Dynamic, Vehicle, or Brick (tied at its middle) or a table `{x, y, z}` (a spot in the world); studs, `nil` or 0 for as far apart as the ends are right now; how many sections it's drawn with, 1-50, default 15 | Rope, or `nil` | Ties a rope. Use `rope:setEnd` afterward to tie an end somewhere other than the middle of something. |
+| `getRopeId(id)` | net ID | Rope or `nil` | Looks up a rope by net ID. `nil` without an error if there's none, which is how a script finds out a rope went away along with what it was tied to. |
+| `getRopeIdx(index)` | 0-based index | Rope | Looks up a rope by its position in the internal list. |
+| `getNumRopes()` | none | integer | Number of ropes. |
+
+The old game made ropes from the dynamic they were tied to, and those still work, on items too:
+
+| Method | Arguments | Returns | Description |
+|---|---|---|---|
+| `dynamic:attachByRope(otherDynamic[, links])` | a Dynamic; 1-50, default 15 | Rope or `nil` | A rope between the middles of the two, as long as they are apart right now. The old game returned nothing and also took where in the world each end started. |
+| `dynamic:attachByRopeBrick(brick[, links])` | a Brick; 1-50, default 15 | Rope or `nil` | Same, to the middle of a brick. |
+| `dynamic:clearRopes()` | none | integer | Removes every rope tied to the dynamic, and returns how many there were. |
+
+### `rope:` methods
+
+`which` is `1` for the rope's first end (`endA`) and `2` for its second.
+
+| Method | Arguments | Returns | Description |
+|---|---|---|---|
+| `rope:destroy()` | none | none | Removes it. |
+| `rope:getLength()` / `rope:setLength(studs)` | 0-2000 | studs / none | As far apart along the rope as its ends can get. Shortening a tight rope hauls its ends together, over about a fifth of a second rather than at once. |
+| `rope:getSpan()` | none | studs | How far apart its ends are right now, along its bends. Less than its length while it hangs slack, and a hair over while something heavy swings on it. |
+| `rope:getEnd(which)` | 1 or 2 | x, y, z | Where that end is tied right now, in the world. |
+| `rope:setEnd(which, target[, x, y, z])` | 1 or 2; a Dynamic, Vehicle, Brick, or `{x, y, z}` table; a spot | none | Ties that end to something else. For a dynamic or vehicle `x, y, z` is how far from the middle of its body along its own axes, so it turns with it (default its middle). For a brick it's a spot in the world (default the brick's middle). |
+| `rope:drawOn(which, dynamic[, x, y, z])` / `rope:drawOn(which, nil)` | 1 or 2; a Dynamic; how far from its middle along its own axes | none | Draws that end on another dynamic than the one it pulls on, wherever each client draws that dynamic. For an item in someone's hand, which has no body in the world to pull on: the Grapple Rope holds a player by their body and is drawn from the tool's `muzzlePoint`. `nil` draws it where it's tied again. The slack it's drawn with is still the slack it really has. |
+| `rope:getBends()` / `rope:setBends({{x, y, z}, ...})` | up to 8 spots in the world, in order from the first end; `{}` for none | table of `{x, y, z}` / none | The fixed spots it runs over, see above. |
+| `rope:getLinks()` / `rope:setLinks(links)` | 1-50 | integer / none | How many sections it's drawn with, the more there are the rounder it hangs. Only the look, and at least one per straight section. |
+| `rope:getWidth()` / `rope:setWidth(studs)` | 0.01-10, default 0.15 | studs / none | How thick it's drawn. |
+| `rope:getColor()` / `rope:setColor(r, g, b)` | each 0-1 | r, g, b / none | Its color, hemp brown by default. It's lit and shadowed by the sun and point lights like a lit particle, and doesn't cast a shadow. |
 
 ---
 

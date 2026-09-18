@@ -13,8 +13,8 @@
 	lands is the anchor, as long as nothing stands between the player and it, and the rope is as
 	long as the player is from there at that moment. For as long as the button stays down the rope
 	holds them within that length of the anchor, so stepping off something swings them, and letting
-	go drops them wherever they are. The rope itself is drawn the way the original drew it: links
-	fired from the gun toward the anchor, each leaving a trail of dark dots behind it.
+	go drops them wherever they are. The rope itself is one of the engine's ropes, from the barrel
+	to the anchor, see SCRIPTED_ROPE below for the way the original drew and swung it.
 
 	The states of GrappleRopeImage are one shot on the trigger, then Hold every hundredth of a
 	second until it comes up, then Release; here the shot is the click, the hold is a scheduled
@@ -29,6 +29,28 @@
 ]]
 
 local folder = "Add-ons/Tool_GrappleRope/"
+
+--[[
+	How the rope is made once the hook lands. By default it's one of the engine's own ropes, see
+	createRope in LuaAPI.md: tied between the anchor and the player, drawn from the barrel of the
+	tool, and held to its length by the player's own physics, so there's nothing to do while it
+	holds but wait for the button to come up. That swing is a true pendulum.
+
+	Setting GrappleRopeScripted = true before this file loads brings back the rope as the add-on
+	first ported it, all of it in script: a link fired up the rope every 75 ms with a trail of
+	dots behind it for the look, and grappleConstrain steering the player's velocity every 25 ms
+	for the swing, which is the original's math and dives inside the rope's reach rather than
+	circling at the end of it.
+]]
+local SCRIPTED_ROPE = GrappleRopeScripted == true
+
+--How often an engine rope's holder is checked on: whether they put the tool away, threw it, or lost their player
+local ROPE_CHECK_MS = 100
+--Across, in studs, and its color, the dark grey of the original's dots
+local ROPE_WIDTH = 0.12
+local ROPE_COLOR = {0.2, 0.2, 0.2}
+--A link for every this many studs of rope, which is only how smoothly it's drawn, up to the most a rope can have
+local ROPE_STUDS_PER_LINK = 4
 
 --A Blockland unit is two studs, and a stud is one world unit, so a DTS model is true to size at 2
 local scale = 2
@@ -107,6 +129,9 @@ setItemHand(grappleRopeItem, gripX or 0, gripY or -0.378, gripZ or 0, 0, 0, 0)
 
 --The end of the barrel, off the shape's own node, measured from the point the hand holds it by
 local muzzleFromHand = weaponNodeFromHand(grappleRopeItem, "muzzlePoint")
+
+--And in the shape's own space, which is where an engine rope is drawn from on the tool wherever a client draws it
+local muzzleX, muzzleY, muzzleZ = getTypeNodePosition(grappleRopeItem, "muzzlePoint")
 
 --[[
 	The hook, GrappleRopeProjectile: 200 units a second, no gravity, gone after 4 seconds if it
@@ -217,6 +242,15 @@ end
 --Lets go of the rope: the anchor is forgotten, and hooks and ticks from this pull of the trigger
 --are ignored from here on, GrappleRopeImage::onRelease
 local function releaseRope(state)
+	--An engine rope goes on its own along with the brick or the player it's tied to
+	if state.ropeID ~= nil then
+		local rope = getRopeId(state.ropeID)
+		if rope ~= nil then
+			rope:destroy()
+		end
+		state.ropeID = nil
+	end
+
 	state.holding = false
 	state.anchor = nil
 	state.ropeLength = nil
@@ -299,6 +333,18 @@ function grappleRopeTick(clientID, generation)
 		return
 	end
 
+	--An engine rope holds them by itself. If it's gone, what it was hooked to is
+	if not SCRIPTED_ROPE then
+		if state.anchor ~= nil and getRopeId(state.ropeID) == nil then
+			state.ropeID = nil
+			releaseRope(state)
+			return
+		end
+
+		schedule(ROPE_CHECK_MS, "grappleRopeTick", clientID, generation)
+		return
+	end
+
 	if state.anchor ~= nil then
 		grappleConstrain(player, state.anchor[1], state.anchor[2], state.anchor[3], state.ropeLength)
 
@@ -317,7 +363,39 @@ end
 	just above the player reaches it, so a hook that went round a corner or over a ledge the
 	player can't see past does nothing, and the rope is as long as they are from it right now
 ]]
-local function hookLanded(hook, x, y, z)
+--[[
+	Ties an engine rope from where the hook landed to the player. Hooked to a brick it goes when
+	the brick does, hooked to anything that moves it's tied to that spot on it and goes along, and
+	the player's end is drawn coming out of the tool's barrel rather than their middle
+]]
+local function tieRope(state, player, item, hit, x, y, z)
+	local anchor = {x, y, z}
+	local rope = createRope(anchor, player, state.ropeLength,
+		math.max(2, math.min(50, math.ceil(state.ropeLength / ROPE_STUDS_PER_LINK))))
+	if rope == nil then
+		return
+	end
+
+	if hit ~= nil and hit.type == 4 then
+		--A brick
+		rope:setEnd(1, hit, x, y, z)
+	elseif hit ~= nil and (hit.type == 1 or hit.type == 7) then
+		--A dynamic or a vehicle: the spot in its own space, its rotation undone
+		local hx, hy, hz = hit:getPosition()
+		local qw, qx, qy, qz = hit:getRotation()
+		rope:setEnd(1, hit, rotateByQuaternion(qw, -qx, -qy, -qz, x - hx, y - hy, z - hz))
+	end
+
+	rope:setWidth(ROPE_WIDTH)
+	rope:setColor(ROPE_COLOR[1], ROPE_COLOR[2], ROPE_COLOR[3])
+	if muzzleX ~= nil then
+		rope:drawOn(2, item, muzzleX, muzzleY, muzzleZ)
+	end
+
+	state.ropeID = rope.id
+end
+
+local function hookLanded(hook, hit, x, y, z)
 	local state = ropes[hook.clientID]
 	if state == nil or not state.holding or state.generation ~= hook.generation then
 		return
@@ -343,6 +421,13 @@ local function hookLanded(hook, x, y, z)
 	state.anchor = { x, y, z }
 	state.ropeLength = math.sqrt(ropeX * ropeX + ropeY * ropeY + ropeZ * ropeZ)
 	state.sinceChainMS = CHAIN_PERIOD_MS
+
+	if not SCRIPTED_ROPE then
+		local item = heldGrapple(client)
+		if item ~= nil then
+			tieRope(state, player, item, hit, x, y, z)
+		end
+	end
 end
 
 function grappleProjectileHit(projectile, hit, x, y, z, tag, normalX, normalY, normalZ)
@@ -350,7 +435,7 @@ function grappleProjectileHit(projectile, hit, x, y, z, tag, normalX, normalY, n
 		local hook = hooks[projectile.id]
 		if hook ~= nil then
 			hooks[projectile.id] = nil
-			hookLanded(hook, x, y, z)
+			hookLanded(hook, hit, x, y, z)
 		end
 	elseif tag == CHAIN_TAG then
 		chains[projectile.id] = nil

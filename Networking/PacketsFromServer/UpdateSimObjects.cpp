@@ -98,6 +98,32 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 
 		break;
 	}
+	case RopeTypeId:
+	{
+		unsigned int numObjects = packet->data[2];
+		unsigned int byteIterator = 3;
+		netIDType lastId = NO_ID;
+
+		for (unsigned int a = 0; a < numObjects && simulation.ropes; a++)
+		{
+			lastId = simulation.ropes->getIdFromDelta(packet->data + byteIterator, lastId, byteIterator);
+
+			if (byteIterator > packet->dataLength)
+				break;
+
+			unsigned int bytes = Rope::readStateBytes(packet->data + byteIterator, (unsigned int)packet->dataLength - byteIterator);
+			if (bytes == 0)
+				break;
+
+			std::shared_ptr<Rope> toUpdate = simulation.ropes->find(lastId);
+			if (toUpdate)
+				toUpdate->readFromPacket(packet->data + byteIterator);
+
+			byteIterator += bytes;
+		}
+
+		break;
+	}
 	case VehicleTypeId:
 	{
 		unsigned int numObjects = packet->data[2];
