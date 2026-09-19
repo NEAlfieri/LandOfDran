@@ -1149,7 +1149,7 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 | `brick:getDisplayItem()` | none | Item or `nil` | The display item floating over the brick, if it has one. Destroying it leaves the brick without one until its settings change again, like a light. |
 | `brick:isVehicleSpawn()` | none | bool | Whether its type is a Vehicle Spawn brick (the `vehicleSpawn` datablock field), the only kind that can keep a vehicle spawned. |
 | `brick:getVehicleSpawn()` | none | vehicle spawn name, or `nil` | Which registered vehicle the brick keeps spawned, like `"Jeep"`, see [Vehicle spawn bricks](#vehicle-spawn-bricks). |
-| `brick:setVehicleSpawn(name)` / `brick:setVehicleSpawn(nil)` | a name from `registerVehicleSpawn` | none | Has the brick keep that vehicle spawned above it, spawning one right away if it has none. Logs an error for a name nothing registered. Works on any brick from Lua, though only a Vehicle Spawn brick's wrench dialog offers it. `nil` removes the vehicle along with the setting. |
+| `brick:setVehicleSpawn(name)` / `brick:setVehicleSpawn(nil)` | a name from `registerVehicleSpawn` | none | Has the brick keep that vehicle spawned above it, spawning one right away if it has none. Setting a different vehicle removes the one already out, driver and all, and spawns the new kind in its place; setting the same one again leaves it alone. Logs an error for a name nothing registered. Works on any brick from Lua, though only a Vehicle Spawn brick's wrench dialog offers it. `nil` removes the vehicle along with the setting. |
 | `brick:getSpawnedVehicle()` | none | Vehicle or `nil` | The vehicle the brick spawned, while it's around. |
 
 ### Wrench dialog and brick attachments
@@ -1388,8 +1388,8 @@ is destroyed or removed, by anything at all (`vehicle:destroy`, `/clearvehicles`
 explosion), the server spawns another within about a second, and picking `None` or removing the brick (hammer, undo,
 `brick:remove`, slicing it into a vehicle, `clearAllBricks`) removes the vehicle. A spawner that fails, or a name
 nothing registered (a save from a server with an add-on this one lacks), is tried again every 10 seconds with an error
-logged each time. Picking a different vehicle leaves the one already out until it's gone rather than pulling it out from
-under a driver. The setting is saved with the brick by `saveBuild` and set from Lua by `brick:setVehicleSpawn`;
+logged each time. Picking a different vehicle takes the one already out away, driver and all, and spawns the new kind in
+its place. The setting is saved with the brick by `saveBuild` and set from Lua by `brick:setVehicleSpawn`;
 `brick:getSpawnedVehicle` and `vehicle:getSpawnBrick` link the two. Only model vehicles spawn this way, since a
 spawner is a Lua function like `spawnJeep`; a spawner can build anything that returns a Vehicle, `loadVehicleFile`
 included. A spawned vehicle belongs to whoever planted the brick: `vehicle:getBuilder` is them and `/clearvehicles` takes it

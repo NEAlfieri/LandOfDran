@@ -186,7 +186,8 @@ void updateBrickAttachments(Brick* brick)
 	}
 
 	/*
-		The vehicle it keeps spawned, taken away if it's not to spawn one anymore, or when what it spawns changes
+		The vehicle it keeps spawned, taken away if it's not to spawn one anymore
+		setBrickAttachments has already removed the one that was out if what it spawns changed, so a new kind takes its place here
 		A brick whose vehicle was destroyed gets another from respawnBrickVehicles, which waits a moment rather than doing it mid-explosion
 	*/
 	if (LUA_pd->vehicles)
@@ -201,7 +202,6 @@ void updateBrickAttachments(Brick* brick)
 		if (!vehicle)
 			settings.spawnedVehicleID = NO_ID;
 
-		//Changed to another vehicle: the old one stays until it's gone, then the new kind takes its place, rather than pulling a vehicle out from under its driver
 		if (!vehicle && !settings.vehicleSpawnName.empty())
 			spawnBrickVehicle(brick);
 	}
@@ -263,6 +263,14 @@ void setBrickAttachments(Brick* brick, const BrickAttachments& requested)
 		settings->displayItemID = old->displayItemID;
 		//Picking a vehicle again doesn't wait out a failed try
 		settings->nextVehicleSpawnMS = old->vehicleSpawnName == settings->vehicleSpawnName ? old->nextVehicleSpawnMS : 0;
+
+		//Picking a different vehicle, or none, takes away the one already out, driver and all, so updateBrickAttachments spawns the new kind right away
+		if (old->vehicleSpawnName != settings->vehicleSpawnName)
+		{
+			if (std::shared_ptr<Vehicle> spawned = getBrickSpawnedVehicle(brick))
+				destroyVehicle(spawned);
+			settings->spawnedVehicleID = NO_ID;
+		}
 
 		//Loops can't be changed while they play, so different music, volume, or pitch starts it over
 		bool musicChanged = old->musicName != settings->musicName || old->musicVolume != settings->musicVolume || old->musicPitch != settings->musicPitch;
