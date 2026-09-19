@@ -14,7 +14,7 @@
 
 	From Ammo_Unified.cs: someone who dies leaves all their spare ammo behind in an ammo_player_drop box
 	for whoever gets to it within AMMO_DROP_MS, and starts over with the starting amounts, as Armor::onAdd
-	gave every new player. Both hang off Damage.lua's killPlayer and respawnPlayer, see ammoHookDamage.
+	gave every new player. Both hang off System_Damage's killPlayer and respawnPlayer, see ammoHookDamage.
 
 	From the prefs in server.cs: what a client starts with, and the most they can carry, of each type.
 	The types past the first three belong to the package's other tiers, whose weapons aren't here, but
@@ -40,7 +40,7 @@ local AMMO_TOUCH_ACROSS = 2.5
 local AMMO_TOUCH_BELOW = 2
 local AMMO_TOUCH_ABOVE = 7
 
---How far away one can be clicked from, Inventory.lua's CLICK_RANGE and REACH for picking an item up
+--How far away one can be clicked from, System_Inventory's CLICK_RANGE and REACH for picking an item up
 local AMMO_CLICK_RANGE = 60
 local AMMO_CLICK_REACH = 10
 
@@ -235,8 +235,8 @@ schedule(AMMO_TOUCH_MS, "ammoTouchTick")
 
 --[[
 	A click on a box takes it too, from as far as any other item can be picked up from. This add-on loads
-	before Inventory.lua, so this hears the click first, and hands it on without its left button: to
-	Inventory.lua a box is an item like any other, and it would put the box itself in a slot of the item bar
+	before System_Inventory, so this hears the click first, and hands it on without its left button: to
+	System_Inventory a box is an item like any other, and it would put the box itself in a slot of the item bar
 ]]
 function ammoClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)
 	if (mask & 1) == 0 then
@@ -313,9 +313,9 @@ local function dropAmmoOnDeath(client, x, y, z, velX, velY, velZ)
 end
 
 --[[
-	Damage.lua has no events for dying or coming back, and loads after this does, so once everything is in its
+	System_Damage has no events for dying or coming back, and loads after this does, so once everything is in its
 	killPlayer and respawnPlayer are wrapped the way a Blockland package wrapped Armor::onDisabled and
-	Armor::onAdd. Without Damage.lua nobody dies, and none of this is needed
+	Armor::onAdd. Without System_Damage nobody dies, and none of this is needed
 ]]
 function ammoHookDamage()
 	if killPlayer == nil or respawnPlayer == nil then

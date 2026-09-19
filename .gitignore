@@ -13,6 +13,8 @@ Logs/
 Config/
 # Add-on files a server sent this copy of the game, see addServerFile in LuaAPI.md
 Downloads/
+# Which add-ons this copy of the game runs, written by the server as it starts, see LuaAPI.md
+Add-ons/list.txt
 imgui.ini
 
 LandOfDran.cbp

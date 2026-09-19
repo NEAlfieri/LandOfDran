@@ -27,11 +27,40 @@
 	A brick wrenched to offer an item has a copy of it spinning over it. Left clicking that within reach, whatever's in hand,
 	makes a new item of the same type and puts it in the first empty slot, leaving the copy where it is for the next player.
 
-	Someone who leaves or dies (see Damage.lua) loses the tools they were given, and anything else they carried is left
+	Someone who leaves or dies (see System_Damage) loses the tools they were given, and anything else they carried is left
 	where they were, see dropCarriedItems. Respawning hands out the tools again with giveStartingItems.
 
-	Run from serverstart.lua with dofile("Inventory.lua"), after the item types are added.
+	Run from serverstart.lua with dofile("System_Inventory"), after the item types are added.
 ]]
+
+--The items players carry, which giveStartingItems below hands out
+--setItemHand's grip is the point on the model held in the hand, then the model is turned by pitch, yaw, and roll in degrees
+--A negative pitch leans the top of the model forward
+hammerItem = newItemType("hammer","Assets/tools/hammer.txt",0.02,0.02,0.02,"Hammer","Assets/tools/icons/hammerIcon.png")
+setItemHand(hammerItem,0,-0.7,0,-20,0,0)
+wrenchItem = newItemType("wrench","Assets/tools/wrench.txt",0.02,0.02,0.02,"Wrench","Assets/tools/icons/wrenchIcon.png")
+setItemHand(wrenchItem,0,-1,0,-20,0,0)
+paintCanItem = newItemType("paintCan","Assets/tools/spraycan.txt",0.02,0.02,0.02,"Paint Can","Assets/tools/icons/paintCanIcon.png")
+setItemHand(paintCanItem,0,0,0,-10,0,0)
+--Puts prints on printed bricks, see below. Its model has no textures of its own, so printGun.txt
+--gives the whole thing one light grey metal material
+printGunItem = newItemType("printGun","Assets/tools/printGun.txt",2,2,2,"Print Gun","")
+setItemHand(printGunItem,0,-0.378,0,0,0,0)
+--Fires launcherShell projectiles, see below. Its fire animation is frames 1 to 26 of the model
+dranLauncherItem = newItemType("dranLauncher","Assets/dranlauncher/gun.txt",0.02,0.02,0.02,"Launcher","Assets/dranlauncher/icon.png")
+setItemHand(dranLauncherItem,0,0.2,0.1,0,0,0)
+addAnimation(dranLauncherItem,"fire",0,25,0.04,0,0)
+launcherShell = newDynamicType("launcherShell","Assets/dranlauncher/shell.txt",0.01,0.01,0.01)
+
+--The tools' own sounds: where the hammer and wrench hit, the paint can's loop, the print gun firing,
+--and the launcher. Games play SprayActivate themselves as the paint palette comes out, see LoopClient::handleInput
+newSoundType("HammerHit","Assets/sound/hammerHit.WAV")
+newSoundType("WrenchHit","Assets/sound/wrenchHit.wav")
+newSoundType("WrenchMiss","Assets/sound/wrenchMiss.wav")
+newSoundType("SprayLoop","Assets/sound/sprayLoop.wav")
+newSoundType("SprayActivate","Assets/sound/sprayActivate.wav")
+newSoundType("PrintFire","Assets/sound/printFire.wav")
+newSoundType("Launch","Assets/sound/launch.wav")
 
 --From NetTypes/NetType.h's SimObjectType enum
 local DYNAMIC_TYPE_ID = 1
@@ -536,7 +565,7 @@ function launcherShellHit(projectile, hit, x, y, z, tag, normalX, normalY, norma
 		return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
 	end
 
-	--Damage.lua's damageByImpulse hurts every player the blast pushes, and blames whoever impulseAttacker is while it runs
+	--System_Damage's damageByImpulse hurts every player the blast pushes, and blames whoever impulseAttacker is while it runs
 	impulseAttacker = projectile.shooterClient
 	radiusImpulse(x, y, z, SHELL_IMPULSE)
 	impulseAttacker = nil
@@ -690,7 +719,7 @@ end
 registerEventListener("ClientDropItem", "throwItem")
 
 --Everything a client carries leaves their inventory: the tools they were given are removed, and whatever else they picked up
---is left next to their player, so call it while they still have one. For leaving, and for dying, see Damage.lua
+--is left next to their player, so call it while they still have one. For leaving, and for dying, see System_Damage
 function dropCarriedItems(client)
 	stopSpraying(client)
 	stopToolSwings(client)

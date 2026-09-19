@@ -22,15 +22,55 @@
 
 	Someone who hasn't been hurt for HEALTH_REGEN_DELAY_MS gets HEALTH_REGEN_PER_SECOND back each second up to their max.
 
-	A player whose health reaches 0 dies. Whatever they carried is dropped the way it is when someone leaves (Inventory.lua's
+	A player whose health reaches 0 dies. Whatever they carried is dropped the way it is when someone leaves (System_Inventory's
 	dropCarriedItems), and their player is swapped for a body: a new dynamic that looks the same, which nobody controls, so it
 	flops over away from whatever killed them and plays Death. Their camera is left hanging over it, free to look around, with
 	no player. A countdown on their screen runs RESPAWN_DELAY_MS down, after which a left click respawns them: serverstart.lua's
 	spawnPlayer makes them a new player, which plays Spawn, and they get their starting tools again. Their old body disappears
 	in a puff of smoke with BodyRemove when they respawn, or when they leave without having.
 
-	Run from serverstart.lua with dofile("Damage.lua"), after Inventory.lua.
+	Run from serverstart.lua with dofile("System_Damage"), after System_Inventory.
 ]]
+
+
+--[[
+	System_Damage loads after System_Inventory so that a click which respawns someone isn't also a click
+	with their new tools, and needs the players it hands health to
+]]
+requireAddOn("System_Inventory")
+requireAddOn("System_Players")
+
+--Being hurt, dying, and the body left behind being cleared away
+newSoundType("Pain","Assets/sound/pain.wav")
+newSoundType("Death","Assets/sound/death.wav")
+
+--[[
+	What being hurt looks and sounds like, which damagePlayer below shows on a player it takes health from: the
+	old game's ouch particles and the Pain sound where it happened, and for whoever the player belongs to a red vignette
+	that closes in from the edges of their screen and wobbles their picture, fading away over a second
+	x, y, z is where they were hit, or nothing to put the particles at about chest height
+]]
+HURT_VIGNETTE_MS = 1000
+--How hard the picture wobbles, 1 being about as much as being underwater
+HURT_VIGNETTE_WAVE = 0.5
+
+function hurtPlayer(player, x, y, z)
+	if player == nil then
+		return
+	end
+
+	if x == nil then
+		x, y, z = player:getPosition()
+		y = y + 3
+	end
+
+	addEmitter("ouchEmitter", x, y, z)
+	player:playSound("Pain")
+
+	if player:getNumControllers() > 0 then
+		player:getControllerIdx(0):setVignette(1, 0, 0, 0.5, HURT_VIGNETTE_WAVE, HURT_VIGNETTE_MS)
+	end
+end
 
 --From NetTypes/NetType.h's SimObjectType enum
 local DYNAMIC_TYPE_ID = 1
@@ -302,7 +342,7 @@ function killPlayer(player, attacker, fromX, fromY, fromZ)
 	local corpse = createDynamic(brickhead, x, y, z)
 	corpse:setRotation(rotW, rotX, rotY, rotZ)
 	client:applyAppearance(corpse)
-	--Less the hat, if theirs was shot off, see Hats.lua
+	--Less the hat, if theirs was shot off, see System_Hats
 	if not woreHat then
 		corpse:setPart("hat", "")
 	end
@@ -379,7 +419,7 @@ function setHealth(player, health)
 end
 
 --Every player a radiusImpulse pushes is damaged by how hard it pushed them. A pull doesn't hurt
---Whoever set the impulse off is blamed if they said so in impulseAttacker first, see Inventory.lua's launcherShellHit
+--Whoever set the impulse off is blamed if they said so in impulseAttacker first, see System_Inventory's launcherShellHit
 --A blast that does its own damage sets impulseHarmless around its radiusImpulse instead, so its push only pushes, like
 --the Rocket Launcher add-on's
 function damageByImpulse(dynamic, x, y, z, strength)

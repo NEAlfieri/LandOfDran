@@ -362,7 +362,7 @@ local DEMO_TRACER_SPEED = 320
 local DYNAMIC_TYPE_ID = 1
 
 --[[
-	The bots keep their own health, because Damage.lua's lives on clients' players and a bot is not a
+	The bots keep their own health, because System_Damage's lives on clients' players and a bot is not a
 	client. The weapons' real damage numbers are used as they are, so this one number is the whole of how
 	often somebody dies, and eight players is a lot of gunfire: at a real player's 100 health two or three
 	of them were lying on the floor at any moment. This is about nine rounds of the Gun, or three shotgun
@@ -457,7 +457,7 @@ local function makeBot(team, x, z, kit)
 	bot:setMeshColor("Left_Foot", 0.1, 0.1, 0.1, 1)
 	bot:setMeshDecal("Face1", randomFrom(FACES))
 
-	--Hats, which the demo's own gunfire can knock off again, see Hats.lua. Which one it wears is kept, so
+	--Hats, which the demo's own gunfire can knock off again, see System_Hats. Which one it wears is kept, so
 	--that one shot off its head is back on when it respawns
 	bot.hat = randomFrom(HATS)
 	bot:setPart("hat", bot.hat, 0, 0, 0, 0, 1)
@@ -544,10 +544,10 @@ end
 --[[
 	Getting shot
 
-	Damage.lua keeps health on clients' players and a bot is not a client, so the demo keeps its own: the
+	System_Damage keeps health on clients' players and a bot is not a client, so the demo keeps its own: the
 	weapons' real damage numbers off BOT_HEALTH, and a body that falls over where it died.
 
-	A body is the same dynamic the bot was, rather than a new one. Damage.lua has to swap a player for a
+	A body is the same dynamic the bot was, rather than a new one. System_Damage has to swap a player for a
 	corpse because its client is still controlling that player; nothing controls a bot, so letting go of
 	its keys and letting it tip over is the whole of it, and everything else in the demo that holds onto a
 	bot - the camera's star, the crowd the shots are framed on - carries on without knowing anyone died
@@ -575,7 +575,7 @@ function demoDamageBot(bot, amount, x, y, z)
 end
 
 --[[
-	A bot's body goes over where it died and lies there until it respawns. Damage.lua's corpseSettle
+	A bot's body goes over where it died and lies there until it respawns. System_Damage's corpseSettle
 	watches it fall and stops it turning once it's down, the same as it does for a player's body, and
 	bot.removed is the flag it reads to know a body it was watching has gone
 ]]
@@ -591,7 +591,7 @@ function demoKillBot(bot, fromX, fromY, fromZ)
 	--It stops walking, and its walk cycle stops with it, leaving an ordinary object to fall over
 	bot:clearBotInput()
 
-	--Its weapon falls out of its hands where it stood, the way Inventory.lua drops what a player was carrying
+	--Its weapon falls out of its hands where it stood, the way System_Inventory drops what a player was carrying
 	bot:setHeldItem()
 
 	local x, y, z = bot:getPosition()
@@ -632,7 +632,7 @@ function demoKillBot(bot, fromX, fromY, fromZ)
 	bot:setAngularVelocity(awayZ * CORPSE_TIP_SPEED, 0, -awayX * CORPSE_TIP_SPEED)
 	bot:playSound("Death")
 
-	--Damage.lua's, which stops it turning once it's lying down: a look every 50 ms, 60 of them at most
+	--System_Damage's, which stops it turning once it's lying down: a look every 50 ms, 60 of them at most
 	bot.removed = false
 	schedule(50, "corpseSettle", bot, 60, 0)
 
@@ -659,7 +659,7 @@ function demoRespawnBot(bot, deaths)
 	bot:setAngularVelocity(0, 0, 0)
 	--Back on its feet, and upright for good again
 	bot:setAngularFactor(0, 0, 0)
-	--And wearing its hat, in case a shot took that off, see Hats.lua
+	--And wearing its hat, in case a shot took that off, see System_Hats
 	bot:setPart("hat", bot.hat, 0, 0, 0, 0, 1)
 	bot:playSound("Spawn")
 
@@ -709,7 +709,7 @@ end
 registerEventListener("ProjectileHit", "demoProjectileHit")
 
 --[[
-	And the same for a blast, which is how a launcher shell does its damage: Damage.lua's damageByImpulse
+	And the same for a blast, which is how a launcher shell does its damage: System_Damage's damageByImpulse
 	hurts every player a radiusImpulse pushed, by the square of the push that reached them, so the bots take
 	the same off the same push. impulseHarmless is set around a blast that does its own damage and only
 	wants the shove
@@ -927,7 +927,7 @@ end
 
 --[[
 	Every so often somebody puts a launcher shell into the middle of things instead. Tagged "launcherShell",
-	which is what Inventory.lua's own listener bursts: the blast, the smoke, and the push that sends whoever
+	which is what System_Inventory's own listener bursts: the blast, the smoke, and the push that sends whoever
 	was standing near it flying. Nothing else in the demo throws bodies around like it does
 ]]
 local ROCKET_EVERY_MS = 14000

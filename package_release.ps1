@@ -61,14 +61,10 @@ try {
     # .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
     Copy-Item "Assets" $PkgDir -Recurse
     Copy-Item "Shaders" $PkgDir -Recurse
-    # serverstart.lua dofile()s the add-ons by path relative to the working directory
+    # The add-ons, which is where the game's systems live too, loaded by path relative to the working directory
     Copy-Item "Add-ons" $PkgDir -Recurse
     Copy-Item "serverstart.lua" $PkgDir
-    Copy-Item "EmitterDefaults.lua" $PkgDir
-    Copy-Item "BlocklandImports.lua" $PkgDir
-    Copy-Item "Inventory.lua" $PkgDir
-    Copy-Item "Damage.lua" $PkgDir
-    Copy-Item "Hats.lua" $PkgDir
+    Copy-Item "FallingTiles.lua" $PkgDir
     # The game that plays behind the main menu, which runs serverstart.lua itself, see LoopClient::startMenuDemo
     Copy-Item "menudemo.lua" $PkgDir
 

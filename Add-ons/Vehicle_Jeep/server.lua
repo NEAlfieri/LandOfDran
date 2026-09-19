@@ -6,9 +6,8 @@
 	itself is built with spawnModelVehicle, so it drives on Bullet's raycast vehicle exactly like a
 	car sliced out of bricks does. The two kinds sit side by side: one is bricks, one is a model.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua")
+	The whole add-on is this one file: the game runs it when Vehicle_Jeep is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	and then spawnJeep() puts one in the world, and a Vehicle Spawn brick wrenched to "Jeep" keeps one
 	above itself, see registerVehicleSpawn at the bottom.

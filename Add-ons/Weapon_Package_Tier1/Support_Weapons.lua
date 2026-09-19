@@ -25,7 +25,7 @@
 	fired from the muzzle toward wherever the shot landed so there's still something to watch.
 
 	A shot that lands on someone's player takes the weapon's damage field off their health, see
-	hurtIfPlayer and Damage.lua.
+	hurtIfPlayer and System_Damage.
 
 	The spots on a weapon's model come from the shape's own nodes, see weaponNodeFromHand: the muzzle
 	is its muzzlePoint measured from its mountPoint, the node the hand holds it by, and a casing
@@ -101,7 +101,7 @@ local ammoPrintBlocked = {}
 	SHOT_PATH_MS and a last one up to whatever it hit. shooter is the player dynamic who fired, and hit is what
 	the stretch ends on, nil for one that ends in the air or on the ground. They're called before the impact does
 	anything else. This is for what a shot goes through without the physics ever noticing, like the hat on
-	someone's head, see Hats.lua. Add one with table.insert(ShotPathListeners, fn)
+	someone's head, see System_Hats. Add one with table.insert(ShotPathListeners, fn)
 ]]
 ShotPathListeners = ShotPathListeners or {}
 local SHOT_PATH_MS = 25
@@ -235,7 +235,7 @@ end
 
 	A held item has no transform of its own on the server: the client draws it in its owner's hand,
 	while the server side item stays wherever it was last dropped, usually the origin. So the muzzle
-	is worked out from the player's eyes and the way they're looking, which is what Inventory.lua
+	is worked out from the player's eyes and the way they're looking, which is what System_Inventory
 	does for the launcher's barrel too.
 
 	The hand is put where the shooter's own game draws it in first person, LoopClient's
@@ -603,8 +603,8 @@ function weaponRemoveLight(light)
 end
 
 --A round that lands on someone's player takes the weapon's damage off their health, the directDamage of
---the originals, through Damage.lua's damagePlayer, which also does the pain sound, the ouch particles, and
---the red vignette on their screen, and gives shooter the score if it kills them. Without Damage.lua they're
+--the originals, through System_Damage's damagePlayer, which also does the pain sound, the ouch particles, and
+--the red vignette on their screen, and gives shooter the score if it kills them. Without System_Damage they're
 --only shown being hurt, by serverstart.lua's hurtPlayer
 function hurtIfPlayer(hit, x, y, z, weapon, shooter)
 	if hit == nil or hit.type ~= DYNAMIC_TYPE_ID or hit:getNumControllers() == 0 then

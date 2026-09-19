@@ -59,7 +59,7 @@ Getting this working on debian/ubuntu should be as easy as:
 
 ### Linux
 
-`./package_release.sh` builds a release binary and bundles it with the files it needs at runtime (`Assets/`, `Shaders/`, `serverstart.lua`) into a single `LandOfDran-release-<hash>.tar.gz` archive. Requires Docker.
+`./package_release.sh` builds a release binary and bundles it with the files it needs at runtime (`Assets/`, `Shaders/`, `Add-ons/`, `serverstart.lua`) into a single `LandOfDran-release-<hash>.tar.gz` archive. Requires Docker.
 
 By default it builds inside a Docker container pinned to Ubuntu 22.04 (`docker/release.Dockerfile`), rather than using whatever's already built on your machine. This matters because glibc compatibility only goes forward, not backward — a binary compiled on your dev machine (say, Ubuntu 24.04's glibc 2.39) will fail with errors like `version 'GLIBC_2.38' not found` on a player's older system (e.g. Ubuntu 22.04's glibc 2.35), no matter what else you bundle with it. Building against an older, pinned baseline keeps the result compatible with that system and everything newer. Bump the base image in the Dockerfile if you need to support even older distros, or newer ones once 22.04 falls out of relevance.
 
@@ -67,7 +67,7 @@ Several of the binary's shared library dependencies (Bullet, assimp, ENet, Lua, 
 
 ### Windows
 
-`.\package_release.ps1` (run from a PowerShell prompt) builds the `windows-release` preset and zips the result together with `Assets/`, `Shaders/`, and `serverstart.lua` into `LandOfDran-release-<hash>-windows.zip`. There's no glibc-style ABI baseline to worry about on Windows, and vcpkg's `VCPKG_APPLOCAL_DEPS` behavior already copies every DLL the exe needs next to it in the build output, so packaging is just build-then-zip. Pass `-SkipBuild` to package whatever's already built instead of rebuilding.
+`.\package_release.ps1` (run from a PowerShell prompt) builds the `windows-release` preset and zips the result together with `Assets/`, `Shaders/`, `Add-ons/`, and `serverstart.lua` into `LandOfDran-release-<hash>-windows.zip`. There's no glibc-style ABI baseline to worry about on Windows, and vcpkg's `VCPKG_APPLOCAL_DEPS` behavior already copies every DLL the exe needs next to it in the build output, so packaging is just build-then-zip. Pass `-SkipBuild` to package whatever's already built instead of rebuilding.
 
 For a quick local iteration loop without Docker, `./package_release.sh --local [build_dir]` packages whatever's already built in `cmake-build-release/` (or `build_dir`) instead — faster, but the result is only guaranteed to run on systems with a glibc at least as new as your own machine's, same as before.
 

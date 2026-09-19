@@ -5,9 +5,8 @@
 	out of its .dts files (see the DTS models section of LuaAPI.md), and the bow itself is rebuilt from
 	the datablocks in its Weapon_Bow.cs.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Weapon_Bow/Weapon_Bow.lua")
+	The whole add-on is this one file: the game runs it when Weapon_Bow is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	It shoots through the weapon support the Tier+Tactical add-on carries in Support_Weapons.lua, which
 	this pulls in itself if it hasn't been loaded yet.

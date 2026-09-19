@@ -72,14 +72,10 @@ fi
 # .webm prints under Assets/brick/prints are both kept out of git for their size, see .gitignore
 cp -r Assets "$PKG_DIR/"
 cp -r Shaders "$PKG_DIR/"
-# serverstart.lua dofile()s the add-ons by path relative to the working directory
+# The add-ons, which is where the game's systems live too, loaded by path relative to the working directory
 cp -r Add-ons "$PKG_DIR/"
 cp serverstart.lua "$PKG_DIR/"
-cp EmitterDefaults.lua "$PKG_DIR/"
-cp BlocklandImports.lua "$PKG_DIR/"
-cp Inventory.lua "$PKG_DIR/"
-cp Damage.lua "$PKG_DIR/"
-cp Hats.lua "$PKG_DIR/"
+cp FallingTiles.lua "$PKG_DIR/"
 # The game that plays behind the main menu, which runs serverstart.lua itself, see LoopClient::startMenuDemo
 cp menudemo.lua "$PKG_DIR/"
 

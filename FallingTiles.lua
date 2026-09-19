@@ -24,7 +24,7 @@
 	are taken straight back out, and everyone who joins or respawns lands in the spectator box until the next round.
 	All of it is server Lua on top of bricks, so nothing here needs anything from the engine.
 
-	Loaded from serverstart.lua after its admin commands, Inventory.lua and Damage.lua.
+	Loaded from serverstart.lua after its admin commands, System_Inventory and System_Damage.
 ]]
 
 --The corner of the stage with the lowest x and z, in studs, and the plate height platforms are scattered around
@@ -1164,7 +1164,7 @@ function ftStart()
 	FT.controller = nil
 	FT.nextController = nil
 
-	--The same way Item_Ammo.lua hangs itself off Damage.lua: listeners and spawnPlayer look these up by name as they run
+	--The same way Item_Ammo.lua hangs itself off System_Damage: listeners and spawnPlayer look these up by name as they run
 	FT.giveStartingItems = giveStartingItems
 	giveStartingItems = ftGiveStartingItems
 	FT.pickSpawnPosition = pickSpawnPosition

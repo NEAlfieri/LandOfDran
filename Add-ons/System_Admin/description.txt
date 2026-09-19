@@ -1,0 +1,3 @@
+Title: Admin
+Author: Land of Dran
+Slash commands: /clearbricks and /clearvehicles for everyone, and the admin ones from /kick to /setWaterLevel.

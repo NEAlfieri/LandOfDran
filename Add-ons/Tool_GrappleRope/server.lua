@@ -5,9 +5,8 @@
 	ships in this folder. The tool is the print gun's shape in orange, and the rope is rebuilt from
 	the datablocks and the swing from the GrappleRope function in its Tool_GrappleRope.cs.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Tool_GrappleRope/Tool_GrappleRope.lua")
+	The whole add-on is this one file: the game runs it when Tool_GrappleRope is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	Holding left mouse fires a hook, bowFire and all, at whatever the crosshair is on. Where it
 	lands is the anchor, as long as nothing stands between the player and it, and the rope is as

@@ -1,7 +1,10 @@
---What loadBlocklandSave turns the lights and emitters Blockland saves put on bricks into, run from serverstart.lua after EmitterDefaults.lua
+--What loadBlocklandSave turns the lights and emitters Blockland saves put on bricks into, loaded as an add-on of its own
 --Blockland's lights are shared types, ours are settings on each brick, so addBlocklandLight gives each Blockland light type the settings
 --(the same table as brick:setLight) its bricks' lights start with. Emitters use the emitter type addBlocklandEmitter names, or else the
---one whose uiName is the Blockland name (see EmitterDefaults.lua). Music uses a music sound type with the same name (see newSoundType)
+--one whose uiName is the Blockland name (see System_Emitters). Music uses a music sound type with the same name (see newSoundType)
+
+--The emitter types the names below are matched against
+requireAddOn("System_Emitters")
 
 --Blockland lights have a radius and brightness. A Blockland unit is two studs, so a light is made just bright enough to reach twice its
 --Blockland radius before our lights cut off (where brightness / (distance^2 + 1) drops under 0.02 of its brightest color channel), then
@@ -45,5 +48,5 @@ blocklandLight("Player's Light", 1, 1, 1, 10, 9, 0)
 blocklandLight("White Ambient", 1, 1, 1, 30, 5, 0)
 blocklandLight("White Ambient Dim", 1, 1, 1, 30, 2, 0)
 
---Blockland's Camera Glow is the admin orb, which EmitterDefaults.lua has under the old game's uiName
+--Blockland's Camera Glow is the admin orb, which System_Emitters has under the old game's uiName
 addBlocklandEmitter("Camera Glow", "CameraEmitter")

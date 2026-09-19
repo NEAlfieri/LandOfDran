@@ -1,0 +1,3 @@
+Title: Emote
+Author: Land of Dran
+Things a player does with their own body. For now that's /sit.

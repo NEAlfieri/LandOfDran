@@ -14,7 +14,8 @@
 	came off of. A hat nobody picks up is cleared away after a while, and only so many lie around at once.
 	Respawning puts the hat from the appearance editor back on as it always has.
 
-	Run from serverstart.lua with dofile("Hats.lua"), after the add-ons and Damage.lua.
+	Loaded as an add-on of its own. It needs the player model to measure where a head is, and hooks into
+	the weapons' shot paths whether it loads before or after them.
 
 	Lua can do the same to anyone with knockHatOff(player, dirX, dirY, dirZ), the way the hat should fly.
 ]]
@@ -37,6 +38,9 @@ local HAT_FLY_SPEED = 7
 local HAT_LIFT_SPEED = 11
 local HAT_SCATTER_SPEED = 2.5
 local HAT_SPIN = 7
+
+--Where a head is measured on, see the do block below
+requireAddOn("System_Players")
 
 --The player model's scale, which a hat's size is measured in, see droppedHat.txt
 droppedHatType = newDynamicType("droppedHat", "Assets/brickhead/droppedhat/droppedHat.txt", 0.02, 0.02, 0.02)
@@ -205,9 +209,9 @@ function hatShotPath(fromX, fromY, fromZ, toX, toY, toZ, shooter, hit)
 	end
 end
 
-if ShotPathListeners ~= nil then
-	table.insert(ShotPathListeners, hatShotPath)
-end
+--The table Support_Weapons.lua keeps its listeners in, made here if the weapons haven't loaded yet
+ShotPathListeners = ShotPathListeners or {}
+table.insert(ShotPathListeners, hatShotPath)
 
 --A left click on a hat lying within reach puts it on a head with nothing on it
 function hatClick(client, posX, posY, posZ, dirX, dirY, dirZ, mask)

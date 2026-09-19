@@ -6,9 +6,8 @@
 	LuaAPI.md), and it's the sharper of the two: its datablock has three times the biplane's engine and
 	twice its roll, and its own description calls it super-maneuverable.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Vehicle_Stunt_Plane/Vehicle_Stunt_Plane.lua")
+	The whole add-on is this one file: the game runs it when Vehicle_Stunt_Plane is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	and then spawnStuntPlane() puts one in the world, spawnStuntPlane(client) drops one in front of
 	somebody, and a Vehicle Spawn brick wrenched to "Stunt Plane" keeps one above itself.
@@ -103,7 +102,7 @@ local stuntPlaneFlight = {
 	a second a quarter stud puff every eight milliseconds is a dotted line rather than a trail, and these
 	overlap into one. And they go out every 8ms rather than its 1, since Blockland ejected one particle a
 	tick where our emitters eject everything they owe each frame, see the note at the top of
-	EmitterDefaults.lua
+	System_Emitters
 ]]
 addParticleType("stuntContrailParticle", {
 	texture = "Assets/particles/cloud.png",

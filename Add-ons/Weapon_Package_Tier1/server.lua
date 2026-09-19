@@ -5,9 +5,8 @@
 	this folder. The models are loaded straight out of its .dts files (see the DTS models section of
 	LuaAPI.md), and the guns are rebuilt in Lua from the datablocks in its .cs files.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
+	The whole add-on is this one file: the game runs it when Weapon_Package_Tier1 is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	What works: firing, the animations, sounds and muzzle effects each weapon came with, real
 	projectiles for the weapons that had them, the casings they throw out, magazines and reloading,
@@ -18,7 +17,7 @@
 	the one exception: its datablock fires its own rifle_round.dts.
 
 	A shot that lands on someone takes the weapon's damage field, the directDamage of its datablock,
-	off their health (Support_Weapons.lua's hurtIfPlayer calls Damage.lua's damagePlayer), without the
+	off their health (Support_Weapons.lua's hurtIfPlayer calls System_Damage's damagePlayer), without the
 	headshot multiplier the sport rifle had.
 ]]
 
@@ -66,7 +65,7 @@ dofile(folder .. "Support_Weapons.lua")
 
 --The plain Gun, whose bullet and casing these fire. Its own script loads the support above if it's first
 if gunBullet == nil then
-	dofile("Add-ons/Weapon_Gun/Weapon_Gun.lua")
+	requireAddOn("Weapon_Gun")
 end
 dofile(folder .. "Weapon_Pistol.lua")
 dofile(folder .. "Weapon_Submachinegun.lua")

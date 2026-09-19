@@ -11,6 +11,7 @@
 #include "../LuaFunctions/DecalLua.h"
 #include "../LuaFunctions/ItemLua.h"
 #include "../LuaFunctions/VehicleLua.h"
+#include "../LuaFunctions/AddOns.h"
 
 #include <random>
 
@@ -1066,6 +1067,7 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	registerSoundFunctions(pd.luaState);
 	registerSkyFunctions(pd.luaState);
 	registerDecalFunctions(pd.luaState);
+	registerAddOnFunctions(pd.luaState);
 
 	///Server just has one physics world that's started when the program starts and stays until shutdown, unlike client
 	pd.physicsWorld = std::make_shared<PhysicsWorld>();
@@ -1094,6 +1096,13 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.brickTypes.load("Assets/brick/types");
 	pd.prints.load("Assets/brick/prints");
 	pd.bricks->makeLuaMetatable(pd.luaState, "metatable_brick", getBrickFunctions(pd.luaState));
+
+	/*
+		Add-ons come before the start script: the systems a game is built out of live in add-ons of their own
+		(health and respawning, the inventory, the emitter types), and the start script is what this particular
+		server wants on top of them, so everything it might call has to be in by the time it runs
+	*/
+	loadAddOns(pd.luaState);
 
 	info("Loading " + startScript);
 

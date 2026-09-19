@@ -1,7 +1,8 @@
 # Land of Dran Server Lua API
 
 This documents every function the server-side Lua environment exposes to scripts
-(`serverstart.lua` and anything `dofile`'d from it, or run through the eval console).
+(the add-ons' `server.lua` files, `serverstart.lua` and anything `dofile`'d from them, or run
+through the eval console).
 Generated from the current `LuaFunctions/*.cpp` and `Networking/PacketsFromClient/*.cpp`
 source - if you add or change a binding, update this file too.
 
@@ -143,16 +144,16 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 
 | Event | Listener signature | Notes |
 |---|---|---|
-| `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `serverstart.lua`'s `join()` gives them their player dynamic here with its `spawnPlayer(client)`, which `Damage.lua` calls again each time they respawn, see [Health, death, and respawning](#health-death-and-respawning). |
+| `ClientJoin` | `function(client) ... return client end` | Fires once a client finishes phase-1 loading (right after connecting). `System_Players`' `join()` gives them their player dynamic here with its `spawnPlayer(client)`, which `System_Damage` calls again each time they respawn, see [Health, death, and respawning](#health-death-and-respawning). |
 | `ClientLeave` | `function(client) ... return client end` | Fires when a client disconnects, before it's removed from the client list. Use this to clean up anything the client owned (see `PickupSystem.lua`'s `dropHeldOnLeave`). |
 | `ClientChat` | `function(client, message) ... return client, message end` | Fires when a client sends a chat message, before it's broadcast. `message` is `"<name>: <text>"`. Return a modified `message` to alter it, or an empty string to suppress it. Slash commands are case-insensitive: when the text starts with `/`, the command word (up to the first space) is lowercased before listeners see it, so compare against lowercase names; arguments after the space keep their case. |
-| `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. `serverstart.lua`'s `plantSpawnBrick` does that to a `Spawn Point` planted by anyone but an admin and returns `client, nil`, so listeners after it have to expect no brick. |
-| `ClientAdminLogin` | `function(client) ... return client end` | Fires when a client enters the right eval console password. Not fired for the single player host, who is made admin automatically. `serverstart.lua` plays the `Admin` sound to them here. |
+| `ClientPlantBrick` | `function(client, brick) ... return client, brick end` | Fires after a client plants its ghost brick and the server accepts it. The brick is already placed and sent to clients; call `brick:remove()` to take it back out. `System_Players`' `plantSpawnBrick` does that to a `Spawn Point` planted by anyone but an admin and returns `client, nil`, so listeners after it have to expect no brick. |
+| `ClientAdminLogin` | `function(client) ... return client end` | Fires when a client enters the right eval console password. Not fired for the single player host, who is made admin automatically. `System_Sounds` plays the `Admin` sound to them here. |
 | `ClientClick` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires on every mouse click. `posX/Y/Z` and `dirX/Y/Z` are the camera's position and look direction *at the moment of the click*; `mask` is the SDL mouse button mask (see Conventions). |
 | `ClientStartTalking` | `function(client) ... return client end` | Fires when a client starts sending voice chat. Calling `client:setVoiceMuted(true)` here cuts them off before anyone hears them. |
 | `ClientStopTalking` | `function(client) ... return client end` | Fires when a client lets go of push to talk, or half a second after their voice stops arriving (a lost last packet, or muted while talking). Not fired for a client who leaves while talking. |
-| `ClientWrenchBrick` | `function(client, brick) ... return client, brick end` | Fires when a client holds Insert and left clicks a brick within 100 studs of their camera, before its wrench dialog opens. Return `client, nil` to keep the dialog closed, or another brick to open that one's dialog instead. Not fired by `client:openWrenchDialog`, which is what the wrench item in `Inventory.lua` uses. |
-| `ClientClickRelease` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires when a client lets go of a mouse button in game, even over a window. Same arguments as `ClientClick`, except `mask` is only the button let go. `Inventory.lua` stops swinging the hammer or wrench here. |
+| `ClientWrenchBrick` | `function(client, brick) ... return client, brick end` | Fires when a client holds Insert and left clicks a brick within 100 studs of their camera, before its wrench dialog opens. Return `client, nil` to keep the dialog closed, or another brick to open that one's dialog instead. Not fired by `client:openWrenchDialog`, which is what the wrench item in `System_Inventory` uses. |
+| `ClientClickRelease` | `function(client, posX, posY, posZ, dirX, dirY, dirZ, mask) ... return client, posX, posY, posZ, dirX, dirY, dirZ, mask end` | Fires when a client lets go of a mouse button in game, even over a window. Same arguments as `ClientClick`, except `mask` is only the button let go. `System_Inventory` stops swinging the hammer or wrench here. |
 | `ClientSliceBricks` | `function(client, brickCount) ... return client, brickCount end` | Fires when a client's selection box would make a vehicle, after every rule it has to follow checks out, with how many bricks (wheels included) would be sliced. Return `client, nil` to stop it, which leaves the bricks where they are and tells the client nothing. See [Vehicles](#vehicles). |
 | `VehicleCreated` | `function(vehicle, builder) ... return vehicle, builder end` | Fires once a vehicle is finished being made, by slicing, loading a save (by a client or `loadVehicleFile`), or `sliceBricks`, with the client who made it or `nil` for Lua. Return values are ignored. `serverstart.lua` makes every new vehicle destructable here. |
 | `ClientEnterVehicle` | `function(client, vehicle, seat) ... return client, vehicle, seat end` | Fires when a client right clicks a vehicle, before they get in: to drive it (`seat` is `nil`) when nobody is, otherwise onto its free passenger seat nearest where they clicked (`seat` 0 or more). Also fires when a client already in the vehicle presses their next seat key (comma) to move to another of its seats, with the seat they'd move to. Return `client, nil, seat` to keep them out, or where they are. Not fired by `client:enterVehicle`. |
@@ -162,10 +163,10 @@ setSkybox("Assets/ibl/main.hdr")                                  -- lit by a ph
 | `ClientRemoveVehicle` | `function(client, vehicle) ... return client, vehicle end` | Fires when a client confirms Remove vehicle in a vehicle's wrench dialog, before it's removed. Return `client, nil` to keep it. Not fired by `vehicle:destroy` or `clearAllVehicles`. |
 | `ClientSaveBricks` | `function(client) ... return client end` | Fires when an admin clicks Save in their Saved Bricks window (escape menu), just before the server sends them a copy of every brick to write to their own `Saves` folder, with their name and the time in it (their game adds a picture of the build). Return `client, nil` to stop it, which tells the client nothing. Not fired for anyone without admin: the server refuses them, and their game saves what it can see of the bricks on its own (no names, owners, or attachments). Not fired by `saveBuild`. |
 | `ClientLoadBricks` | `function(client, fileName, clearFirst, x, y, z) ... return client, fileName, clearFirst, x, y, z end` | Fires once an admin's upload of a `.lod` or `.bls` save from their own computer has fully arrived and is about to be loaded, with the name they gave it, whether they asked for every brick to be taken away first, and the offset they typed (studs, plates, studs, 0 by default). Return `client, nil` to stop it, which tells the client nothing. The server refuses uploads from clients without admin before any of it is kept. Loads go through `loadLodSave` / `loadBlocklandSave`'s code with that offset. Not fired by those functions. |
-| `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `Inventory.lua` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
-| `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `Inventory.lua` throws the item in their hand. |
-| `ProjectileHit` | `function(projectile, hit, x, y, z, tag, normalX, normalY, normalZ) ... return projectile, hit, x, y, z, tag, normalX, normalY, normalZ end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, which for anything but a tiny projectile is a corner of the box it collides as rather than its middle, `tag` is the tag it was fired with, and the normal is that of the surface it hit, pointing out of it, like `raycast`'s. It's removed right after its listeners run, unless one already removed it, so `projectile:getPosition()` still works in one. Return values are ignored, but like every event all nine have to be returned or the listeners after this one aren't called. `Inventory.lua` bursts launcher shells here. |
-| `RadiusImpulseHit` | `function(dynamic, x, y, z, strength) ... return dynamic, x, y, z, strength end` | Fires from `radiusImpulse` for each dynamic it pushes (players, items on the ground, projectiles, the rest, not vehicles), with the middle of the impulse and the impulse that reached the dynamic where it stood: `strength * (1 - distance / reach)`, before its mass, negative for a pull. Fired as it's pushed, so a listener can move or destroy it. Return values are ignored. `Damage.lua`'s `damageByImpulse` takes health off the player of anyone pushed here. |
+| `ClientPaintCan` | `function(client, out) ... return client, out end` | Fires when a client's paint palette wants a paint can in their hand (`out` is `true`), which happens as the palette comes out, and again when their item bar or brick bar takes it back (`out` is `false`). Nothing happens unless a listener does it; `System_Inventory` makes a `paintCan` item and gives it to them with `client:setHandItem`, and destroys it again. |
+| `ClientDropItem` | `function(client, slot) ... return client, slot end` | Fires when a client presses their drop item key with Ctrl (Ctrl+W by default), with the slot their item bar has picked (0-4), whether or not there's an item in it or their items are out. Nothing is dropped unless a listener does it; `System_Inventory` throws the item in their hand. |
+| `ProjectileHit` | `function(projectile, hit, x, y, z, tag, normalX, normalY, normalZ) ... return projectile, hit, x, y, z, tag, normalX, normalY, normalZ end` | Fires the first time a projectile from `addProjectile` touches something that collides: a Dynamic, Static, Brick, or Vehicle as `hit`, or `nil` for the ground. `x, y, z` is where on `hit` they touched, which for anything but a tiny projectile is a corner of the box it collides as rather than its middle, `tag` is the tag it was fired with, and the normal is that of the surface it hit, pointing out of it, like `raycast`'s. It's removed right after its listeners run, unless one already removed it, so `projectile:getPosition()` still works in one. Return values are ignored, but like every event all nine have to be returned or the listeners after this one aren't called. `System_Inventory` bursts launcher shells here. |
+| `RadiusImpulseHit` | `function(dynamic, x, y, z, strength) ... return dynamic, x, y, z, strength end` | Fires from `radiusImpulse` for each dynamic it pushes (players, items on the ground, projectiles, the rest, not vehicles), with the middle of the impulse and the impulse that reached the dynamic where it stood: `strength * (1 - distance / reach)`, before its mass, negative for a pull. Fired as it's pushed, so a listener can move or destroy it. Return values are ignored. `System_Damage`'s `damageByImpulse` takes health off the player of anyone pushed here. |
 
 ---
 
@@ -185,7 +186,7 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `newDynamicType(scriptName, modelFilePath, scaleX, scaleY, scaleZ)` | `scriptName`: unique name used to refer to this type later; `modelFilePath`: path to the model file; scale on each axis | typeID | Registers a new kind of dynamic (model + scale). Call once at startup per type. `modelFilePath` is normally a `.txt` descriptor, but a `.dts` (the shapes Blockland add-ons ship their models in) can be given straight to it with no descriptor next to it, see [DTS models](#dts-models). |
 | `getDynamicType(scriptName)` | string | typeID | Looks up a previously-registered type's ID by its script name. |
 | `getTypeNodePosition(typeID, nodeName)` | a dynamic or item type; the name of a node in its model, case insensitive | x, y, z, or nothing | Where that node sits in the model's own space with nothing animating, the type's scale applied. Nothing at all if the model has no node by that name. Shapes name the spots an add-on cares about, so this is how a script finds them without writing the numbers down: a Blockland jeep hangs its wheels from `hub0` to `hub3` and seats its riders on `Mount0` and up, and a weapon's hand goes on its `mountPoint`. See [Model vehicles](#model-vehicles) and [DTS models](#dts-models). |
-| `getTypeMeshBounds(typeID, meshName)` | dynamic type ID; mesh name within its model, case doesn't matter | lowX, lowY, lowZ, highX, highY, highZ; or `nil` | The box one mesh of a type's model fills, in the model's own space with its scale applied, in the pose it was loaded in. So for a dynamic standing upright these are studs from its position: the player model's `Head` is about 3.55 to 5.15 up, which is how `Hats.lua` knows where a hat is. `nil` if the model has no such mesh. |
+| `getTypeMeshBounds(typeID, meshName)` | dynamic type ID; mesh name within its model, case doesn't matter | lowX, lowY, lowZ, highX, highY, highZ; or `nil` | The box one mesh of a type's model fills, in the model's own space with its scale applied, in the pose it was loaded in. So for a dynamic standing upright these are studs from its position: the player model's `Head` is about 3.55 to 5.15 up, which is how `System_Hats` knows where a hat is. `nil` if the model has no such mesh. |
 | `addAnimation(typeID, animationName, startFrame, endFrame, speed, fadeInMS, fadeOutMS)` | type to attach the animation to; frame range (the model file's animation ticks, which for an FBX are its frame numbers minus 1); playback speed in ticks per ms; fade in/out durations in ms | none | Adds a named animation clip to a dynamic type, which `dynamic:playAnimation` plays by name. The first animation added to a type is used as its walk cycle. One named `grab` plays on a player whenever its client left clicks in game, for everyone, and one named `sit` loops on a player while they ride in a model vehicle, see [Model vehicles](#model-vehicles). While several play at once, animations added later play over earlier ones, but only on the parts of the model they actually move (a grab only takes over the arm it swings, the legs keep walking). Players' heads also turn to show where their camera looks, if the model has a node named `Head`. A `.dts` model needs none of these lines: it registers every sequence it came with under its own name, see [DTS models](#dts-models). |
 | `raycast(startX, startY, startZ, endX, endY, endZ[, dynamicToIgnore])` | ray start/end points; optionally a Dynamic to exclude from the hit test | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Casts a ray through the physics world. Returns the Dynamic, Static, or Brick it hit first, then the world position of the hit, the normal of the surface it hit (pointing out of it), and the distance from the start point. If it hit the ground, which has no object, the hit object is `nil` and the rest still follow. Returns just `nil` if it hit nothing. `local hit = raycast(...)` still works if you only need the object. |
 | `addProjectile(typeID, x, y, z, velX, velY, velZ[, tag[, shooter]])` | dynamic type ID; position; velocity in studs per second; any string, `""` by default, or `nil`; a Dynamic, or `nil` | Dynamic | Fires a dynamic that falls with gravity and is turned every tick so its model's +Y points the way it's going (while faster than 8 studs a second). A `.dts` model is turned along its -Z instead, which is the +Y forward Torque built it with, see [DTS models](#dts-models). It never falls asleep, and is swept along what each physics substep is about to move it before the substep runs, and stopped on the first thing in the way, so it doesn't skip through thin bricks however fast it goes. It passes through `shooter`, usually the player who fired it, and through every other projectile, so a shotgun's pellets can all leave one spot at once. Clients only draw it where the server has it, it never bumps into their own player. The first time it touches anything that collides, the ground included, `ProjectileHit` fires with `tag` and it's removed. Bricks and statics with collision off don't count. |
@@ -220,11 +221,11 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:playAnimation(name[, loop])` | the name an `addAnimation` line gave its type; `loop` defaults to false | none | Plays an animation for everyone: once from its start, over the walk cycle and anything else playing, or looped until `stopAnimation`. Looping ones are remembered, so a client that joins later sees them too, and as many can loop at once as the model has animations. A player's own client plays its `grab` itself on the click, everything else reaches it from here like everyone else. An item in someone's hand plays through `item:playAnimation` instead, which its carrier's item bar knows about. Logs an error for a name the type has no animation by. |
 | `dynamic:stopAnimation([name])` | animation name, or nothing | none | Stops that looping animation, fading it out over the fade its `addAnimation` line gave it, or every one looping without a name. One playing once finishes on its own. |
 | `dynamic:setMeshDecal(meshName, decalName)` | mesh name within the model; file name of an image in `Assets/faces` or `Assets/shirts` (e.g. `"smiley.png"` or `"Mod-Police.png"`, up to 64 characters), or `""` to remove it | none | Shows a face or shirt on one mesh, drawn over its color, and broadcasts the change. The image covers the mesh's texture coordinates from 0 to 1, or only the rectangle a `decalarea` line in the model's `.txt` gives that mesh (`decalarea`, the mesh name, then the texture coordinates of the image's top left and bottom right corners, all tab separated), with nothing outside it; the default player's `Torso` has one covering its front. A model's face plate (a mesh named `Face1`, or `Face` without one) is see-through except for the face, so without a face it isn't drawn at all, and it casts no shadow or outline. Clients look the name up in their own `Assets/faces` folder, then `Assets/shirts`, so one they don't have isn't shown. |
-| `dynamic:setPart(slot, partName[, r, g, b, a[, scale]])` | slot name, up to 32 characters, `"hat"` is the one the appearance editor fills; file name of a model descriptor in `Assets/brickhead/parts` (like `"top_hat.txt"`), or `""` to take off what's in the slot; color 0-1, alpha 0 (the default) leaves the part its own look; size from 0.5 to 1.5 times the descriptor's (default 1) | none | Wears a model on the dynamic, the way `client:applyAppearance` puts a player's hat on, and broadcasts the change. The descriptor's `attach` lines say which mesh it's worn on and how it sits there, so the dynamic's model needs a mesh by that name (`Head` for the hats), though it doesn't have to be one that's drawn: `Hats.lua`'s hat lying on the ground is a model of nothing but a hidden `Head`, wearing the hat. Clients look the file up in their own parts folder, so one they don't have isn't shown. |
+| `dynamic:setPart(slot, partName[, r, g, b, a[, scale]])` | slot name, up to 32 characters, `"hat"` is the one the appearance editor fills; file name of a model descriptor in `Assets/brickhead/parts` (like `"top_hat.txt"`), or `""` to take off what's in the slot; color 0-1, alpha 0 (the default) leaves the part its own look; size from 0.5 to 1.5 times the descriptor's (default 1) | none | Wears a model on the dynamic, the way `client:applyAppearance` puts a player's hat on, and broadcasts the change. The descriptor's `attach` lines say which mesh it's worn on and how it sits there, so the dynamic's model needs a mesh by that name (`Head` for the hats), though it doesn't have to be one that's drawn: `System_Hats`'s hat lying on the ground is a model of nothing but a hidden `Head`, wearing the hat. Clients look the file up in their own parts folder, so one they don't have isn't shown. |
 | `dynamic:getPart(slot)` | slot name | partName, r, g, b, a, scale; or `nil` | What's worn in a slot, as `setPart` takes it, `nil` for nothing. |
 | `dynamic:setHighlight(r, g, b, a, thickness)` | color; `thickness` is how far (in world units) the outline extends past the model's surface | none | Applies an outline/highlight effect around the whole object and broadcasts it to clients. |
 | `dynamic:clearHighlight()` | none | none | Removes the outline/highlight effect. |
-| `dynamic:setNameTag(text, r, g, b)` | text up to 64 characters, `""` for none; color, 0-1 each | none | Puts floating text over the object for every client, drawn over the world above its collision box, and broadcasts it. Clients don't draw the tag on the object they control, so you never see your own, a tag fades out past 150 world units and is left off past 256, and one is only drawn while the camera has a clear line to the object (its middle or the spot the tag floats at), so a player behind a wall doesn't show a name over it. `serverstart.lua` gives each player their client's name in `ClientJoin`. |
+| `dynamic:setNameTag(text, r, g, b)` | text up to 64 characters, `""` for none; color, 0-1 each | none | Puts floating text over the object for every client, drawn over the world above its collision box, and broadcasts it. Clients don't draw the tag on the object they control, so you never see your own, a tag fades out past 150 world units and is left off past 256, and one is only drawn while the camera has a clear line to the object (its middle or the spot the tag floats at), so a player behind a wall doesn't show a name over it. `System_Players` gives each player their client's name in `ClientJoin`. |
 | `dynamic:getNumControllers()` | none | count | How many clients currently control this dynamic (usually 0 or 1; 0 means it's a normal server-simulated object, not a player). |
 | `dynamic:getControllerIdx(index)` | 0-based index | Client | The client controlling this dynamic at that index. |
 | `dynamic:snapToCursor(client, xOffset, yOffset, zOffset)` | client to attach to; view-space offset: `x` = right, `y` = up, `z` = distance in front of the camera | none | Attaches the dynamic to a client's cursor: every physics tick its position is recomputed from that client's live camera position/direction plus this offset, and its gravity is disabled. Calling this again while already snapped just updates the client/offset. |
@@ -270,7 +271,7 @@ Things worth knowing:
   a player holding the key. For a single jump, set it for one call and clear it on the next.
 - **It's a normal dynamic otherwise.** It collides, floats, takes `radiusImpulse`, can be shot, wears hats
   (`dynamic:setPart`), is painted with `setMeshColor`, and shows a face with `setMeshDecal`. What it is not is a client,
-  so nothing that takes a Client works on it: it has no inventory, no item bar and no slots, and `Damage.lua` can't hurt
+  so nothing that takes a Client works on it: it has no inventory, no item bar and no slots, and `System_Damage` can't hurt
   it, whose health lives on clients' players. A script that wants bots to be hurt keeps that itself. What draws a held
   item or a driver goes by the dynamic rather than by whose it is, so one item can still be put in its hand with
   `dynamic:setHeldItem` and it can be sat at a wheel with `vehicle:setDriver`.
@@ -304,10 +305,10 @@ its own muzzle flash, light and sound, and the round tagged with the weapon's na
 listener gives every shot its real hole, dust and crack where it lands. The pistol is hitscan with a tracer, as it is
 in anyone's hands.
 
-They also take the weapons' real damage and die of it, which `Damage.lua` can't do for them: its health lives on
+They also take the weapons' real damage and die of it, which `System_Damage` can't do for them: its health lives on
 clients' players and a bot is not a client, so the demo keeps health on the bots themselves and listens to
 `ProjectileHit` and `RadiusImpulseHit` for what lands on one. A bot that runs out drops its keys, tips over where it
-stood (`corpseSettle` out of `Damage.lua` stops the body turning once it's down) and lies there for five seconds, then
+stood (`corpseSettle` out of `System_Damage` stops the body turning once it's down) and lies there for five seconds, then
 goes in the same puff of smoke a player's body does and is back on its feet where its team started. The body is the
 same dynamic the bot was, rather than a new one the way a player's is, since nothing was controlling it; that's what
 lets the camera and the bots' own targeting simply skip whoever is dead. One number, `BOT_HEALTH`, is how often anyone
@@ -320,6 +321,72 @@ Two things in it are worth copying for any script that has to move a camera:
   everything would run at the speed of the frame rate.
 - **It composes off-center.** The server browser sits at the top left, so every shot aims up and to the left of what it's
   watching, which puts the subject down and to the right where the menu isn't.
+
+---
+
+## Add-ons
+
+Everything a game is made of lives in an add-on: a folder in `Add-ons` with a **`server.lua`** in it, which is the
+one file the game runs to load the whole thing. Whatever else the add-on needs - models, textures, sounds, more
+Lua files - sits in the same folder and is named by paths relative to the game's folder:
+
+```
+Add-ons/
+	Weapon_Gun/
+		server.lua        <- run when the add-on loads
+		description.txt
+		pistol.dts
+		gunShot1.wav
+	list.txt              <- which add-ons this server runs
+```
+
+`Add-ons/list.txt` is the config file that says which of them load, a line per add-on:
+
+```
+#Every add-on in this folder and whether this server loads it
+System_Players true
+Weapon_Gun true
+Vehicle_Jeep false
+```
+
+The server rewrites it as it starts: an add-on that has turned up in the folder since the last run is added as
+`true`, so **dropping one in is all it takes to enable it**, and one whose folder has gone is dropped from the file.
+They load in the order they're listed, so moving a line up or down decides what loads first. A folder with no
+`server.lua` (a print pack, say) is neither listed nor loaded; its content is still found by whatever loads that
+kind of content.
+
+An add-on that arrives as **`Add-ons/<name>.zip`** is unpacked into `Add-ons/<name>` as the server starts and the
+zip is deleted, so a zipped add-on behaves exactly like a folder one. The zip's contents are its files as they'd
+sit in the folder, and one that has everything inside a single folder of its own works too - that folder is
+stripped. A zip whose folder is already there is left alone rather than written over, with a line in the log.
+
+All of this happens **before `serverstart.lua` runs**, so everything the start script might call is already in.
+
+| Function | Arguments | Description |
+|---|---|---|
+| `requireAddOn(name)` | add-on folder name | Loads that add-on's `server.lua` now if it hasn't been loaded yet, for one that can't work without another. The same as Torque's `ForceRequiredAddOn`: it loads whether or not `list.txt` has it enabled, since whatever asked for it needs it. Loading twice is impossible, and two add-ons that require each other each load once. Returns `true` if the add-on is loaded by the time it returns. |
+
+```lua
+--At the top of Weapon_Package_Tier1's server.lua: its guns fire the plain Gun's bullet
+requireAddOn("Weapon_Gun")
+```
+
+The systems the base game is built out of are add-ons like any other, and can be turned off in `list.txt`:
+
+| Add-on | What it is |
+|---|---|
+| `System_Players` | The player model, `spawnPlayer`, Spawn Point bricks, and joining and leaving |
+| `System_Inventory` | The hammer, wrench, print gun and launcher, item slots, picking up and throwing |
+| `System_Damage` | Health, being hurt, dying, the body left behind, respawning |
+| `System_Hats` | Hats a shot knocks off, see [Hats that can be shot off](#hats-that-can-be-shot-off) |
+| `System_Admin` | Slash commands: the `playerCommands` and `adminCommands` tables anything can add to |
+| `System_Emote` | `/sit` |
+| `System_Sounds` | The base game's sound types and music |
+| `System_Emitters` | The particle and emitter types |
+| `System_BlocklandImports` | What lights, emitters and music on bricks in a Blockland save turn into |
+
+What's left in `serverstart.lua` is whatever that particular server wants on top of them: the environment, a game
+mode like [Falling Tiles](#falling-tiles), and testing helpers.
 
 ---
 
@@ -430,9 +497,9 @@ the paint palette away in turn. A
 carried item is held by the first dynamic `client:setDefaultController` gave its client, and isn't drawn anywhere
 without one. Pressing Ctrl+W fires `ClientDropItem`, and letting go of a mouse button fires `ClientClickRelease`.
 
-`Inventory.lua`, run from `serverstart.lua`, gives every player who joins the `hammer`, `wrench`, `printGun`, and
-`dranLauncher` item types `serverstart.lua` adds, and removes those when they leave or die (other items they carry are dropped
-next to their player, `dropCarriedItems(client)`). `Damage.lua` hands the same tools out again with `giveStartingItems(client)` when they respawn.
+`System_Inventory` gives every player who joins the `hammer`, `wrench`, `printGun`, and
+`dranLauncher` item types it adds, and removes those when they leave or die (other items they carry are dropped
+next to their player, `dropCarriedItems(client)`). `System_Damage` hands the same tools out again with `giveStartingItems(client)` when they respawn.
 The `paintCan` isn't one of them: opening the paint palette puts one in their hand with `client:setHandItem` (see
 `ClientPaintCan`), and it's destroyed again once their item bar or brick bar takes it back. Left clicking an
 item on the ground within 10 studs picks it up into the first empty slot. Holding left mouse with the hammer or wrench
@@ -446,7 +513,7 @@ over with their paint color and material (`client:getPaintColor`, `client:getPai
 Spraying someone's player instead paints the body part the crosshair is on (`dynamic:getMeshAt`) their paint color, which
 puffs a `hammerExplosionEmitter` off that part, plays `BodyRemove` from them, and goes back to however that player
 painted themselves (`client:applyAppearance`) 20 seconds after they were last sprayed. Games play `SprayActivate`
-themselves as their palette comes out, so `serverstart.lua` registers both names.
+themselves as their palette comes out, so `System_Inventory` registers both names.
 Left clicking with the launcher in hand plays its `fire` animation and the `Launch` sound, puts a `gunSmokeEmitter` at the
 end of its barrel, and fires a `launcherShell` (`addProjectile`, tagged `"launcherShell"`) at 90 studs a second toward
 whatever the crosshair is on, trailing a `shellTrailEmitter`, at most once every 650 ms. Where a shell lands it makes a
@@ -482,20 +549,20 @@ Along with every `dynamic:` method.
 | `item:stopAnimation([name])` | animation name, or nothing | none | Stops the looping animation if it's the one named, or whatever loops without a name. A swing finishes the one it's partway through. |
 | `item:getItemName()` | none | string | Its type's name in the item bar, like `"Hammer"`, or `""` for a type that was given none. |
 | `item:getTypeName()` | none | string | Its type's script name, like `"hammer"`. |
-| `item:isDisplay()` | none | bool | Whether it's a display item: the copy floating over a brick wrenched to offer an item, see [Wrench dialog](#wrench-dialog-and-brick-attachments). It spins in place, never falls or moves, collides with nothing (rays and clicks still hit it, and it's outlined on a player's screen while their crosshair is on it within 10 studs), and `client:addItem` refuses it. `Inventory.lua` hands whoever clicks one a new item of the same type instead. `radiusImpulse` and water leave it alone. |
+| `item:isDisplay()` | none | bool | Whether it's a display item: the copy floating over a brick wrenched to offer an item, see [Wrench dialog](#wrench-dialog-and-brick-attachments). It spins in place, never falls or moves, collides with nothing (rays and clicks still hit it, and it's outlined on a player's screen while their crosshair is on it within 10 studs), and `client:addItem` refuses it. `System_Inventory` hands whoever clicks one a new item of the same type instead. `radiusImpulse` and water leave it alone. |
 | `item:getDisplayBrick()` | none | Brick or `nil` | The brick a display item floats over. |
 
 ---
 
 ## Health, death, and respawning
 
-`Damage.lua`, run from `serverstart.lua` after `Inventory.lua`, is all there is to health: nothing about it is in the engine,
+`System_Damage`, which loads after `System_Inventory`, is all there is to health: nothing about it is in the engine,
 and clients are never told anyone's health, only shown what happens because of it. It keeps what it knows on the objects
 themselves (see [Conventions](#conventions)), so any script can read or change these:
 
 | Field | Description |
 |---|---|
-| `player.health` | What the player has left. `serverstart.lua`'s `spawnPlayer` gives every new player `DEFAULT_MAX_HEALTH` (100) with `giveHealth`. |
+| `player.health` | What the player has left. `System_Players`' `spawnPlayer` gives every new player `DEFAULT_MAX_HEALTH` (100) with `giveHealth`. |
 | `player.maxHealth` | What their health regenerates back up to. |
 | `player.canBeDamaged` | `true` on a new player. `false` makes `damagePlayer` leave them alone. |
 | `client.score` | `0` as they join, up one for every other player they kill. Dying doesn't change it. Set it with `setScore(client, score)`, which also shows it in everyone's [player list](#player-list) with `client:setScoreText`. |
@@ -505,19 +572,19 @@ themselves (see [Conventions](#conventions)), so any script can read or change t
 | Function | Arguments | Returns | Description |
 |---|---|---|---|
 | `giveHealth(player[, maxHealth])` | a player Dynamic; max health, `DEFAULT_MAX_HEALTH` by default | none | Full health and able to be damaged, for a new player. |
-| `damagePlayer(player, amount[, attacker[, x, y, z]])` | the player; health to take; the client to blame, or `nil`; where they were hit | bool | Takes health off a client's player, showing them being hurt with `serverstart.lua`'s `hurtPlayer` (the `Pain` sound, `ouchEmitter` particles at `x, y, z` or else chest height, and a red `client:setVignette` for whoever they belong to), and kills them with `killPlayer` if that was the last of it. `false` and nothing happens if it isn't a client's player, its `canBeDamaged` is `false`, or `amount` isn't above 0. This is the way in for anything that hurts someone. |
+| `damagePlayer(player, amount[, attacker[, x, y, z]])` | the player; health to take; the client to blame, or `nil`; where they were hit | bool | Takes health off a client's player, showing them being hurt with `System_Damage`'s `hurtPlayer` (the `Pain` sound, `ouchEmitter` particles at `x, y, z` or else chest height, and a red `client:setVignette` for whoever they belong to), and kills them with `killPlayer` if that was the last of it. `false` and nothing happens if it isn't a client's player, its `canBeDamaged` is `false`, or `amount` isn't above 0. This is the way in for anything that hurts someone. |
 | `setHealth(player, health)` | the player; their new health, capped at their max | none | Sets their health without showing them being hurt, killing them at 0 or less whether or not they can be damaged. |
 | `killPlayer(player[, attacker[, x, y, z]])` | the player; the client whose score goes up, or `nil`; where what killed them hit | none | Kills a client's player whatever health it had, see below. |
 | `setScore(client, score)` | Client; their new score | none | Sets `client.score` and puts it in the Score column of everyone's player list. |
 | `respawnPlayer(client)` | a dead client | none | Respawns them now, without waiting for the countdown or their click. |
-| `spawnPlayer(client)` | Client | Dynamic | In `serverstart.lua`: makes the client a new player in a random Spawn Point brick (see [Spawn points](#spawn-points)), or at `SPAWN_X, SPAWN_Y, SPAWN_Z` without one, gives them control of it, binds their camera, puts their appearance and name on it, gives it health, and plays `Spawn` from it. |
+| `spawnPlayer(client)` | Client | Dynamic | In `System_Players`: makes the client a new player in a random Spawn Point brick (see [Spawn points](#spawn-points)), or at `SPAWN_X, SPAWN_Y, SPAWN_Z` without one, gives them control of it, binds their camera, puts their appearance and name on it, gives it health, and plays `Spawn` from it. |
 
 What damages players so far: a shot from one of the weapon add-ons takes its weapon's `damage` field, the `directDamage` of
 its Blockland datablock (`Support_Weapons.lua`'s `hurtIfPlayer`: Gun 30, pistol 12, submachine gun 8, sport rifle 24, pump
 shotgun 9 for each of 9 pellets, Bow 30, Rocket Launcher 30), blaming whoever fired it, and every `radiusImpulse` takes `IMPULSE_DAMAGE_SCALE` (0.005)
 times the square of the push that reached the player (`damageByImpulse`, a `RadiusImpulseHit` listener), so a launcher
 shell landing at someone's feet takes 98, one 10 studs off 43, and one 20 studs off 10. A script that sets the global
-`impulseAttacker` to a client around its `radiusImpulse` call has that client blamed, which `Inventory.lua` does for
+`impulseAttacker` to a client around its `radiusImpulse` call has that client blamed, which `System_Inventory` does for
 launcher shells, so they can kill whoever fired them too. A pull (negative strength) doesn't hurt. A blast that works out
 its own damage sets the global `impulseHarmless` around its `radiusImpulse` instead, so the push only pushes: the Rocket
 Launcher add-on (`Add-ons/Weapon_Rocket_Launcher`) takes up to 100, its datablock's `radiusDamage`, off everyone within 6
@@ -529,7 +596,7 @@ to their max.
 When a player's health reaches 0:
 
 - They get out of any vehicle, and everything they carry leaves their inventory the way it does when someone leaves
-  (`Inventory.lua`'s `dropCarriedItems`): the tools they were given are removed and anything else is left where they died.
+  (`System_Inventory`'s `dropCarriedItems`): the tools they were given are removed and anything else is left where they died.
 - Their player is destroyed, leaving them with none (`client:getNumControlled()` is 0), and a body takes its place: a new
   Dynamic of the same type with their appearance, which nobody controls. It's thrown and tipped away from what hit them, over
   forwards, backwards, or to one side, whichever is nearest, so that it lands on a flat side. `Death` plays from it.
@@ -543,13 +610,13 @@ When a player's health reaches 0:
 - Their old body disappears in a puff of smoke (`bodyRemoveEmitter`) with `BodyRemove` when they respawn, or when they
   leave the server without having.
 
-The constants above are globals at the top of `Damage.lua`, so a script run after it can change them.
+The constants above are globals at the top of `System_Damage`'s `server.lua`, so a script run after it can change them.
 
 ---
 
 ## Hats that can be shot off
 
-`Hats.lua`, run from `serverstart.lua` after the add-ons and `Damage.lua`, lets a shot knock off the hat a player picked in
+`System_Hats` lets a shot knock off the hat a player picked in
 their appearance editor. A hat is only a part drawn on a head (`dynamic:setPart`), nothing in the physics world, so it works
 from where shots go: `Support_Weapons.lua` calls every function in the global `ShotPathListeners` table with each stretch a
 shot travels, `listener(fromX, fromY, fromZ, toX, toY, toZ, shooter, hit)`. A hitscan shot is one stretch from the camera to
@@ -559,10 +626,10 @@ where it landed, a round is one every 25 ms and a last one up to what it hit; `s
 - A stretch that crosses the box over a head where the hat's crown is takes the hat off, and so does a shot that lands on
   the top of the head, which still hurts as much as ever. Brims, visors, and a jester cap's horns don't count. Nobody
   shoots off their own hat, and anything wearing a hat can lose it, the body a dead player leaves behind included
-  (`Damage.lua` leaves the hat off a body whose player had lost it).
+  (`System_Damage` leaves the hat off a body whose player had lost it).
 - The hat flies off along the shot as a `droppedHat` dynamic, which draws nothing itself and wears the hat as its own part,
   so every hat in `Assets/brickhead/parts` works without anything written for it. Crown sizes for the hit box are in
-  `HAT_SHAPES` at the top of `Hats.lua`, a hat that isn't listed gets a middling one.
+  `HAT_SHAPES` at the top of `System_Hats`' `server.lua`, a hat that isn't listed gets a middling one.
 - Anyone with nothing on their head can left click a hat within 12 studs to put it on, whoever it came off of. A hat nobody
   takes is cleared away after three minutes, and no more than 24 lie around at once. Respawning puts the hat from the
   appearance editor back on, as it always has.
@@ -574,7 +641,7 @@ one away by its dynamic's net ID.
 
 ## Falling Tiles
 
-`FallingTiles.lua`, run from `serverstart.lua` after its admin commands, is a gamemode an admin switches the whole server
+`FallingTiles.lua`, run from `serverstart.lua` after `System_Admin`'s commands, is a gamemode an admin switches the whole server
 into by typing `/fallingTiles` in chat, and back out of the same way (`/fallingTiles on` and `off` say which, and
 `/fallingTiles next` skips to a new round). Nothing about it is in the engine: the stage is bricks, and the rest is the
 events and methods in this file.
@@ -601,7 +668,7 @@ events and methods in this file.
   joins. A single contestant wins by lasting `FT_SOLO_SURVIVE_MS`.
 - While it runs nobody has jets (`client:setJetsEnabled`) or starting tools, since a hammer would take the stage apart:
   `ftStart` swaps the globals `giveStartingItems` and `pickSpawnPosition` for its own, the way `Item_Ammo.lua` hangs itself
-  off `Damage.lua`, so everyone who joins or respawns lands in the spectator box empty handed, and `ftStop` puts both back,
+  off `System_Damage`, so everyone who joins or respawns lands in the spectator box empty handed, and `ftStop` puts both back,
   hands the tools out again, and sends everyone to a spawn point. Bricks planted around the stage are taken straight back
   out (`ftPlantBrick`, a `ClientPlantBrick` listener).
 - It moves a player by destroying them and calling `spawnPlayer` with `pickSpawnPosition` swapped for the spot, never with
@@ -787,8 +854,8 @@ the world, at a spot or following a dynamic. Only the types and emitters are sen
 client ejects, moves, and draws the particles on its own, so two players never see exactly the same ones.
 
 Types are made by name, and adding one with a name that's taken replaces it: clients already in the
-game get the change right away and existing emitters of that type carry on with it. `EmitterDefaults.lua`,
-run from `serverstart.lua`, adds the old game's types (converted to the units below) and a
+game get the change right away and existing emitters of that type carry on with it. `System_Emitters`
+adds the old game's types (converted to the units below) and a
 `fountainEmitter` for testing. The server puts a `playerJetEmitter` under each foot of a jetting player
 (see `client:setJetsEnabled`), and makes a `playerBubbleEmitter` wherever a dynamic splashes
 into the water, if a type by that name exists. `emitterTest()` in `serverstart.lua` places one of every
@@ -871,7 +938,7 @@ These use the strict argument count check.
 | `emitter:attachToVehicle(vehicle[, offsetX, offsetY, offsetZ])` | Vehicle; studs along the vehicle body's own x, y, and z axes | none | Goes along with the vehicle, at a spot in its body's space so it turns with it, like the wingtips of a plane (`Add-ons/Vehicle_Stunt_Plane` hangs its contrails off `mount3` and `mount4` this way). Removed along with the vehicle rather than after its type's `lifetimeMS`, like one on a brick. |
 | `emitter:setColor(r, g, b[, a])` | 0-1, clamped; `a` defaults to 1 | none | Multiplies its particles' colors and opacity by this, white by default. Only sent to clients if it changed, so it's cheap to call often. Particles already out keep the color they left with. |
 | `emitter:getColor()` | none | r, g, b, a | Its color. |
-| `emitter:aimWith(dynamic, range)` / `emitter:aimWith(nil)` | a dynamic, usually a player; how far its aim reaches in studs, 0-1000 | none | Sends particles toward whatever the dynamic looks at, up to `range` studs from its eyes (its client's crosshair for a player's own game, where a third person camera reaches that much further), and they only last until they get there. The type's `thetaMin` and `thetaMax` spread particles around that direction instead of around up. Other clients use the way the player's head turns. `nil` ejects normally again. The paint can in `Inventory.lua` uses this. |
+| `emitter:aimWith(dynamic, range)` / `emitter:aimWith(nil)` | a dynamic, usually a player; how far its aim reaches in studs, 0-1000 | none | Sends particles toward whatever the dynamic looks at, up to `range` studs from its eyes (its client's crosshair for a player's own game, where a third person camera reaches that much further), and they only last until they get there. The type's `thetaMin` and `thetaMax` spread particles around that direction instead of around up. Other clients use the way the player's head turns. `nil` ejects normally again. The paint can in `System_Inventory` uses this. |
 
 ---
 
@@ -968,7 +1035,7 @@ as they join, and draw bricks of types they don't have as plain boxes.
 | `saveBuildPicture(fileName)` | file name inside the `Saves` folder, like `"preview.jpg"` | bool | Draws every brick from above into a 256 by 256 JPEG, each pixel the color of the highest brick under it shaded by height, on grass, and writes it there. The same picture a player's game draws for a save without one, meant for a server's preview on a server list. Logs an error and returns `false` with no bricks or if the file can't be written. |
 | `saveBuild(fileName[, omitOwnership])` | file name inside the `Saves` folder; `omitOwnership` writes every owner as `-1` | bool | Saves every brick, with its name, material, collision, music, light, emitter, print, and what it spawns, in the Land of Dran binary format. Saves are written under a newer version number than the old game's, so the old game can't load them. |
 | `loadLodSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Loads a Land of Dran binary save (either of the old game's versions, or ours) on top of the current bricks, returning how many were added. Special bricks of types in `Assets/brick/types` are loaded, and so are names, collision, materials, prints, and our saves' music, lights, and emitters. The old game let undulo or bouncy go on top of another material; those bricks keep only the undulo or bouncy. Prints come by name, from the old game's saves too, however many faces its print mask covered; ones the server doesn't have are dropped and listed in the log. Other special types, and the old game's lights and music, are skipped. A brick's music or emitter of a type the server doesn't have is kept (and saved again) but doesn't play. |
-| `loadBlocklandSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, offset like `loadLodSave`, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, prints, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Prints are matched by the name in the save, like `Letters/X`; ones the server doesn't have are dropped and listed in the log. Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `BlocklandImports.lua` and `EmitterDefaults.lua`, run from `serverstart.lua`, cover every light and emitter type Blockland's default add-ons have. |
+| `loadBlocklandSave(fileName[, x, y, z])` | file name inside `Saves`; optional offset in studs/plates | count, or `nil` | Imports a Blockland `.bls` save using its own color palette, offset like `loadLodSave`, returning how many bricks were added. Brick names are matched against `Assets/brick/types`, special bricks included; unrecognized names are skipped and listed in the log. Pearl, chrome, glow, blink, swirl (as `Hologram`), rainbow, and undulo effects become materials, undulo winning on a brick that has a color effect too; water effects are dropped. Brick names, collision, prints, lights, emitters, and music come along, the last three as the brick's own like the wrench dialog's (saved by `saveBuild`). Prints are matched by the name in the save, like `Letters/X`; ones the server doesn't have are dropped and listed in the log. Lights become the light `addBlocklandLight` gave their Blockland type. Emitters use the emitter type `addBlocklandEmitter` gave their name, or else the one whose `uiName` matches, ignoring case, and always point up. Music uses a music sound type (see `newSoundType`) with the same name, ignoring case and with underscores as spaces. Anything without a match is skipped and listed in the log. `System_BlocklandImports` and `System_Emitters` cover every light and emitter type Blockland's default add-ons have. |
 | `addBlocklandLight(uiName, table)` / `addBlocklandLight(uiName, nil)` | a Blockland light type's name, like `"Red Light"`, 1-255 characters, case-insensitive; light fields as for `brick:setLight` | none | Sets the light `loadBlocklandSave` puts on bricks that had this Blockland light type, replacing any set before. Fields left out get a new light's defaults, so without an `offset` the light sits in the middle of its brick, like Blockland's. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` forgets the type, so its lights are skipped. Bricks already loaded keep their lights. |
 | `addBlocklandEmitter(uiName, typeName)` / `addBlocklandEmitter(uiName, nil)` | a Blockland emitter's name, like `"Fog A"`, 1-255 characters, case-insensitive; an emitter type's name | none | Makes `loadBlocklandSave` put an emitter of that type on bricks that had this Blockland emitter, instead of looking for a type with that `uiName`. Logs an error if there's no emitter type by that name. `nil` goes back to matching by `uiName`. |
 
@@ -1074,7 +1141,7 @@ ffmpeg -i clip.mp4 -an -vf "scale=256:256" -c:v libvpx-vp9 -b:v 600k -r 20 Print
 | `brick:setLight(table)` / `brick:setLight(nil)` | light fields, see below | none | Puts a light on the brick, or changes it. Fields left out keep the brick's current values, or a new light's defaults. An unknown field or a value of the wrong kind logs an error and changes nothing. `nil` takes the light off. |
 | `brick:getEmitter()` | none | emitter type name, or `nil` | The emitter on the brick. |
 | `brick:setEmitter(typeName)` / `brick:setEmitter(nil)` | an emitter type's name | none | Puts an emitter of that type in the middle of the brick, replacing any it had. `nil` takes it off. |
-| `brick:canPrint()` | none | bool | Whether the brick's type has printed faces, so a print put on it would actually show. `Inventory.lua`'s print gun checks this before opening the print menu. |
+| `brick:canPrint()` | none | bool | Whether the brick's type has printed faces, so a print put on it would actually show. `System_Inventory`'s print gun checks this before opening the print menu. |
 | `brick:getPrint()` | none | print name, or `""` | The print on the brick, like `"Letters/X"`. |
 | `brick:setPrint(name)` / `brick:setPrint("")` | a print's name, case-insensitive | none | Puts a print on the brick, drawn on the printed faces of a print brick type. A `.webm` print plays there, see Prints above. Logs an error and changes nothing for a name no print has. `""` takes it off. Prints on a brick whose type has no printed face are kept but never drawn. |
 | `brick:getItemSpawn()` | none | item type script name, or `nil` | The item the brick offers, like `"hammer"`, see the Item section of the [wrench dialog](#wrench-dialog-and-brick-attachments). |
@@ -1144,7 +1211,7 @@ punctuation, like `X` for `Letters/X` or `.` for `Letters/-period`. The button o
 wears is drawn lit up. A print the server has that this client doesn't get a `?` button, and the brick stays
 plain for them either way.
 
-`Inventory.lua`'s print gun opens it: left clicking with the `printGun` item in hand plays `PrintFire` from the
+`System_Inventory`'s print gun opens it: left clicking with the `printGun` item in hand plays `PrintFire` from the
 gun, sends a `LaserEmitterA` at what the player looks at, and, if that's a brick whose type has printed faces
 (`brick:canPrint`), opens that brick's print menu with `client:openPrintMenu`. Anything else it hits just makes
 the noise. What a player picks only reaches the brick in the last print menu they were sent, once.
@@ -1214,7 +1281,7 @@ except while a player on foot is touching it: then its brakes come off and it's 
 whoever's pushing, at 6 studs a second squared until it rolls faster than 6 studs a second, so a car shoved from behind rolls
 forward rather than sliding sideways. The engine stops pushing past 200 studs a second.
 Wheels on the ground going faster than 50 km/h (about 14 studs a second) while turning or braking throw up the
-`setVehicleDirtEmitter` emitter type (`vehicleDirtEmitter` from `EmitterDefaults.lua` by default), tinted a darker shade
+`setVehicleDirtEmitter` emitter type (`vehicleDirtEmitter` from `System_Emitters` by default), tinted a darker shade
 of the brick under them, or brown when there's no brick under them. Wheels in the water float the vehicle and splash like the old game. A vehicle going faster than
 1000 studs a second, spinning faster than 300 radians a second, more than 10000 studs from the middle of the world, or
 with a position that isn't a number is removed, with an error logged.
@@ -1474,8 +1541,8 @@ all of their own bricks or vehicles, or an admin types `/clearAllBricks`, `/clea
 of which removes every item lying on the ground, not carried ones or the ones bricks offer). It also registers `Splash` and `ExitWater`, which the server plays by
 name where dynamics hit or leave the water, louder the faster they're moving and lower pitched
 the bigger they are, and `LightOn` and `LightOff`, which the server plays from a player whose
-flashlight turns on or off. `Inventory.lua` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops
-`SprayLoop` from a spraying paint can, and plays `Launch` from a firing launcher. `Damage.lua` plays `Pain` from a player who's damaged, by a shot from one of the weapon add-ons or a `radiusImpulse` (`hurtPlayer` in `serverstart.lua`, which also puffs an `ouchEmitter` and gives their client a red `client:setVignette`), `Death` from the body of one who dies, `Spawn` from a player who spawns, as they join or respawn, and `BodyRemove` where a body disappears. `Honk` is the horn a new vehicle honks with left click,
+flashlight turns on or off. `System_Inventory` plays `HammerHit`, `WrenchHit`, and `WrenchMiss` where tools hit, loops
+`SprayLoop` from a spraying paint can, and plays `Launch` from a firing launcher. `System_Damage` plays `Pain` from a player who's damaged, by a shot from one of the weapon add-ons or a `radiusImpulse` (`hurtPlayer` in `serverstart.lua`, which also puffs an `ouchEmitter` and gives their client a red `client:setVignette`), `Death` from the body of one who dies, `Spawn` from a player who spawns, as they join or respawn, and `BodyRemove` where a body disappears. `Honk` is the horn a new vehicle honks with left click,
 unless it's wrenched to another sound, see [Vehicles](#vehicles), and `LightOn` and `LightOff` also play from a vehicle whose headlight is switched.
 
 In the functions below, `pitch` is a playback speed multiplier (default `1`, clamped to 0.05-10)
@@ -1533,7 +1600,7 @@ the server: their name, marked `(admin)` for anyone logged into the eval console
 with `client:setScoreText`, and their ping. Their own row is lit up. It's part of the HUD like the chat window, so it stays
 up while they play without taking their mouse or keys, until they press F2 again or close it. The server sends everyone the
 whole list whenever someone joins, leaves, becomes an admin, or has their score text changed, and every 2 seconds to keep
-the pings fresh. The engine never reads the score text: `Damage.lua` shows each client's `client.score` there (`setScore`),
+the pings fresh. The engine never reads the score text: `System_Damage` shows each client's `client.score` there (`setScore`),
 see [Health, death, and respawning](#health-death-and-respawning), and another script can show anything else.
 
 ### `client:` methods
@@ -1552,15 +1619,15 @@ see [Health, death, and respawning](#health-death-and-respawning), and another s
 | `client:removeControl(dynamic)` | Dynamic | none | Takes physics-simulation authority for the dynamic back from the client. |
 | `client:getNumControlled()` | none | count | How many dynamics this client currently controls. |
 | `client:getControlledIdx(index)` | 0-based index | Dynamic | The controlled dynamic at that index (index 0 is typically their player). |
-| `client:setDefaultController(dynamic)` | Dynamic | none | Sets up movement-key/camera-direction input handling for this dynamic (walking, jumping). Currently the only way to stop this is to destroy the dynamic, which both sides then forget: whatever reads "the client's player" (the item in their hand, their flashlight, `getCursorItem`, vehicle seats) goes by the first dynamic given here that still exists, so a client whose player was destroyed has none until this is called with a new one, like `Damage.lua` does when someone respawns. Also required before `getCursorItem`/`snapToCursor` will have live camera data for this client. |
+| `client:setDefaultController(dynamic)` | Dynamic | none | Sets up movement-key/camera-direction input handling for this dynamic (walking, jumping). Currently the only way to stop this is to destroy the dynamic, which both sides then forget: whatever reads "the client's player" (the item in their hand, their flashlight, `getCursorItem`, vehicle seats) goes by the first dynamic given here that still exists, so a client whose player was destroyed has none until this is called with a new one, like `System_Damage` does when someone respawns. Also required before `getCursorItem`/`snapToCursor` will have live camera data for this client. |
 | `client:bindCamera(dynamic, fixUpVector, maxFollowDistance)` | Dynamic to follow; whether to lock the camera's up vector; max third-person follow distance | none | Binds the client's camera to follow a dynamic. |
 | `client:staticCamera(posX, posY, posZ)` | fixed camera position | none | Detaches the camera and locks it to a fixed position (direction stays free/mouse-controlled). |
 | `client:staticCamera(posX, posY, posZ, dirX, dirY, dirZ)` | fixed camera position and direction | none | Same, but also locks the look direction. |
 | `client:getCursorItem(maxDistance)` | max ray distance | hit object, x, y, z, normalX, normalY, normalZ, distance; or `nil` | Same return values as `raycast()`. Raycasts from the client's *live* camera position/direction (updated continuously, not just on click) out to `maxDistance`, ignoring the client's own first controlled object. Requires `setDefaultController` to have been called for this client. |
-| `client:centerPrint(text)` / `client:centerPrint(text, durationMS)` / `client:centerPrint(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Shows a temporary message in the center of just this client's screen. Messages showing at the same time stack up in lines. A duration of `0` shows nothing and takes away every message showing instead, so a script can replace one message with another: `Damage.lua`'s respawn countdown clears the last second's line before printing the next. |
+| `client:centerPrint(text)` / `client:centerPrint(text, durationMS)` / `client:centerPrint(text, durationMS, red, green, blue)` | text (max 255 chars); duration in ms (default 3000, clamped to 60000); color 0-1 (default white) | none | Shows a temporary message in the center of just this client's screen. Messages showing at the same time stack up in lines. A duration of `0` shows nothing and takes away every message showing instead, so a script can replace one message with another: `System_Damage`'s respawn countdown clears the last second's line before printing the next. |
 | `client:playSound(name[, x, y, z][, pitch, volume])` | same as `playSound` | none | Plays a sound once for just this client. |
-| `client:setVignette(red, green, blue, alpha, strength, durationMS)` | color 0-1; alpha 0-10, how opaque the color is at the very edges of the screen as it starts, over 1 it comes in further; strength 0-10, how hard the picture wobbles, 0 for none, 1 about as much as being underwater; how long it lasts in milliseconds | none | Draws the color in from the edges of the client's screen, clear in the middle, with the whole picture wobbling like it does under the water, both dying away together as the duration runs out. The old game's `setVignette`, with the wobble and duration added. A new one replaces the one showing, and a duration of 0 clears it. Drawn along with the underwater effect when the camera is under the water too. `serverstart.lua`'s `hurtPlayer` flashes `1, 0, 0, 0.5` with strength `0.5` for a second on a player who's damaged, see [Health, death, and respawning](#health-death-and-respawning). |
-| `client:setScoreText(text)` | any one line of text, or a number, up to 255 characters; `""` for nothing | none | What's shown in the Score column next to the client's name in everyone's player list, see [Player list](#player-list). It's only text to the engine, so it can be a score, a team, a rank, or all of them. Only a change is sent, so it's cheap to call with the same text. `Damage.lua`'s `setScore` puts `client.score` here. |
+| `client:setVignette(red, green, blue, alpha, strength, durationMS)` | color 0-1; alpha 0-10, how opaque the color is at the very edges of the screen as it starts, over 1 it comes in further; strength 0-10, how hard the picture wobbles, 0 for none, 1 about as much as being underwater; how long it lasts in milliseconds | none | Draws the color in from the edges of the client's screen, clear in the middle, with the whole picture wobbling like it does under the water, both dying away together as the duration runs out. The old game's `setVignette`, with the wobble and duration added. A new one replaces the one showing, and a duration of 0 clears it. Drawn along with the underwater effect when the camera is under the water too. `System_Damage`'s `hurtPlayer` flashes `1, 0, 0, 0.5` with strength `0.5` for a second on a player who's damaged, see [Health, death, and respawning](#health-death-and-respawning). |
+| `client:setScoreText(text)` | any one line of text, or a number, up to 255 characters; `""` for nothing | none | What's shown in the Score column next to the client's name in everyone's player list, see [Player list](#player-list). It's only text to the engine, so it can be a score, a team, a rank, or all of them. Only a change is sent, so it's cheap to call with the same text. `System_Damage`'s `setScore` puts `client.score` here. |
 | `client:getScoreText()` | none | string | The text `setScoreText` last gave them, `""` to start with. |
 | `client:setAudioEffect(preset)` | same as `setAudioEffect` | none | Sets the reverb effect for just this client, until something sets it again. Not remembered: `setAudioEffect`'s preset is what a client gets when they join. |
 | `client:setVoiceMuted(muted)` | bool | none | Mutes or unmutes the client's voice chat. The server drops their voice while they're muted, and their game shows "Voice Muted" and stops sending. If they were talking, `ClientStopTalking` fires half a second later. Not remembered if they reconnect. |
@@ -1578,7 +1645,7 @@ see [Health, death, and respawning](#health-death-and-respawning), and another s
 | `client:getItem(slot)` | 0-4 | Item or `nil` | The item in that slot. |
 | `client:getSelectedSlot()` | none | slot, open | The slot the client's item bar has picked (0-4, kept while it's put away), and whether their items are out. |
 | `client:getHeldItem()` | none | Item or `nil` | The item in the client's hand: their `setHandItem` one if they have one, otherwise the one in the picked slot while their items are out. |
-| `client:setHandItem(item or nil)` | an item on the ground, or `nil`/nothing to empty their hand | Item or `nil` | Puts an item in the client's hand without using a slot, so their item bar can't reach it and it's held whatever their bar has picked. Whatever was in their hand before goes back into the world in front of their player and is returned, as does the one there when this is called with `nil`. Logs an error for an item someone already carries. `Inventory.lua` puts a paint can here while the paint palette has one out. |
+| `client:setHandItem(item or nil)` | an item on the ground, or `nil`/nothing to empty their hand | Item or `nil` | Puts an item in the client's hand without using a slot, so their item bar can't reach it and it's held whatever their bar has picked. Whatever was in their hand before goes back into the world in front of their player and is returned, as does the one there when this is called with `nil`. Logs an error for an item someone already carries. `System_Inventory` puts a paint can here while the paint palette has one out. |
 | `client:getHandItem()` | none | Item or `nil` | The item `setHandItem` put in their hand, `nil` if there isn't one. |
 | `client:getCameraPosition()` | none | x, y, z | Where the client's camera was as of their last movement update, which comes about every 100 ms. Needs `setDefaultController`. |
 | `client:getCameraDirection()` | none | x, y, z | Which way their camera looked then, normalized. Needs `setDefaultController`. While they hold left mouse, their camera is sent about every 30 ms instead. |

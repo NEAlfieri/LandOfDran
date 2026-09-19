@@ -7,9 +7,8 @@
 	plane rather than a car is the flight table it's given: the engine flies it from its driver's keys and
 	where they look, see Flying in LuaAPI.md.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Vehicle_Biplane/Vehicle_Biplane.lua")
+	The whole add-on is this one file: the game runs it when Vehicle_Biplane is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	and then spawnBiplane() puts one in the world, spawnBiplane(client) drops one in front of somebody,
 	and a Vehicle Spawn brick wrenched to "Biplane" keeps one above itself.

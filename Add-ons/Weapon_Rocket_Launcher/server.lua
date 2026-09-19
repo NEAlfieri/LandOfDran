@@ -5,9 +5,8 @@
 	models are loaded straight out of its .dts files (see the DTS models section of LuaAPI.md), and the
 	launcher itself is rebuilt from the datablocks in its "Weapon_Rocket Launcher.cs".
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Weapon_Rocket_Launcher/Weapon_Rocket_Launcher.lua")
+	The whole add-on is this one file: the game runs it when Weapon_Rocket_Launcher is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	It shoots through the weapon support the Tier+Tactical add-on carries in Support_Weapons.lua, which
 	this pulls in itself if it hasn't been loaded yet.
@@ -454,7 +453,7 @@ registerWeapon("rocketLauncher", {
 
 		rocketBlastDamage(x, y, z, projectile.shooterClient)
 
-		--The push only pushes: what the blast takes off anyone's health was worked out above, so Damage.lua's
+		--The push only pushes: what the blast takes off anyone's health was worked out above, so System_Damage's
 		--damageByImpulse is told to leave this one alone
 		impulseHarmless = true
 		radiusImpulse(x, y - BLAST_IMPULSE_DROP, z, BLAST_IMPULSE)

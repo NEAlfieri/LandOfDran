@@ -1,0 +1,3 @@
+Title: Emitters
+Author: Land of Dran
+Every particle and emitter type the base game uses, from the old game's emitter defaults.

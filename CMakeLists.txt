@@ -107,6 +107,8 @@ add_executable (LandOfDran
 "Utility/GlobalStartup.cpp"
 "Utility/FileFunctions.h" 
 "Utility/FileFunctions.cpp"
+"Utility/ZipFile.h"
+"Utility/ZipFile.cpp"
 "Utility/ExecutableArguments.h" 
 "Utility/ExecutableArguments.cpp"
 "Utility/ContentFiles.h"
@@ -378,6 +380,8 @@ add_executable (LandOfDran
 
 "LuaFunctions/OtherFunctions.h" 
 "LuaFunctions/OtherFunctions.cpp" 
+"LuaFunctions/AddOns.h"
+"LuaFunctions/AddOns.cpp"
 "LuaFunctions/Scheduler.h" 
 "LuaFunctions/Scheduler.cpp" 
 "LuaFunctions/EventManager.h" 

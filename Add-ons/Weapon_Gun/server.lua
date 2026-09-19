@@ -5,9 +5,8 @@
 	models are loaded straight out of its .dts files (see the DTS models section of LuaAPI.md), and
 	the gun itself is rebuilt from the datablocks in its server.cs.
 
-	The whole add-on loads from one line in serverstart.lua:
-
-		dofile("Add-ons/Weapon_Gun/Weapon_Gun.lua")
+	The whole add-on is this one file: the game runs it when Weapon_Gun is enabled in
+	Add-ons/list.txt, see the add-ons section of LuaAPI.md.
 
 	It shoots the way the Tier+Tactical weapons do, through the weapon support that add-on carries
 	in Support_Weapons.lua, which this pulls in itself if it hasn't been loaded yet. That's the
@@ -90,7 +89,7 @@ addEmitterType("GunFlashEmitter", {
 })
 
 --The smoke after it: gunSmokeParticle, a small grey wisp for half a second. Not the gunSmokeEmitter
---in EmitterDefaults.lua, which is the launcher's
+--in System_Emitters, which is the launcher's
 addParticleType("GunMuzzleSmokeParticle", {
 	texture = "Assets/particles/cloud.png",
 	lit = true,

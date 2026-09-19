@@ -1,0 +1,3 @@
+Title: Damage
+Author: Land of Dran
+Health, being hurt, dying, the body left behind, and respawning.

@@ -1,4 +1,4 @@
---Particle and emitter types, from the old game's defaults (add-ons/emitter_defaults/server.lua), run from serverstart.lua
+--Particle and emitter types, from the old game's defaults (add-ons/emitter_defaults/server.lua), loaded as an add-on of its own
 --Angles are in degrees like Blockland, the old scripts gave them in radians. Emitters now eject every particle they owe each frame like
 --Blockland, where the old game ejected at most one a frame, so ejection periods are longer than the old ones to keep about the same look
 --Colors, drag, and gravity can be tables like {1, 0.5, 0} or strings like "1 0.5 0". See the Emitters section of LuaAPI.md for every field
@@ -515,7 +515,7 @@ addEmitterType("WaterEmitterA", {
 
 --Blockland ships the datablocks for these compiled, only naming them in its Particle_Player and Particle_FX_Cans add-ons,
 --so they're guesses at how they look rather than copies. Player Jet and Player Bubbles are the old game's types above, and
---BlocklandImports.lua sends Camera Glow to the old game's admin orb
+--System_BlocklandImports sends Camera Glow to the old game's admin orb
 
 addParticleType("PlayerFoamParticle", {
 	lit = true,
@@ -627,7 +627,7 @@ addEmitterType("rainbowPaintEmitter", {
 	phiVariance = 360
 })
 
---The paint can's spray, white so Inventory.lua's emitter:setColor makes it the player's paint, and aimed with emitter:aimWith at what they look at, where it stops
+--The paint can's spray, white so System_Inventory's emitter:setColor makes it the player's paint, and aimed with emitter:aimWith at what they look at, where it stops
 addParticleType("paintParticle", {
 	texture = "Assets/particles/cloud.png",
 	color0 = {1, 1, 1, 0.9},
