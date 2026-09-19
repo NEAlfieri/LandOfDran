@@ -54,6 +54,93 @@ struct PassengerSeat
 };
 
 /*
+	What makes a vehicle fly rather than only drive, from Lua's spawnModelVehicle settings.flight, see
+	vehicle:setFlight. Every number is in the same studs and seconds the rest of the game is in, and the
+	ones that fight gravity are given as speeds rather than forces so they mean the same thing whatever
+	the vehicle weighs: a Blockland plane's datablock is a pile of forces divided by a mass, which stops
+	meaning anything the moment either the mass or the gravity is different from Torque's
+
+	None of this is sent to clients. A plane is an ordinary vehicle as far as they are concerned: the
+	server pushes its body around and they draw it where the server says it is
+*/
+struct VehicleFlight
+{
+	//Whether any of the rest of this is used at all
+	bool enabled = false;
+
+	//Studs a second squared along its nose with the throttle forward (W) and back (S)
+	float thrust = 0.0f;
+	float reverseThrust = 0.0f;
+
+	//Studs a second the throttle stops pushing past, forward and backward
+	float maxSpeed = 120.0f;
+	float maxReverseSpeed = 30.0f;
+
+	/*
+		Airspeed along its nose where its wings hold up exactly its own weight, so it flies level at this
+		speed with its nose level. Lift goes with the square of the airspeed from there, and never pushes
+		harder than maxLift times its weight, so a dive doesn't turn into a slingshot
+	*/
+	float liftSpeed = 60.0f;
+	float maxLift = 8.0f;
+
+	//Airspeed its wings and controls reach their full effect at, and do nothing at all at a standstill
+	float stallSpeed = 20.0f;
+
+	/*
+		How much more lift the wings make per radian of angle of attack, which is how far its nose is above
+		the way it's actually going: without this a plane's wings only know how fast it's going, so pulling
+		the nose up would only slow it down and sink it. Past stallAngle the wings start to give up, and
+		twice that far they do nothing at all, which is a stall: the nose drops until the air is over them
+		again
+	*/
+	float angleLift = 2.5f;
+	float stallAngle = 0.35f;
+
+	/*
+		Per second, how quickly the wings and the tail fin bleed off the part of its velocity that isn't
+		along its nose: the wing catches it moving up or down through the air and the fin catches it
+		sliding sideways, which together are what make a banked turn carry it around rather than skid
+	*/
+	float wingDamping = 1.2f;
+	float finDamping = 0.9f;
+
+	//Airspeed where drag holds up exactly its own weight, which is how fast it ends up falling in a dive
+	float dragSpeed = 150.0f;
+
+	//Radians a second the controls ask for, and seconds it takes to reach them
+	float pitchRate = 1.4f;
+	float yawRate = 0.7f;
+	float rollRate = 2.2f;
+	float response = 0.25f;
+
+	/*
+		Radians a second of roll toward the bank it wants while no roll key is held, 0 to leave it rolled
+		wherever it is. What it wants is turnBank radians of bank into however hard it's turning, and
+		wings level when it isn't turning, which is what makes a turn a banked one rather than a flat
+		skid. Upside down it wants nothing: a plane held inverted stays inverted until its pilot rolls it
+		back, which is the whole point of a stunt plane
+	*/
+	float levelRate = 0.8f;
+	float turnBank = 0.7f;
+
+	void clampValues();
+};
+
+//Server: what its driver was last holding down, kept for the flight forces each physics substep, see Vehicle::flyStep
+struct VehicleInput
+{
+	bool forward = false, backward = false, left = false, right = false, brake = false;
+
+	//Where the driver is looking, which a plane turns its nose toward, and whether anyone has said
+	glm::vec3 look = glm::vec3(0);
+	bool hasLook = false;
+
+	//Whether anybody (a client, or Lua through vehicle:drive) is at the controls at all
+	bool driven = false;
+};
+
+/*
 	Bricks sliced out of the world into one body that drives on wheels, like the old game's brick cars
 	The server simulates it with Bullet's raycast vehicle, a player who right clicks it drives it from behind its steering wheel,
 	and clients draw its bricks where the server says it is, with a body that follows along for bumping into and clicking
@@ -105,6 +192,19 @@ class Vehicle : public SimObject
 	public:
 
 	/*
+		Server: what makes it a plane rather than a car, see Lua's spawnModelVehicle. flyStep runs before
+		every physics substep while this is switched on, from the keys and look left in lastInput
+	*/
+	VehicleFlight flight;
+	VehicleInput lastInput;
+
+	/*
+		Server: one physics substep of flight, nothing at all unless flight.enabled. Its wings, drag and
+		thrust are impulses on its body and its controls turn it by steering its spin, see the comments there
+	*/
+	void flyStep(float deltaT);
+
+	/*
 		Server: Lua is driving it with vehicle:drive, with nobody in the seat. The keys are held until it's
 		called again, the way a driver's are between their movement packets, and a real driver getting in
 		takes it back over. See LoopServer::updateVehicles
@@ -140,9 +240,14 @@ class Vehicle : public SimObject
 	//Creation packet bytes per passenger seat: its top, who rides on it
 	static constexpr unsigned int seatCreationBytes = sizeof(float) * 3 + sizeof(netIDType);
 
+	//Update packet bytes for its animations: the one shot one and its count, then how many loop
+	static constexpr unsigned int animationUpdateBytes = 3;
+
 	//The flags byte in creation and update packets
 	static constexpr unsigned char flagHasHeadlight = 1;
 	static constexpr unsigned char flagHeadlightOn = 2;
+	//Whether it's a plane, which clients only use to tell its driver what its controls do
+	static constexpr unsigned char flagFlies = 4;
 
 	/*
 		Its bricks, with positions from the min corner of the box their grid boxes fill, so every coordinate is 0 or more
@@ -199,6 +304,46 @@ class Vehicle : public SimObject
 	//Client: the model drawn as a model vehicle's body, moved to getDrawnTransform every frame
 	ModelInstance* bodyInstance = nullptr;
 
+	/*
+		Animations of a model vehicle's own shape playing on its body, like a plane's propeller: on the
+		server what vehicle:playAnimation has looping, in the order they started, and on a client what the
+		server last said was looping, played on bodyInstance. The IDs are the body type's model's, which
+		both sides read out of the same file, the way a dynamic's are. A brick vehicle has no model to
+		play anything on, so nothing here does anything to one
+	*/
+	std::vector<unsigned char> loopingAnimations;
+
+	//Server: how many more updates repeat the list after a change, since updates go out unreliably
+	int loopResends = 0;
+
+	/*
+		Server: the last animation vehicle:playAnimation started without a loop, and a count that changes
+		each time so playing the same one again plays it again. Client: the last count it acted on
+	*/
+	int oneShotAnimation = -1;
+	unsigned char oneShotCount = 0;
+	int oneShotResends = 0;
+
+	//The animation ID meaning none, in a packet where every ID is one byte
+	static constexpr unsigned char noAnimation = 255;
+
+	//How many more updates carry an animation after it changes, see Dynamic, which does all of this the same way
+	static constexpr int animationResends = 4;
+
+	//Server: starts one looping for everyone, stops one, or stops every one of them for -1
+	void startLoop(int id);
+	void stopLoop(int id);
+
+	//Server: plays one once for everyone, from its start
+	void playOneShot(int id);
+
+	//Client: plays whichever of these its body isn't already, and stops the ones the server no longer has looping
+	void syncLoops(const std::vector<unsigned char>& loops);
+
+	//Client: plays or stops one on its body model right now
+	void play(int id, bool loop) { if (bodyInstance) bodyInstance->playAnimation(id, loop); }
+	void stop(int id) { if (bodyInstance) bodyInstance->stopAnimation(id); }
+
 	//One per seat brick, in the order they were found
 	std::vector<PassengerSeat> passengerSeats;
 
@@ -247,9 +392,10 @@ class Vehicle : public SimObject
 	//Where its headlight sits before its offset, in its body's space: the middle of its front, see buildServer
 	glm::vec3 headlightMount = glm::vec3(0);
 
-	//Client: whether it has a headlight and whether that's lit, from the flags byte of the server's packets
+	//Client: whether it has a headlight and whether that's lit, and whether it flies, from the flags byte of the server's packets
 	bool hasHeadlight = false;
 	bool headlightLit = false;
+	bool fliesForDriver = false;
 
 	//Server: has the next update packet go out even while it sits still, for a change to its flags byte
 	void markStateChanged() { stateChanged = true; }
@@ -357,7 +503,10 @@ class Vehicle : public SimObject
 	//Client: everything in a creation packet after the net ID
 	void readCreation(const enet_uint8* src);
 
-	//Client: getUpdatePacketBytes of an update packet
+	//Client: how long the update packet starting at src is, 0 if there aren't that many bytes left in it
+	unsigned int readUpdateBytes(const enet_uint8* src, size_t available) const;
+
+	//Client: readUpdateBytes of an update packet
 	void readUpdate(const enet_uint8* src, float idealBufferSize);
 
 	//Server: VehicleBricks packets with all of its bricks

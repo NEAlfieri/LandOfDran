@@ -424,9 +424,21 @@ void LoopServer::updateVehicles(float deltaT)
 			}
 		}
 
+		//What its controls are being asked for, kept for the flight forces each substep too, see Vehicle::flyStep
+		vehicle->lastInput = VehicleInput();
+
 		if (driver)
 		{
 			const PlayerController& keys = driver->controllers[0];
+			vehicle->lastInput.forward = keys.lastForward;
+			vehicle->lastInput.backward = keys.lastBackward;
+			vehicle->lastInput.left = keys.lastLeft;
+			vehicle->lastInput.right = keys.lastRight;
+			vehicle->lastInput.brake = keys.lastJumpHeld;
+			vehicle->lastInput.look = keys.lastCameraDirection;
+			vehicle->lastInput.hasLook = true;
+			vehicle->lastInput.driven = true;
+
 			bool speeding = vehicle->drive(keys.lastForward, keys.lastBackward, keys.lastLeft, keys.lastRight, keys.lastJumpHeld);
 			if (speeding && driver->client && now - vehicle->lastSpeedWarningMS > 5000)
 			{
@@ -436,7 +448,17 @@ void LoopServer::updateVehicles(float deltaT)
 		}
 		//Nobody in the seat, but a script is holding its keys down, see vehicle:drive
 		else if (vehicle->luaDriving)
+		{
+			//A script holds keys but never looks anywhere, so a plane flown this way has a throttle and a roll and nothing else
+			vehicle->lastInput.forward = vehicle->luaForward;
+			vehicle->lastInput.backward = vehicle->luaBackward;
+			vehicle->lastInput.left = vehicle->luaLeft;
+			vehicle->lastInput.right = vehicle->luaRight;
+			vehicle->lastInput.brake = vehicle->luaBrake;
+			vehicle->lastInput.driven = true;
+
 			vehicle->drive(vehicle->luaForward, vehicle->luaBackward, vehicle->luaLeft, vehicle->luaRight, vehicle->luaBrake);
+		}
 		else if (!pushVehicle(pd, vehicle))
 			vehicle->park();
 
@@ -641,6 +663,16 @@ static bool anotherProjectile(const btRigidBody* other)
 		return false;
 	std::shared_ptr<Dynamic> dynamic = dynamicFromBody(other);
 	return dynamic && dynamic->isProjectile;
+}
+
+void LoopServer::flyVehicles(btScalar timeStep)
+{
+	for (unsigned int a = 0; a < pd.vehicles->size(); a++)
+	{
+		std::shared_ptr<Vehicle> vehicle = pd.vehicles->get(a);
+		if (vehicle->flight.enabled)
+			vehicle->flyStep(timeStep);
+	}
 }
 
 void LoopServer::sweepProjectiles(btScalar timeStep)
@@ -1038,7 +1070,7 @@ LoopServer::LoopServer(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	///Server just has one physics world that's started when the program starts and stays until shutdown, unlike client
 	pd.physicsWorld = std::make_shared<PhysicsWorld>();
 	SimObject::world = pd.physicsWorld;
-	pd.physicsWorld->beforeSubstep = [this](btScalar timeStep) { sweepProjectiles(timeStep); };
+	pd.physicsWorld->beforeSubstep = [this](btScalar timeStep) { sweepProjectiles(timeStep); flyVehicles(timeStep); };
 	pd.physicsWorld->afterSubstep = [this](btScalar) { recordProjectileHits(); };
 
 	pd.dynamics = new ObjHolder<Dynamic>(SimObjectType::DynamicTypeId, server);

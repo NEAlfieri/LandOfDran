@@ -75,6 +75,13 @@ class LoopServer
 	std::vector<ProjectileHit> pendingProjectileHits;
 
 	/*
+		Before every physics substep: the wings, throttle and controls of every vehicle that flies, see
+		Vehicle::flyStep. Here rather than once a frame because a force applied before a step is applied
+		again by each substep it runs, and because flying wants a fresh look at how the plane is turned
+	*/
+	void flyVehicles(btScalar timeStep);
+
+	/*
 		Before every physics substep: sweeps each projectile's box along what the substep is about to move
 		it, and stops it on the first thing in the way, noting the hit for updateProjectiles. This is what
 		keeps a fast round from skipping through a thin brick. Bullet's own continuous collision would do

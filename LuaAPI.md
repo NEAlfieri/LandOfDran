@@ -868,6 +868,7 @@ These use the strict argument count check.
 | `emitter:setType(typeName)` | emitter type name | none | Switches it to another emitter type. |
 | `emitter:attachToDynamic(dynamic[, meshName][, offsetX, offsetY, offsetZ])` | dynamic; name of one of its model's meshes; studs along the dynamic's (or mesh's) own x, y, and z axes | none | Follows the dynamic, or the middle of that mesh as it animates, ejecting particles turned the way the dynamic (or mesh) is turned. An offset moves it that far from the middle, turning with it, like to the end of a gun's barrel. Removed along with the dynamic. |
 | `emitter:attachToBrick(brick)` | brick, or `nil` | none | Moves it to the middle of the brick, and it's removed along with the brick instead of after its type's `lifetimeMS`. `nil` leaves it where it is, no longer on or following anything. |
+| `emitter:attachToVehicle(vehicle[, offsetX, offsetY, offsetZ])` | Vehicle; studs along the vehicle body's own x, y, and z axes | none | Goes along with the vehicle, at a spot in its body's space so it turns with it, like the wingtips of a plane (`Add-ons/Vehicle_Stunt_Plane` hangs its contrails off `mount3` and `mount4` this way). Removed along with the vehicle rather than after its type's `lifetimeMS`, like one on a brick. |
 | `emitter:setColor(r, g, b[, a])` | 0-1, clamped; `a` defaults to 1 | none | Multiplies its particles' colors and opacity by this, white by default. Only sent to clients if it changed, so it's cheap to call often. Particles already out keep the color they left with. |
 | `emitter:getColor()` | none | r, g, b, a | Its color. |
 | `emitter:aimWith(dynamic, range)` / `emitter:aimWith(nil)` | a dynamic, usually a player; how far its aim reaches in studs, 0-1000 | none | Sends particles toward whatever the dynamic looks at, up to `range` studs from its eyes (its client's crosshair for a player's own game, where a third person camera reaches that much further), and they only last until they get there. The type's `thetaMin` and `thetaMax` spread particles around that direction instead of around up. Other clients use the way the player's head turns. `nil` ejects normally again. The paint can in `Inventory.lua` uses this. |
@@ -1196,7 +1197,7 @@ flip easily.
 
 Players right click a vehicle within 30 studs of their camera to get in, standing behind its steering wheel. W and S
 run the engine, A and D steer, jump brakes, left click honks its horn, and right click
-gets out just above the seat. The horn is the `Honk` sound if one is registered, unless the vehicle's wrench dialog
+gets out just above the seat. A vehicle that flies is driven differently, see [Flying](#flying). The horn is the `Honk` sound if one is registered, unless the vehicle's wrench dialog
 (or `vehicle:setHorn`) picks another sound or none; it plays from the vehicle, moving with it, so the driver hears it
 unbent by the Doppler effect while everyone else hears it shift as the vehicle goes by. A vehicle can also have a headlight, a light in the
 vehicle's own space that hangs off the middle of its front and shines the way it drives unless aimed otherwise, given
@@ -1288,6 +1289,10 @@ anything; use the events to limit that.
 | `vehicle:drive(forward, backward, left, right, brake)` | the driver's keys, each `false` by default | none | Holds a set of a driver's keys down on a vehicle nobody is in, the same call their own keys make every tick, so it accelerates, steers, leans on its suspension and throws dirt off its wheels exactly like a driven one. The keys stay held until this is called again. Logs an error and does nothing for a vehicle that has a driver, whose keys would overwrite these next tick; a driver getting in takes it back over, and letting them out leaves the script driving again. Steering is a key rather than a wheel, so `left` throws the wheels to full lock: something following a path wants a dead zone it holds its last choice through, or it flips lock to lock every tick and scrubs off all its speed. See `menudemo.lua`'s `driveJeep`. |
 | `vehicle:stopDriving()` | none | none | Lets go of every key, leaving it to roll to a stop and park like any other empty vehicle. |
 | `vehicle:isDriving()` | none | bool | Whether Lua is holding its keys down. |
+| `vehicle:setFlight(table)` / `vehicle:setFlight(nil)` | flight fields, see [Flying](#flying) | none | Makes it a plane, or changes how it flies. Fields left out keep what they were, so one number can be handed over on its own while it's in the air, which is how these were tuned. `nil` takes flight away and leaves an ordinary vehicle. |
+| `vehicle:getFlight()` | none | table, or `nil` | How it flies, `nil` for one that doesn't. |
+| `vehicle:playAnimation(name[, loop])` | an animation of its body model, like a `.dts` shape's own sequences; `loop` defaults to false | none | Plays one of a model vehicle's animations for everyone, once or on a loop, like a plane's propeller. Looping ones are remembered, so a client that joins later sees them too. Logs an error for a vehicle made of bricks, which has no model to play anything on, or for a name its model has no animation by. |
+| `vehicle:stopAnimation([name])` | animation name, or nothing | none | Stops that looping animation, or every one looping without a name. One playing once finishes on its own. |
 | `vehicle:setDriver(dynamic)` | a Dynamic nobody is playing | none | Sits a dynamic in the driver's seat, the way a client getting in seats their player: it comes out of the physics world and rides on the seat from then on, and everyone sees it sitting there with a model vehicle's `sit` animation playing, since what draws a driver goes by the seated dynamic rather than by whose it is. `PlayerMount` plays from it. Logs an error and does nothing if the seat is taken, if the dynamic is an item, a projectile, or already riding something, or if a client controls it (use `client:enterVehicle` for those). It stays there until `clearDriver`, or until its dynamic is destroyed. `vehicle:getDriver()` is still about clients, so it gives `nil` for one of these. |
 | `vehicle:clearDriver()` | none | none | Lets a dynamic `setDriver` sat there back out, standing above the seat like a player getting out, and parks the vehicle. Logs an error if nothing Lua sat there is driving. |
 | `vehicle:setDestructable(bool)` / `vehicle:isDestructable()` | bool | none / bool | Whether `radiusImpulse` breaks its bricks off. Off for a new vehicle until a script turns it on, like `serverstart.lua` does from `VehicleCreated`. |
@@ -1363,6 +1368,7 @@ can type `/sit` in chat to sit down where they stand and `/sit` again to get up,
 | `builder` | none | A Client the vehicle counts as built by: `vehicle:getBuilder()` returns them and they're passed to `VehicleCreated`, like the client who sliced a brick vehicle. `spawnJeep(client)` sets it, so `/clearvehicles` in `serverstart.lua` removes a player's jeeps along with what they sliced or loaded. |
 | `horn` | `"Honk"` if registered | The sound type its driver honks with, `""` for none, see `vehicle:setHorn`. |
 | `headlight` | none | A table of light fields as for `vehicle:setHeadlight`, which gives it a headlight switched on. |
+| `flight` | none | A table of flight fields, see [Flying](#flying), which makes it a plane rather than a car. |
 
 A wheel's table takes `position`, `{x, y, z}` where its middle rests, and `radius` and `width` in world units (`1` each
 by default). It also takes any of the wheel settings in the table above under their own names, clamped to the same
@@ -1376,6 +1382,51 @@ vehicle gets to free its bricks from the ground.
 `Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua` is a worked example: the Blockland jeep, with its wheels read off the shape's
 `hub0` to `hub3` nodes and its seven seats off `Mount0` to `Mount6`. `spawnJeep(x, y, z)`, or `spawnJeep(client)` to
 drop one in front of somebody, puts one in the world, and it's registered as the `Jeep` a Vehicle Spawn brick can keep.
+
+### Flying
+
+A vehicle given a `flight` table is a plane: the same body on the same wheels, with wings, a throttle and
+controls on top of the driving it already does. `spawnModelVehicle`'s `flight` field or `vehicle:setFlight`
+switches it on, `vehicle:setFlight(nil)` takes it off again, and it works on a vehicle sliced out of bricks
+just as well as on a model one. Nothing about it is sent to clients beyond one bit that tells its driver what
+its controls do: the server pushes the body around and everyone draws it where the server says it is.
+
+Whoever drives it has **W and S for the throttle, A and D to roll**, and **it turns its nose toward wherever
+they look**, so the camera points where the plane should go. Its wheels are still wheels: it taxis, its
+steering wheels still steer, and space still brakes, which is how it gets down a runway and how it stops at
+the end of one. Nothing else changes either - passengers, the wrench dialog, its horn and headlight, being
+flipped upright, `radiusImpulse` - so a plane is a vehicle in every other way.
+
+A plane nobody is flying still has wings: it glides, noses over into its own dive and comes down, with none of
+the throttle or control a driver brings. A script driving one with `vehicle:drive` gets the throttle and the
+roll keys but no look, since a script never looks anywhere, so it flies straight ahead.
+
+Every field is in studs, seconds and radians, and the ones that fight gravity are given as **speeds rather
+than forces**, so they mean the same thing whatever the plane weighs and whatever gravity it's in. Anything
+left out keeps its default, and numbers out of range are clamped.
+
+| Field | Default | Description |
+|---|---|---|
+| `thrust` | `0` | Studs a second squared along its nose with the throttle forward. |
+| `reverseThrust` | `0` | The same with the throttle back. |
+| `maxSpeed` / `maxReverseSpeed` | `120` / `30` | Studs a second along its nose the throttle stops pushing past. |
+| `liftSpeed` | `60` | The airspeed where its wings hold up exactly its own weight with its nose level. Lift goes with the square of the airspeed from there, so this is the one number that decides where it flies level: a little under `maxSpeed` gives a plane that holds its height at full throttle and sinks as it slows. |
+| `maxLift` | `8` | The most lift it can make, as a multiple of its weight, so a dive doesn't turn into a slingshot. |
+| `angleLift` | `2.5` | How much more lift its wings make per radian of angle of attack, which is how far its nose is above the way it's actually going. This is what makes pulling the nose up climb rather than just slow down. |
+| `stallAngle` | `0.35` | Radians of angle of attack its wings work up to. Past it they start to give up and twice that far they do nothing at all, which is a stall: the nose drops until the air is over them again. Its elevator also stops answering as the angle comes up on this, so yanking the view around at speed groans the plane around the corner instead of snapping it into a stall. |
+| `stallSpeed` | `20` | The airspeed where its wings and controls reach their full effect. At a standstill they do nothing at all, so a parked plane is an ordinary vehicle on wheels. |
+| `wingDamping` / `finDamping` | `1.2` / `0.9` | Per second, how quickly the wings and the tail fin bleed off the part of its velocity that isn't along its nose: the wing catches it moving up or down through the air and the fin catches it sliding sideways, which together are what make a banked turn carry it around rather than skid. |
+| `dragSpeed` | `150` | The airspeed where drag holds up exactly its own weight, which is how fast it ends up going in a vertical dive. |
+| `pitchRate` / `yawRate` / `rollRate` | `1.4` / `0.7` / `2.2` | Radians a second its controls ask for. Lift makes a turn, so a plane wants far more pitch than yaw. |
+| `response` | `0.25` | Seconds it takes to reach those rates. Also how quickly it stops turning when its controls are let go, which is its rotational drag. |
+| `levelRate` | `0.8` | Radians a second of roll toward the bank it wants while no roll key is held, `0` to leave it rolled wherever it is. Upside down it wants nothing: a plane rolled onto its back stays there until its pilot rolls it out. |
+| `turnBank` | `0.7` | Radians it banks into however hard it's turning, and level when it isn't, which is what makes a turn a banked one rather than a flat skid. |
+
+`Add-ons/Vehicle_Biplane` and `Add-ons/Vehicle_Stunt_Plane` are worked examples, the two Blockland planes by
+Kaje: both read their wheels off the shape's `hub0` to `hub2` and their seats off `mount0` and up, both loop
+their shape's own `propslow` and `propfast` sequences on the propeller with `vehicle:playAnimation`, and the
+stunt plane hangs a contrail off each wingtip with `emitter:attachToVehicle` whenever it's going quickly
+enough. Each one's file opens with what its Blockland datablock's numbers became here and why.
 
 Vehicles also come back from `raycast()` and `client:getCursorItem`, with `type` 7.
 

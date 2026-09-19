@@ -1380,6 +1380,63 @@ static std::shared_ptr<DynamicType> tableType(lua_State* L, const char* key, boo
 	return type;
 }
 
+/*
+	Reads the flight settings off the table on top of the stack, which is settings.flight for
+	spawnModelVehicle or the one argument of vehicle:setFlight. Fields left out keep what they had
+*/
+static void readFlightTable(lua_State* L, VehicleFlight& flight)
+{
+	tableNumber(L, "thrust", flight.thrust);
+	tableNumber(L, "reverseThrust", flight.reverseThrust);
+	tableNumber(L, "maxSpeed", flight.maxSpeed);
+	tableNumber(L, "maxReverseSpeed", flight.maxReverseSpeed);
+	tableNumber(L, "liftSpeed", flight.liftSpeed);
+	tableNumber(L, "maxLift", flight.maxLift);
+	tableNumber(L, "stallSpeed", flight.stallSpeed);
+	tableNumber(L, "angleLift", flight.angleLift);
+	tableNumber(L, "stallAngle", flight.stallAngle);
+	tableNumber(L, "wingDamping", flight.wingDamping);
+	tableNumber(L, "finDamping", flight.finDamping);
+	tableNumber(L, "dragSpeed", flight.dragSpeed);
+	tableNumber(L, "pitchRate", flight.pitchRate);
+	tableNumber(L, "yawRate", flight.yawRate);
+	tableNumber(L, "rollRate", flight.rollRate);
+	tableNumber(L, "response", flight.response);
+	tableNumber(L, "levelRate", flight.levelRate);
+	tableNumber(L, "turnBank", flight.turnBank);
+	flight.clampValues();
+}
+
+//The other way around, for vehicle:getFlight
+static void pushFlightTable(lua_State* L, const VehicleFlight& flight)
+{
+	lua_newtable(L);
+	auto field = [&](const char* name, float value)
+	{
+		lua_pushnumber(L, value);
+		lua_setfield(L, -2, name);
+	};
+
+	field("thrust", flight.thrust);
+	field("reverseThrust", flight.reverseThrust);
+	field("maxSpeed", flight.maxSpeed);
+	field("maxReverseSpeed", flight.maxReverseSpeed);
+	field("liftSpeed", flight.liftSpeed);
+	field("maxLift", flight.maxLift);
+	field("stallSpeed", flight.stallSpeed);
+	field("angleLift", flight.angleLift);
+	field("stallAngle", flight.stallAngle);
+	field("wingDamping", flight.wingDamping);
+	field("finDamping", flight.finDamping);
+	field("dragSpeed", flight.dragSpeed);
+	field("pitchRate", flight.pitchRate);
+	field("yawRate", flight.yawRate);
+	field("rollRate", flight.rollRate);
+	field("response", flight.response);
+	field("levelRate", flight.levelRate);
+	field("turnBank", flight.turnBank);
+}
+
 static int LUA_spawnModelVehicle(lua_State* L)
 {
 	scope("(LUA) spawnModelVehicle");
@@ -1458,6 +1515,16 @@ static int LUA_spawnModelVehicle(lua_State* L)
 
 	glm::vec3 seat(0);
 	tableVector(L, "seat", seat);
+
+	//What makes it a plane rather than a car, left off unless the table asks for it
+	VehicleFlight flight;
+	lua_getfield(L, -1, "flight");
+	if (lua_istable(L, -1))
+	{
+		flight.enabled = true;
+		readFlightTable(L, flight);
+	}
+	lua_pop(L, 1);
 
 	//Its wheels, which it needs at least one of to drive anywhere
 	std::vector<VehicleWheel> wheels;
@@ -1585,6 +1652,7 @@ static int LUA_spawnModelVehicle(lua_State* L)
 	vehicle->seat = seat;
 	vehicle->wheels = wheels;
 	vehicle->passengerSeats = passengerSeats;
+	vehicle->flight = flight;
 
 	int dirtType = findEmitterTypeIndex(LUA_pd->vehicleDirtEmitter);
 	vehicle->dirtEmitterType = dirtType == -1 ? Vehicle::noEmitterType : (uint16_t)dirtType;
@@ -2317,6 +2385,168 @@ static int LUA_vehicleIsDriving(lua_State* L)
 	return 1;
 }
 
+/*
+	vehicle:setFlight(table) / vehicle:setFlight(nil)
+
+	Makes it fly, or changes how it flies, or takes it away again. Fields left out keep what they were,
+	so a plane already in the air can be handed one number at a time while it's being tuned
+*/
+static int LUA_vehicleSetFlight(lua_State* L)
+{
+	scope("(LUA) vehicle:setFlight");
+
+	if (lua_gettop(L) != 2 || (!lua_istable(L, 2) && !lua_isnil(L, 2)))
+	{
+		error("Expected vehicle:setFlight(table) or vehicle:setFlight(nil), see LuaAPI.md");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	bool clearing = lua_isnil(L, 2) != 0;
+
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, "vehicle:setFlight(table)");
+	if (!vehicle)
+	{
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	if (clearing)
+	{
+		vehicle->flight = VehicleFlight();
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	//Whatever it flies like now, with the fields this table names changed, so one number can be handed over on its own
+	VehicleFlight flight = vehicle->flight;
+	lua_settop(L, 2);
+	readFlightTable(L, flight);
+	flight.enabled = true;
+	vehicle->flight = flight;
+
+	lua_settop(L, 0);
+	return 0;
+}
+
+//vehicle:getFlight(): how it flies, or nil for one that doesn't
+static int LUA_vehicleGetFlight(lua_State* L)
+{
+	scope("(LUA) vehicle:getFlight");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:getFlight()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (!vehicle->flight.enabled)
+		lua_pushnil(L);
+	else
+		pushFlightTable(L, vehicle->flight);
+	return 1;
+}
+
+//The model a model vehicle's body is drawn with, whose animations are the ones it can play, nullptr for a brick vehicle
+static std::shared_ptr<Model> vehicleBodyModel(const std::shared_ptr<Vehicle>& vehicle)
+{
+	if (!vehicle->isModelVehicle() || !LUA_pd)
+		return nullptr;
+
+	for (const std::shared_ptr<DynamicType>& type : LUA_pd->dynamicTypes)
+	{
+		if (type && type->getID() == vehicle->bodyTypeID)
+			return type->getModel();
+	}
+	return nullptr;
+}
+
+/*
+	vehicle:playAnimation(name[, loop])
+
+	Plays one of its body model's own animations for everyone, once or on a loop, like a plane's
+	propeller. Only a model vehicle has a model to play anything on
+*/
+static int LUA_vehiclePlayAnimation(lua_State* L)
+{
+	scope("(LUA) vehicle:playAnimation");
+
+	int args = lua_gettop(L);
+	if (args < 2 || args > 3 || lua_type(L, 2) != LUA_TSTRING)
+	{
+		error("Expected vehicle:playAnimation(name[,loop])");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = lua_tostring(L, 2);
+	bool loop = args > 2 && lua_toboolean(L, 3);
+
+	lua_settop(L, 1);
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, "vehicle:playAnimation(name[,loop])");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	std::shared_ptr<Model> model = vehicleBodyModel(vehicle);
+	if (!model)
+	{
+		error("Only a vehicle made from a model has animations to play, see spawnModelVehicle");
+		return 0;
+	}
+
+	int id = model->getAnimationID(name);
+	if (id < 0)
+	{
+		error("That vehicle's model has no animation named " + name);
+		return 0;
+	}
+
+	if (loop)
+		vehicle->startLoop(id);
+	else
+		vehicle->playOneShot(id);
+	return 0;
+}
+
+//vehicle:stopAnimation([name]): stops that looping animation, or every one of them
+static int LUA_vehicleStopAnimation(lua_State* L)
+{
+	scope("(LUA) vehicle:stopAnimation");
+
+	int args = lua_gettop(L);
+	if (args < 1 || args > 2 || (args == 2 && lua_type(L, 2) != LUA_TSTRING))
+	{
+		error("Expected vehicle:stopAnimation([name])");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::string name = args > 1 ? lua_tostring(L, 2) : "";
+
+	lua_settop(L, 1);
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, "vehicle:stopAnimation([name])");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (name.empty())
+	{
+		vehicle->stopLoop(-1);
+		return 0;
+	}
+
+	std::shared_ptr<Model> model = vehicleBodyModel(vehicle);
+	int id = model ? model->getAnimationID(name) : -1;
+	if (id < 0)
+	{
+		error("That vehicle's model has no animation named " + name);
+		return 0;
+	}
+
+	vehicle->stopLoop(id);
+	return 0;
+}
+
 static int LUA_vehicleGetBuilder(lua_State* L)
 {
 	scope("(LUA) vehicle:getBuilder");
@@ -2756,6 +2986,10 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "setDriver", LUA_vehicleSetDriver },
 		{ "clearDriver", LUA_vehicleClearDriver },
 		{ "isDriving", LUA_vehicleIsDriving },
+		{ "setFlight", LUA_vehicleSetFlight },
+		{ "getFlight", LUA_vehicleGetFlight },
+		{ "playAnimation", LUA_vehiclePlayAnimation },
+		{ "stopAnimation", LUA_vehicleStopAnimation },
 		{ "getBuilder", LUA_vehicleGetBuilder },
 		{ "getBuilderID", LUA_vehicleGetBuilderID },
 		{ "getSpawnBrick", LUA_vehicleGetSpawnBrick },

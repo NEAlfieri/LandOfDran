@@ -1,0 +1,3 @@
+Title: Biplane
+Author: Kaje
+A single propellor biplane with 4 seats - ideal for a bombing run!

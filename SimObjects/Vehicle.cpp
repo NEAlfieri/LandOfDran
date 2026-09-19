@@ -30,6 +30,15 @@ static constexpr unsigned int brickPacketHeaderBytes = 1 + sizeof(netIDType) + s
 //Per second, how quickly where it's drawn catches up to the interpolator, same as dynamics
 static constexpr float correctionRate = 15.0f;
 
+/*
+	How hard a plane turns toward where its pilot looks: the command is the sine of the angle its nose is
+	off by times this, so anything more than about thirty degrees off asks for everything it has
+*/
+static constexpr float aimGain = 2.0f;
+
+//And how hard it rolls toward the bank it wants, the same way around how many radians off it is
+static constexpr float levelGain = 2.0f;
+
 namespace
 {
 	//Closest hit that isn't the vehicle itself, something that doesn't collide, or debris
@@ -232,6 +241,224 @@ bool Vehicle::buildServer(const BrickTypes* types, const btVector3& origin)
 	return true;
 }
 
+void VehicleFlight::clampValues()
+{
+	thrust = std::clamp(thrust, 0.0f, 10000.0f);
+	reverseThrust = std::clamp(reverseThrust, 0.0f, 10000.0f);
+	maxSpeed = std::clamp(maxSpeed, 1.0f, 1000.0f);
+	maxReverseSpeed = std::clamp(maxReverseSpeed, 0.0f, 1000.0f);
+	liftSpeed = std::clamp(liftSpeed, 1.0f, 1000.0f);
+	maxLift = std::clamp(maxLift, 0.0f, 100.0f);
+	stallSpeed = std::clamp(stallSpeed, 0.1f, 1000.0f);
+	angleLift = std::clamp(angleLift, 0.0f, 50.0f);
+	stallAngle = std::clamp(stallAngle, 0.01f, 1.5f);
+
+	//A damping rate past 50 would take more than all of the slip away in one substep and bounce it back
+	wingDamping = std::clamp(wingDamping, 0.0f, 50.0f);
+	finDamping = std::clamp(finDamping, 0.0f, 50.0f);
+
+	dragSpeed = std::clamp(dragSpeed, 1.0f, 10000.0f);
+	pitchRate = std::clamp(pitchRate, 0.0f, 20.0f);
+	yawRate = std::clamp(yawRate, 0.0f, 20.0f);
+	rollRate = std::clamp(rollRate, 0.0f, 20.0f);
+	response = std::clamp(response, 0.01f, 10.0f);
+	levelRate = std::clamp(levelRate, 0.0f, 20.0f);
+	turnBank = std::clamp(turnBank, 0.0f, 1.4f);
+}
+
+void Vehicle::flyStep(float deltaT)
+{
+	if (!flight.enabled || !body || deltaT <= 0.0f || body->getInvMass() <= 0.0f)
+		return;
+
+	const btMatrix3x3& basis = body->getWorldTransform().getBasis();
+
+	//Its nose, its own up, and its right, which is the way the two of those leave over: see LuaAPI.md on flying
+	btVector3 nose = (basis * g2b3(glm::normalize(forward))).normalized();
+	btVector3 up = (basis * btVector3(0, 1, 0)).normalized();
+	btVector3 right = nose.cross(up);
+
+	btVector3 velocity = body->getLinearVelocity();
+	float airspeed = velocity.dot(nose);
+	float speed = velocity.length();
+
+	float mass = 1.0f / body->getInvMass();
+	float weight = mass * body->getGravity().length();
+
+	/*
+		Everything the air does to it fades away as it slows down, so a plane sitting on a runway is an
+		ordinary vehicle on wheels: no lift, no wings biting, and nothing steering how it is turned
+	*/
+	float authority = std::clamp(std::abs(airspeed) / flight.stallSpeed, 0.0f, 1.0f);
+	bool driven = lastInput.driven;
+
+	//The throttle, along its nose, which stops pushing once it is going as fast as it goes
+	if (driven)
+	{
+		float accel = 0.0f;
+		if (lastInput.forward && airspeed < flight.maxSpeed)
+			accel = flight.thrust;
+		else if (lastInput.backward && airspeed > -flight.maxReverseSpeed)
+			accel = -flight.reverseThrust;
+
+		if (accel != 0.0f)
+			body->applyCentralImpulse(nose * (accel * mass * deltaT));
+	}
+
+	/*
+		The sine of its angle of attack: how far its nose is above the way it's actually going, which is
+		what its wings care about, worked out here because its controls want it too
+	*/
+	float attack = speed > 0.01f ? std::clamp(-up.dot(velocity) / speed, -1.0f, 1.0f) : 0.0f;
+
+	/*
+		Lift, out of the top of its wings rather than along the world's up, so a banked plane's wings
+		carry it around the turn. Square to the way it's actually going rather than exactly along its own
+		up: lift is a turn of the air going past, so it can't add to how fast the plane is going, and a
+		wing pointed straight up while the plane climbs would do exactly that - it fed a level nosed
+		plane into a climb that never ran out of speed, since every stud it rose was lift doing work
+	*/
+	if (weight > 0.0f)
+	{
+		btVector3 liftDirection = up;
+
+		if (speed > 0.01f)
+		{
+			liftDirection = up - velocity * (up.dot(velocity) / (speed * speed));
+			if (liftDirection.length2() < 0.0001f)
+				liftDirection = up;
+			else
+				liftDirection.normalize();
+		}
+
+		/*
+			The wings make more of it the further the air comes from under them, up to the stall angle,
+			and less and less past that until there's none of it left, see angleLift
+		*/
+		float stall = std::sin(flight.stallAngle);
+		float reach = std::abs(attack) <= stall ? std::abs(attack) : std::max(0.0f, stall * 2.0f - std::abs(attack));
+		float shape = std::max(0.0f, 1.0f + flight.angleLift * (attack < 0.0f ? -reach : reach));
+
+		float ratio = airspeed / flight.liftSpeed;
+		float lift = std::min(ratio * ratio * shape, flight.maxLift) * weight * authority;
+		body->applyCentralImpulse(liftDirection * (lift * deltaT));
+	}
+
+	//The wings and the tail fin taking away whatever it is doing that isn't flying along its nose
+	btVector3 surface = up * (-velocity.dot(up) * flight.wingDamping) + right * (-velocity.dot(right) * flight.finDamping);
+	body->applyCentralImpulse(surface * (mass * authority * deltaT));
+
+	//Drag, along the way it is actually going, which is what stops a dive running away
+	if (speed > 0.01f && weight > 0.0f)
+	{
+		float ratio = speed / flight.dragSpeed;
+		body->applyCentralImpulse(velocity * (-ratio * ratio * weight * deltaT / speed));
+	}
+
+	/*
+		Turning. A torque would have to go through the body's inertia tensor before it meant anything in
+		radians a second, and that tensor is whatever the shape of the plane happens to be, so instead its
+		controls steer its spin itself: each of its own three axes is moved toward the rate the controls
+		are asking for, getting no further than response seconds' worth of the way there each substep. The
+		same line of code is its rotational drag, since letting go asks for a rate of zero
+	*/
+	float control = driven ? authority : authority * 0.5f;
+	if (control <= 0.001f)
+	{
+		if (driven)
+			body->activate();
+		return;
+	}
+
+	//Where the nose is being asked to point: where the pilot looks, or, with nobody flying it, wherever it's already going
+	btVector3 aim(0, 0, 0);
+	bool haveAim = false;
+	if (driven && lastInput.hasLook)
+	{
+		aim = g2b3(lastInput.look);
+		haveAim = aim.length2() > 0.0001f;
+		if (haveAim)
+			aim.normalize();
+	}
+	else if (!driven && speed > 1.0f)
+	{
+		aim = velocity / speed;
+		haveAim = true;
+	}
+
+	float pitchTarget = 0.0f;
+	float yawTarget = 0.0f;
+	float yawAsked = 0.0f;
+
+	if (haveAim)
+	{
+		//One turn taking its nose onto the aim, right hand rule, which pitch and yaw are just the two halves of
+		btVector3 toAim = nose.cross(aim);
+		pitchTarget = std::clamp(toAim.dot(right) * aimGain, -1.0f, 1.0f) * flight.pitchRate;
+		yawAsked = std::clamp(toAim.dot(up) * aimGain, -1.0f, 1.0f);
+		yawTarget = yawAsked * flight.yawRate;
+	}
+
+	/*
+		The wings won't be pulled harder than they can hold: as the angle of attack comes up on the stall
+		angle the elevator stops answering, so yanking the view around at speed makes the plane groan
+		around the corner rather than snap into a stall it can't see coming. Pushing the other way is
+		still free, which is how a pilot gets out of one
+	*/
+	float limit = std::sin(flight.stallAngle);
+	if (limit > 0.0001f)
+	{
+		float over = (std::abs(attack) - limit * 0.8f) / (limit * 0.2f);
+		if (over > 0.0f && (attack > 0.0f) == (pitchTarget > 0.0f))
+			pitchTarget *= std::clamp(1.0f - over, 0.0f, 1.0f);
+	}
+
+	float rollTarget = 0.0f;
+	if (driven && (lastInput.left || lastInput.right))
+		rollTarget = (lastInput.right ? 1.0f : -1.0f) * flight.rollRate;
+	else if (flight.levelRate > 0.0f)
+	{
+		/*
+			How far it's banked over, and how far it wants to be: into the turn it's being asked for, so
+			its wings pull it around rather than its tail dragging it around sideways, and level when it
+			isn't turning. Turning left is a positive yaw, which wants the left wing down, hence the sign
+
+			The bank is a real angle rather than its sine, because the sine comes back down again past
+			ninety degrees: measured that way a hard turn's roll never reaches the bank it was asked for
+			and carries on over onto its back
+		*/
+		btVector3 level = btVector3(0, 1, 0) - nose * nose.dot(btVector3(0, 1, 0));
+		if (level.length2() > 0.0001f)
+		{
+			level.normalize();
+			float upright = up.dot(level);
+			float banked = std::atan2(level.cross(up).dot(nose), upright);
+
+			//Past its back it wants nothing: a plane rolled inverted stays there until its pilot rolls it out
+			if (upright >= 0.0f)
+			{
+				float wanted = -yawAsked * flight.turnBank;
+				rollTarget = std::clamp((wanted - banked) * levelGain, -1.0f, 1.0f) * flight.levelRate;
+			}
+		}
+	}
+
+	btVector3 spin = body->getAngularVelocity();
+	auto steer = [&](const btVector3& axis, float target, float rate)
+	{
+		float step = std::max(rate, 0.1f) / flight.response * deltaT * control;
+		float change = std::clamp(target * control - spin.dot(axis), -step, step);
+		spin += axis * change;
+	};
+
+	steer(right, pitchTarget, flight.pitchRate);
+	steer(up, yawTarget, flight.yawRate);
+	steer(nose, rollTarget, flight.rollRate);
+
+	body->setAngularVelocity(spin);
+	body->activate();
+}
+
 bool Vehicle::drive(bool forwardHeld, bool backwardHeld, bool leftHeld, bool rightHeld, bool brakeHeld)
 {
 	if (!raycastVehicle)
@@ -339,6 +566,63 @@ void Vehicle::flipUpright()
 	if (raycastVehicle)
 		raycastVehicle->resetSuspension();
 	body->activate();
+}
+
+void Vehicle::startLoop(int id)
+{
+	//A packet says how many loop at all in one byte, and nothing needs anywhere near this many
+	if (id < 0 || id >= noAnimation || loopingAnimations.size() >= 32)
+		return;
+
+	if (std::find(loopingAnimations.begin(), loopingAnimations.end(), (unsigned char)id) != loopingAnimations.end())
+		return;
+
+	loopingAnimations.push_back((unsigned char)id);
+	loopResends = animationResends;
+	markStateChanged();
+}
+
+void Vehicle::stopLoop(int id)
+{
+	size_t before = loopingAnimations.size();
+	if (id < 0)
+		loopingAnimations.clear();
+	else
+		loopingAnimations.erase(std::remove(loopingAnimations.begin(), loopingAnimations.end(), (unsigned char)id), loopingAnimations.end());
+
+	if (loopingAnimations.size() == before)
+		return;
+
+	loopResends = animationResends;
+	markStateChanged();
+}
+
+void Vehicle::playOneShot(int id)
+{
+	if (id < 0 || id >= noAnimation)
+		return;
+
+	oneShotAnimation = id;
+	oneShotCount++;
+	oneShotResends = animationResends;
+	markStateChanged();
+}
+
+void Vehicle::syncLoops(const std::vector<unsigned char>& loops)
+{
+	for (unsigned char id : loops)
+	{
+		if (std::find(loopingAnimations.begin(), loopingAnimations.end(), id) == loopingAnimations.end())
+			play(id, true);
+	}
+
+	for (unsigned char id : loopingAnimations)
+	{
+		if (std::find(loops.begin(), loops.end(), id) == loops.end())
+			stop(id);
+	}
+
+	loopingAnimations = loops;
 }
 
 void Vehicle::updateWheelStates()
@@ -478,7 +762,13 @@ void Vehicle::finishClient(const BrickTypes* types, InstancedBrickRenderer* _ren
 	if (isModelVehicle())
 	{
 		if (Model* bodyModel = modelOfType(bodyTypeID))
+		{
 			bodyInstance = new ModelInstance(bodyModel);
+
+			//Whatever the server had looping on it before this client ever heard of it, like a plane's propeller
+			for (unsigned char id : loopingAnimations)
+				play(id, true);
+		}
 	}
 	else
 	{
@@ -700,7 +990,27 @@ unsigned int Vehicle::readCreationBytes(const enet_uint8* src, size_t available)
 	if (available < size)
 		return 0;
 
-	size += src[size - 1] * seatCreationBytes;
+	size += src[size - 1] * seatCreationBytes + 1;
+	if (available < size)
+		return 0;
+
+	//And the animations looping on its body, see syncLoops
+	size += src[size - 1];
+	return available < size ? 0 : size;
+}
+
+unsigned int Vehicle::readUpdateBytes(const enet_uint8* src, size_t available) const
+{
+	/*
+		How long an update is depends on the vehicle, so a client works it out from the packet rather than
+		from what it knows: its wheels it does know about, but how many animations loop on it is whatever
+		the server says in this very packet, see readUpdate
+	*/
+	unsigned int size = updateHeaderBytes + (unsigned int)wheels.size() * wheelUpdateBytes + animationUpdateBytes;
+	if (available < size)
+		return 0;
+
+	size += src[size - 1];
 	return available < size ? 0 : size;
 }
 
@@ -760,6 +1070,10 @@ void Vehicle::readCreation(const enet_uint8* src)
 		take(&passengerSeat.riderID, sizeof(netIDType));
 	}
 
+	//Played on its body once finishClient has made one, since the model isn't here yet
+	loopingAnimations.assign(src + at + 1, src + at + 1 + src[at]);
+	at += 1 + src[at];
+
 	interpolator.addSnapshot(position, rotation, 4, 0);
 	renderedPosition = position;
 	renderedRotation = rotation;
@@ -787,6 +1101,17 @@ void Vehicle::readUpdate(const enet_uint8* src, float idealBufferSize)
 		wheel.dirt = src[at + 2] & 2;
 		at += wheelUpdateBytes;
 	}
+
+	//An animation played once, which the same update is sent a few times over, so the count is what says it's a new one
+	if (src[at] != noAnimation && src[at + 1] != oneShotCount)
+	{
+		oneShotCount = src[at + 1];
+		oneShotAnimation = src[at];
+		play(oneShotAnimation, false);
+	}
+	at += 2;
+
+	syncLoops(std::vector<unsigned char>(src + at + 1, src + at + 1 + src[at]));
 }
 
 std::vector<ENetPacket*> Vehicle::makeBrickPackets() const
@@ -839,29 +1164,31 @@ bool Vehicle::requiresNetUpdate()
 		return false;
 
 	//Every tick while it moves, and now and then while it sits still so late snapshots don't leave it somewhere else
-	flaggedForUpdate = body->isActive() || stateChanged || getTicksMS() - lastSentTime > 1500;
+	flaggedForUpdate = body->isActive() || stateChanged || loopResends > 0 || oneShotResends > 0 || getTicksMS() - lastSentTime > 1500;
 	return flaggedForUpdate;
 }
 
 unsigned char Vehicle::getFlags() const
 {
-	return (headlight.hasLight ? flagHasHeadlight : 0) | (headlightOn ? flagHeadlightOn : 0);
+	return (headlight.hasLight ? flagHasHeadlight : 0) | (headlightOn ? flagHeadlightOn : 0) | (flight.enabled ? flagFlies : 0);
 }
 
 void Vehicle::readFlags(unsigned char flags)
 {
 	hasHeadlight = flags & flagHasHeadlight;
 	headlightLit = flags & flagHeadlightOn;
+	fliesForDriver = flags & flagFlies;
 }
 
 unsigned int Vehicle::getCreationPacketBytes() const
 {
-	return creationHeaderBytes + (unsigned int)wheels.size() * wheelCreationBytes + 1 + (unsigned int)passengerSeats.size() * seatCreationBytes;
+	return creationHeaderBytes + (unsigned int)wheels.size() * wheelCreationBytes + 1 + (unsigned int)passengerSeats.size() * seatCreationBytes
+		+ 1 + (unsigned int)loopingAnimations.size();
 }
 
 unsigned int Vehicle::getUpdatePacketBytes() const
 {
-	return updateHeaderBytes + (unsigned int)wheels.size() * wheelUpdateBytes;
+	return updateHeaderBytes + (unsigned int)wheels.size() * wheelUpdateBytes + animationUpdateBytes + (unsigned int)loopingAnimations.size();
 }
 
 void Vehicle::addToCreationPacket(enet_uint8* dest) const
@@ -916,6 +1243,10 @@ void Vehicle::addToCreationPacket(enet_uint8* dest) const
 		put(&passengerSeat.top[0], sizeof(float) * 3);
 		put(&passengerSeat.riderID, sizeof(netIDType));
 	}
+
+	dest[at++] = (enet_uint8)loopingAnimations.size();
+	if (!loopingAnimations.empty())
+		put(loopingAnimations.data(), loopingAnimations.size());
 }
 
 void Vehicle::addToUpdatePacket(enet_uint8* dest)
@@ -942,6 +1273,22 @@ void Vehicle::addToUpdatePacket(enet_uint8* dest)
 		dest[at + 2] = (wheel.contact ? 1 : 0) | (wheel.dirt ? 2 : 0);
 		at += wheelUpdateBytes;
 	}
+
+	//Updates go out unreliably, so an animation is repeated in the next few of them, see Dynamic
+	bool sendOneShot = oneShotResends > 0 && oneShotAnimation >= 0;
+	if (sendOneShot)
+		oneShotResends--;
+
+	dest[at] = sendOneShot ? (enet_uint8)oneShotAnimation : noAnimation;
+	dest[at + 1] = oneShotCount;
+	at += 2;
+
+	if (loopResends > 0)
+		loopResends--;
+
+	dest[at++] = (enet_uint8)loopingAnimations.size();
+	if (!loopingAnimations.empty())
+		memcpy(dest + at, loopingAnimations.data(), loopingAnimations.size());
 }
 
 void Vehicle::requestDestruction()

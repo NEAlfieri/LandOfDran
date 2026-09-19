@@ -3464,7 +3464,9 @@ void LoopClient::renderEverything(float deltaT)
 
 	if (std::shared_ptr<Vehicle> driven = getDrivenVehicle())
 	{
-		std::string line = "Driving: W/S drive, A/D steer, jump brakes, left click honks, right click gets out";
+		std::string line = driven->fliesForDriver
+			? "Flying: W/S throttle, A/D roll, it turns its nose toward where you look, right click gets out"
+			: "Driving: W/S drive, A/D steer, jump brakes, left click honks, right click gets out";
 		if (driven->hasHeadlight)
 			line += ", " + std::string(SDL_GetScancodeName(pd.input->getKeyBind(Flashlight))) + " switches its headlight";
 		hudLines.push_back(line);

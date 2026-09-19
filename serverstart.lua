@@ -42,6 +42,12 @@ dofile("Add-ons/Weapon_Package_Tier1/Weapon_Package_Tier1.lua")
 --The jeep add-on: its models and spawnJeep, a model vehicle that drives alongside the brick ones
 dofile("Add-ons/Vehicle_Jeep/Vehicle_Jeep.lua")
 
+--The Biplane add-on: Kaje's four seat biplane, a model vehicle that flies, see spawnBiplane
+dofile("Add-ons/Vehicle_Biplane/Vehicle_Biplane.lua")
+
+--The Stunt Plane add-on: the sharper of the two planes, with contrails off its wingtips, see spawnStuntPlane
+dofile("Add-ons/Vehicle_Stunt_Plane/Vehicle_Stunt_Plane.lua")
+
 --The Grapple Rope add-on: a hook that swings its holder from wherever it lands, and dropGrappleRope
 dofile("Add-ons/Tool_GrappleRope/Tool_GrappleRope.lua")
 

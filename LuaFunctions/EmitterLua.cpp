@@ -1009,6 +1009,61 @@ static int LUA_emitterAttachToBrick(lua_State* L)
 	return 0;
 }
 
+/*
+	emitter:attachToVehicle(vehicle[, offsetX, offsetY, offsetZ])
+
+	Goes along with the vehicle, at a spot in its body's own space so it turns with it, like the wingtips
+	of a plane. It's removed along with the vehicle rather than after its type's lifetime, the way an
+	emitter carried over from one of a sliced vehicle's bricks is
+*/
+static int LUA_emitterAttachToVehicle(lua_State* L)
+{
+	scope("(LUA) emitter:attachToVehicle");
+
+	const std::string usage = "emitter:attachToVehicle(vehicle[, offsetX, offsetY, offsetZ])";
+
+	int args = lua_gettop(L);
+	bool hasOffset = args == 5;
+	bool badArguments = args != 2 && args != 5;
+	for (int a = 3; hasOffset && a <= 5; a++)
+	{
+		if (lua_type(L, a) != LUA_TNUMBER)
+			badArguments = true;
+	}
+
+	if (badArguments)
+	{
+		error("Expected " + usage);
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	if (!LUA_pd->emitters || !LUA_pd->vehicles)
+	{
+		error("emitters or vehicles ObjHolder is null");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	glm::vec3 offset(0);
+	if (hasOffset)
+		offset = glm::vec3(lua_tonumber(L, 3), lua_tonumber(L, 4), lua_tonumber(L, 5));
+
+	lua_settop(L, 2);
+	std::shared_ptr<Vehicle> vehicle = LUA_pd->vehicles->popLua(L);
+	std::shared_ptr<Emitter> emitter = LUA_pd->emitters->popLua(L);
+	lua_settop(L, 0);
+
+	if (!vehicle || !emitter)
+	{
+		error("Invalid emitter or vehicle passed to " + usage);
+		return 0;
+	}
+
+	emitter->attachToVehicle(vehicle, offset);
+	return 0;
+}
+
 static int LUA_getEmitterId(lua_State* L)
 {
 	scope("(LUA) getEmitterId");
@@ -1114,6 +1169,7 @@ luaL_Reg* getEmitterFunctions(lua_State* L)
 	regs[iter++] = { "setType",			LUA_emitterSetType };
 	regs[iter++] = { "attachToDynamic",	LUA_emitterAttachToDynamic };
 	regs[iter++] = { "attachToBrick",	LUA_emitterAttachToBrick };
+	regs[iter++] = { "attachToVehicle",	LUA_emitterAttachToVehicle };
 	regs[iter++] = { "setColor",		LUA_emitterSetColor };
 	regs[iter++] = { "getColor",		LUA_emitterGetColor };
 	regs[iter++] = { "aimWith",			LUA_emitterAimWith };

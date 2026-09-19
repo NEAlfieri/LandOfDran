@@ -134,13 +134,17 @@ bool UpdateSimObjectsPacket::applyPacket(const ClientProgramData& pd, Simulation
 		{
 			lastId = simulation.vehicles->getIdFromDelta(packet->data + byteIterator, lastId, byteIterator);
 
-			//How many bytes an update takes depends on the vehicle's wheels, so one we don't know about leaves the rest unreadable
+			//How many bytes an update takes depends on the vehicle, so one we don't know about leaves the rest unreadable
 			std::shared_ptr<Vehicle> toUpdate = simulation.vehicles->find(lastId);
-			if (!toUpdate || byteIterator + toUpdate->getUpdatePacketBytes() > packet->dataLength)
+			if (!toUpdate)
+				break;
+
+			unsigned int bytes = toUpdate->readUpdateBytes(packet->data + byteIterator, packet->dataLength - byteIterator);
+			if (!bytes)
 				break;
 
 			toUpdate->readUpdate(packet->data + byteIterator, simulation.idealBufferSize);
-			byteIterator += toUpdate->getUpdatePacketBytes();
+			byteIterator += bytes;
 		}
 
 		break;
