@@ -290,7 +290,8 @@ It runs `serverstart.lua` first, so it has the whole real game (every model, sou
 up new work for free, then unregisters every `ClientJoin` listener so nobody is given a player. What it adds is its own:
 an island built out of about 200 bricks, eight [bots](#bots) fighting over it with the Gun add-on's rounds (tagged
 `"gun"`, so `Support_Weapons.lua`'s own listener gives them their real bullet holes, dust and crack) and the launcher's
-shells every so often, a jeep driven round a lap by pushing its velocity, and five camera shots cut between on a timer.
+shells every so often, a jeep driving itself round a circle with `vehicle:drive`, and five camera shots cut between on
+a timer.
 
 Two things in it are worth copying for any script that has to move a camera:
 
@@ -1157,6 +1158,9 @@ anything; use the events to limit that.
 | `vehicle:setGravity(x, y, z)` | acceleration | none | |
 | `vehicle:getDriver()` | none | Client or `nil` | Who's driving it. |
 | `vehicle:ejectDriver()` | none | none | Lets its driver out, without `ClientExitVehicle`. |
+| `vehicle:drive(forward, backward, left, right, brake)` | the driver's keys, each `false` by default | none | Holds a set of a driver's keys down on a vehicle nobody is in, the same call their own keys make every tick, so it accelerates, steers, leans on its suspension and throws dirt off its wheels exactly like a driven one. The keys stay held until this is called again. Logs an error and does nothing for a vehicle that has a driver, whose keys would overwrite these next tick; a driver getting in takes it back over, and letting them out leaves the script driving again. Steering is a key rather than a wheel, so `left` throws the wheels to full lock: something following a path wants a dead zone it holds its last choice through, or it flips lock to lock every tick and scrubs off all its speed. See `menudemo.lua`'s `driveJeep`. |
+| `vehicle:stopDriving()` | none | none | Lets go of every key, leaving it to roll to a stop and park like any other empty vehicle. |
+| `vehicle:isDriving()` | none | bool | Whether Lua is holding its keys down. |
 | `vehicle:setDestructable(bool)` / `vehicle:isDestructable()` | bool | none / bool | Whether `radiusImpulse` breaks its bricks off. Off for a new vehicle until a script turns it on, like `serverstart.lua` does from `VehicleCreated`. |
 | `vehicle:getNumSeats()` | none | count | How many passenger seats (seat bricks, or the ones `spawnModelVehicle` was given) it has, not counting the driver's, including seats that were broken off. |
 | `vehicle:getPassenger(seat)` | 0 to `getNumSeats() - 1` | Client or `nil` | Who's riding on that seat. Use `client:exitVehicle` to get them off. |

@@ -4,8 +4,8 @@
 	The client hosts this on a server of its own (MENU_DEMO_PORT) the moment it reaches the menu and joins
 	it quietly: no HUD, no mouse capture, no keys, and no player of its own, see LoopClient::startMenuDemo.
 	So everything here is an ordinary server script. Nobody is playing, which means nothing in it can be
-	driven by a client: the players are bots walked with dynamic:setBotInput, the jeep is steered by having
-	its velocity pushed the way it should go, and the camera is a client:staticCamera re-aimed every tick.
+	driven by a client: the players are bots walked with dynamic:setBotInput, the jeep drives itself with
+	vehicle:drive, and the camera is a client:staticCamera re-aimed every tick.
 
 	It runs serverstart.lua first, so every model, sound, emitter, weapon and add-on the real game has is
 	registered here too and the demo shows off the actual game rather than a copy of it. What it then takes
@@ -187,7 +187,8 @@ local function buildBridges()
 	local width = 6
 	local inner = ISLAND - TOWER_SIZE
 	local length = inner * 2
-	local edge = ISLAND - 8
+	--Far enough out that the pillars holding them up stand clear of the jeep's lap
+	local edge = ISLAND - 6
 
 	local function deck(x, z, w, l)
 		brick(x, BRIDGE_Y, z, w, 2, l, C.bridge)
@@ -258,27 +259,19 @@ end
 	against the wall, never on it: nobody drives the jeep and it can't steer round anything, so whatever is
 	left in its way is what it spends the rest of the demo stuck against
 
-	The ones inside stand in two columns either side of the plaza: they have to be at least 12 studs out to
-	miss the plaza and its ramps, and no more than 16 to stay out of the jeep's way, which leaves nowhere
-	for them along the other two sides
+	The ones inside stand in two columns either side of the plaza. They have to be at least 12 studs out
+	along x to miss the plaza and its ramps, which leaves nowhere for them along the other two sides, and
+	none of them may reach further than about 20 studs from the middle or the jeep clips them on its lap
 ]]
 local function buildCover()
 	local inside = {
-		{-16, -16}, {-16, -8}, {-16, 4}, {-16, 12},
-		{12, -16}, {12, -8}, {12, 4}, {12, 12},
-	}
-	local against = {
-		{34, -20}, {34, 14}, {-38, -20}, {-38, 14},
-		{-20, 34}, {14, 34}, {-20, -38}, {14, -38},
+		{-15, -8}, {-15, -2}, {-15, 4},
+		{11, -8}, {11, -2}, {11, 4},
 	}
 
-	local i = 0
-	for _, spots in ipairs({inside, against}) do
-		for _, spot in ipairs(spots) do
-			i = i + 1
-			local height = (i % 4 == 0) and 12 or 8
-			brick(spot[1], FLOOR_PLATES, spot[2], 4, height, 4, COVER_COLORS[(i - 1) % #COVER_COLORS + 1])
-		end
+	for i, spot in ipairs(inside) do
+		local height = (i % 3 == 0) and 12 or 8
+		brick(spot[1], FLOOR_PLATES, spot[2], 4, height, 4, COVER_COLORS[(i - 1) % #COVER_COLORS + 1])
 	end
 end
 
@@ -588,9 +581,13 @@ local function thinkBot(bot, nowMS)
 		end
 	end
 
-	--Every so often somebody jets up over the wall, which is the flashiest thing a player can do
-	if nowMS > bot.jetUntilMS + 6000 and math.random() < 0.02 then
-		bot.jetUntilMS = nowMS + 1400
+	--[[
+		Every so often somebody hops, which is the flashiest thing a player can do. Kept short: jets lift a
+		player at up to 30 studs a second for as long as they're held, so a burst of much more than this
+		sends them forty studs up and they spend the next few seconds falling back down out of shot
+	]]
+	if nowMS > bot.jetUntilMS + 9000 and math.random() < 0.01 then
+		bot.jetUntilMS = nowMS + 450
 	end
 	local jetting = nowMS < bot.jetUntilMS
 
@@ -608,47 +605,100 @@ end
 
 --Its lap of the island, in studs, just inside the wall
 --[[
-	Its lap of the island, in studs. The corner towers fill everything from 28 studs out, so a lap any wider
-	than this drives the jeep straight into one and leaves it wedged there for good, and buildCover keeps
-	the band around it clear
+	Its lap of the island: a circle rather than a square. A car has to slow right down for a square's
+	corners and runs wide out of them into the wall, which is both ugly and how it ends up wedged; a steady
+	curve it can hold at speed looks like driving. It also never stops turning, and a vehicle only throws
+	dirt off its wheels while it steers or brakes, so the circle is what keeps the dirt coming
 
-	It's a point every few studs all the way round rather than the four corners, because a jeep heading
-	for a corner from a long way off starts turning as soon as it's near enough and cuts the corner right
-	across the middle of the island, into whatever is standing there
+	The clear ring runs from 17 studs out, where the cover inside ends, to 33, where the pillars holding the
+	catwalks up stand. A jeep is 3.2 by 5.4, so about 3.2 from its middle to a corner, and it wanders a
+	couple of studs either side of the line it's steering for.
+
+	It's asked for a wider circle than it actually drives: chasing a point ahead of itself cuts the corner,
+	and steering that's either full lock or nothing undershoots on top of that, so it settles about three
+	studs inside whatever it's given, which puts 28 right down the middle of the ring
 ]]
-local JEEP_LAP_HALF = 24
-local JEEP_LAP_STEP = 6
+local JEEP_RADIUS = 28
 
-local JEEP_LAP = {}
-do
-	local half, step = JEEP_LAP_HALF, JEEP_LAP_STEP
-	for x = -half, half - step, step do table.insert(JEEP_LAP, {x, -half}) end
-	for z = -half, half - step, step do table.insert(JEEP_LAP, {half, z}) end
-	for x = half, -half + step, -step do table.insert(JEEP_LAP, {x, half}) end
-	for z = half, -half + step, -step do table.insert(JEEP_LAP, {-half, z}) end
-end
+--How far round the circle ahead of itself it aims, in radians. Too short and it saws at the wheel
+local JEEP_LOOK_AHEAD = 0.55
+
+--[[
+	Steering is a key, not a wheel: holding left throws the wheels to full lock. So the error either side
+	of which it steers has to be a wide band with a dead zone in the middle that it holds its last choice
+	through, or it flips lock to lock every tick as the error crosses zero and scrubs off all its speed
+]]
+local JEEP_STEER_ON = 0.13
+local JEEP_STEER_OFF = 0.05
+local jeepSteer = 0
+
+--And the throttle the same way, or it cuts in and out every tick around the cruising speed
+local jeepThrottle = true
+
+--Studs a second it stops accelerating at. Faster than this and it slides wide off the circle instead of
+--following it, since the grip of four tyres is all that's holding it on
+local JEEP_CRUISE = 19
 
 demoJeep = nil
-local jeepLeg = 1
 
 --How slowly it has to be going, and for how long, before it's taken to be stuck on something
 local JEEP_STUCK_SPEED = 4
 local JEEP_STUCK_MS = 2500
 local jeepStuckForMS = 0
 
+--Where on the circle a spot is, and the point that far round it
+local function lapPoint(angle)
+	return math.cos(angle) * JEEP_RADIUS, math.sin(angle) * JEEP_RADIUS
+end
+
+--[[
+	Puts it down on the circle at rest, pointing the way round it drives. Facing matters: a car only steers
+	while it's moving, so one dropped in facing the wall drives at the wall, and a vehicle's default rotation
+	faces -Z wherever on the circle it happens to be
+]]
+local function putJeepOnLap(angle)
+	if not demoJeep then
+		return
+	end
+
+	local x, z = lapPoint(angle)
+
+	--The way round it goes at that point, which is the tangent to the circle
+	local dx, dz = -math.sin(angle), math.cos(angle)
+
+	--The yaw that turns the model's -Z forward onto that direction
+	local yaw = math.atan(-dx, -dz)
+
+	demoJeep:setPosition(x, FLOOR_TOP + 2, z)
+	demoJeep:setRotation(math.cos(yaw / 2), 0, math.sin(yaw / 2), 0)
+	demoJeep:setVelocity(0, 0, 0)
+	demoJeep:setAngularVelocity(0, 0, 0)
+	jeepStuckForMS = 0
+end
+
 local function startJeep()
 	--spawnJeep puts one down and gives it wheels, lights and a horn, all from the add-on
-	demoJeep = spawnJeep(JEEP_LAP[1][1], FLOOR_TOP + 2, JEEP_LAP[1][2])
+	local x, z = lapPoint(0)
+	demoJeep = spawnJeep(x, FLOOR_TOP + 2, z)
 	if demoJeep then
 		--A new vehicle has no headlight until something gives it one, and this one drives through the night
 		demoJeep:setHeadlight({})
 		demoJeep:setHeadlightOn(true)
+		putJeepOnLap(0)
 	end
 end
 
 startJeep()
 
---Nobody is driving, so it's pushed round its lap: velocity toward the next corner, turned to face the way it goes
+--[[
+	Nobody is in it, so it drives itself: vehicle:drive holds the same keys a driver would and the vehicle
+	steers, leans on its suspension and throws dirt off its wheels on its own.
+
+	It chases a point a fixed way round the circle ahead of wherever it is now, rather than a list of
+	waypoints to tick off. Anything on a fixed path has to decide when it has arrived, and a car that
+	overshoots then turns back for the one it missed; a point that is always ahead of it can't be missed,
+	and steering back onto the circle after a knock happens by itself
+]]
 local function driveJeep(deltaMS)
 	if not demoJeep then
 		return
@@ -656,59 +706,74 @@ local function driveJeep(deltaMS)
 
 	local x, y, z = demoJeep:getPosition()
 
-	--Rolled off the island or ended up on its roof: put it back on its lap
+	--Rolled off the island or ended up on its roof: put it back on the circle
 	if y < WATER_LEVEL - 2 or math.abs(x) > ISLAND + 10 or math.abs(z) > ISLAND + 10 then
-		jeepLeg = 1
-		demoJeep:setPosition(JEEP_LAP[1][1], FLOOR_TOP + 3, JEEP_LAP[1][2])
-		demoJeep:setRotation(1, 0, 0, 0)
-		demoJeep:setVelocity(0, 0, 0)
-		demoJeep:setAngularVelocity(0, 0, 0)
-		return
-	end
-
-	local corner = JEEP_LAP[jeepLeg]
-	local dx, dz = corner[1] - x, corner[2] - z
-	local distance = math.sqrt(dx * dx + dz * dz)
-
-	--Close spacing along the lap, so this has to be smaller than the gap between two of them
-	if distance < 4 then
-		jeepLeg = jeepLeg % #JEEP_LAP + 1
-		jeepStuckForMS = 0
+		putJeepOnLap(math.atan(z, x))
 		return
 	end
 
 	--[[
-		Caught on something anyway: give it a lift and send it at the next corner instead of the one it
-		can't reach. The lap is meant to be clear, but one loose brick or a player under a wheel would
-		otherwise leave it parked in a corner for as long as the game is open
+		Which way it's pointing now. Its rotation is a quaternion about the up axis for a car on level
+		ground, and the jeep is a model vehicle whose forward is -Z, so that's the axis turned by it
 	]]
+	local w, qx, qy, qz = demoJeep:getRotation()
+	local facingX = -2 * (qx * qz + w * qy)
+	local facingZ = -(1 - 2 * (qx * qx + qy * qy))
+	local facing = math.sqrt(facingX * facingX + facingZ * facingZ)
+	if facing < 0.0001 then
+		return
+	end
+	facingX, facingZ = facingX / facing, facingZ / facing
+
+	--The spot on the circle it's steering for, always that far round ahead of where it is
+	local targetX, targetZ = lapPoint(math.atan(z, x) + JEEP_LOOK_AHEAD)
+	local dx, dz = targetX - x, targetZ - z
+	local distance = math.sqrt(dx * dx + dz * dz)
+	if distance < 0.001 then
+		return
+	end
+	dx, dz = dx / distance, dz / distance
+
 	local vx, _, vz = demoJeep:getVelocity()
-	if math.sqrt(vx * vx + vz * vz) < JEEP_STUCK_SPEED then
+	local speed = math.sqrt(vx * vx + vz * vz)
+
+	--[[
+		Caught on something anyway: lift it back onto the circle facing the right way. The lap is meant to be
+		clear, but one loose brick or a player under a wheel would otherwise leave it parked there for as
+		long as the game is open
+	]]
+	if speed < JEEP_STUCK_SPEED then
 		jeepStuckForMS = jeepStuckForMS + deltaMS
 		if jeepStuckForMS >= JEEP_STUCK_MS then
-			jeepStuckForMS = 0
-			jeepLeg = jeepLeg % #JEEP_LAP + 1
-			demoJeep:setPosition(x, y + 2, z)
-			demoJeep:setRotation(1, 0, 0, 0)
-			demoJeep:setVelocity(0, 0, 0)
-			demoJeep:setAngularVelocity(0, 0, 0)
+			putJeepOnLap(math.atan(z, x) + JEEP_LOOK_AHEAD)
 			return
 		end
 	else
 		jeepStuckForMS = 0
 	end
 
-	dx, dz = dx / distance, dz / distance
+	--How far round it would have to turn to point at that spot, positive being to its right
+	local turn = math.atan(facingX * dz - facingZ * dx, facingX * dx + facingZ * dz)
 
-	--Its own falling is left alone, only the way it drives is pushed
-	local _, vy, _ = demoJeep:getVelocity()
-	local speed = 26
-	demoJeep:setVelocity(dx * speed, vy, dz * speed)
+	--Steer once the error is clearly to one side, and hold that until it's clearly back in the middle
+	if turn > JEEP_STEER_ON then
+		jeepSteer = 1
+	elseif turn < -JEEP_STEER_ON then
+		jeepSteer = -1
+	elseif math.abs(turn) < JEEP_STEER_OFF then
+		jeepSteer = 0
+	end
 
-	--Turned to face where it's going. The model's forward is -Z, so the angle is measured from that
-	local yaw = math.atan(dx, -dz)
-	demoJeep:setRotation(math.cos(yaw / 2), 0, math.sin(yaw / 2), 0)
-	demoJeep:setAngularVelocity(0, 0, 0)
+	--Off the throttle once it's up to speed, back on well below it, so it holds the circle rather than
+	--sliding wide off it and doesn't chatter on and off around one number
+	if speed > JEEP_CRUISE then
+		jeepThrottle = false
+	elseif speed < JEEP_CRUISE * 0.8 then
+		jeepThrottle = true
+	end
+
+	--Steering is also what keeps its wheels throwing dirt, see Vehicle::drive
+	demoJeep:drive(jeepThrottle, false, jeepSteer < 0, jeepSteer > 0, false)
 end
 
 --------------------------------------------------------------------------------------------------------

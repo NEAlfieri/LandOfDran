@@ -2140,6 +2140,80 @@ static int LUA_vehicleEjectDriver(lua_State* L)
 	return 0;
 }
 
+/*
+	vehicle:drive(forward, backward, left, right, brake)
+
+	Holds a set of a driver's keys down on a vehicle nobody is in, the same call their keys make every tick.
+	It keeps them held until this is called again, so it steers, spins its wheels, leans on its suspension
+	and throws dirt exactly like a driven one. vehicle:stopDriving() lets go of everything
+*/
+static int LUA_vehicleDrive(lua_State* L)
+{
+	scope("(LUA) vehicle:drive");
+
+	int args = lua_gettop(L);
+	if (args < 1 || args > 6)
+	{
+		error("Expected 0 to 5 arguments vehicle:drive(forward,backward,left,right,brake)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	//Each key is optional and off by default
+	bool keys[5] = { false, false, false, false, false };
+	for (int a = 2; a <= args; a++)
+		keys[a - 2] = lua_toboolean(L, a);
+
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, "vehicle:drive(forward,backward,left,right,brake)");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	//Whoever is actually sitting in it drives it, their keys are read every tick and would just overwrite these
+	if (!vehicle->driver.expired())
+	{
+		error("That vehicle has a driver, whose own keys drive it");
+		return 0;
+	}
+
+	vehicle->luaDriving = true;
+	vehicle->luaForward = keys[0];
+	vehicle->luaBackward = keys[1];
+	vehicle->luaLeft = keys[2];
+	vehicle->luaRight = keys[3];
+	vehicle->luaBrake = keys[4];
+	return 0;
+}
+
+//vehicle:stopDriving(): lets go of every key, leaving it to roll to a stop and park like any empty vehicle
+static int LUA_vehicleStopDriving(lua_State* L)
+{
+	scope("(LUA) vehicle:stopDriving");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:stopDriving()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	vehicle->luaDriving = false;
+	vehicle->luaForward = vehicle->luaBackward = vehicle->luaLeft = vehicle->luaRight = vehicle->luaBrake = false;
+	return 0;
+}
+
+//vehicle:isDriving(): whether Lua is holding its keys down
+static int LUA_vehicleIsDriving(lua_State* L)
+{
+	scope("(LUA) vehicle:isDriving");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:isDriving()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	lua_pushboolean(L, vehicle->luaDriving);
+	return 1;
+}
+
 static int LUA_vehicleGetBuilder(lua_State* L)
 {
 	scope("(LUA) vehicle:getBuilder");
@@ -2574,6 +2648,9 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "isDestructable", LUA_vehicleIsDestructable },
 		{ "getPassenger", LUA_vehicleGetPassenger },
 		{ "ejectDriver", LUA_vehicleEjectDriver },
+		{ "drive", LUA_vehicleDrive },
+		{ "stopDriving", LUA_vehicleStopDriving },
+		{ "isDriving", LUA_vehicleIsDriving },
 		{ "getBuilder", LUA_vehicleGetBuilder },
 		{ "getBuilderID", LUA_vehicleGetBuilderID },
 		{ "getSpawnBrick", LUA_vehicleGetSpawnBrick },

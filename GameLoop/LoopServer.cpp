@@ -399,6 +399,9 @@ void LoopServer::updateVehicles(float deltaT)
 				driver->client->sendCenterPrint("You have reached this vehicle's max speed!", 3000, 1.0f, 1.0f, 1.0f);
 			}
 		}
+		//Nobody in the seat, but a script is holding its keys down, see vehicle:drive
+		else if (vehicle->luaDriving)
+			vehicle->drive(vehicle->luaForward, vehicle->luaBackward, vehicle->luaLeft, vehicle->luaRight, vehicle->luaBrake);
 		else if (!pushVehicle(pd, vehicle))
 			vehicle->park();
 

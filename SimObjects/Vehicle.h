@@ -104,6 +104,14 @@ class Vehicle : public SimObject
 
 	public:
 
+	/*
+		Server: Lua is driving it with vehicle:drive, with nobody in the seat. The keys are held until it's
+		called again, the way a driver's are between their movement packets, and a real driver getting in
+		takes it back over. See LoopServer::updateVehicles
+	*/
+	bool luaDriving = false;
+	bool luaForward = false, luaBackward = false, luaLeft = false, luaRight = false, luaBrake = false;
+
 	//Like the old game
 	static constexpr size_t maxBricks = 10000;
 	static constexpr size_t maxWheels = 24;
