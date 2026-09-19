@@ -325,9 +325,68 @@ local BOT_WAYPOINTS = {
 --How close to a waypoint counts as having got there, studs
 local WAYPOINT_REACHED = 4
 
---Studs a bot will shoot from, and how far apart shots are
+--Studs a bot will shoot from
 local BOT_RANGE = 70
-local BOT_FIRE_MS = 420
+
+--[[
+	What the bots fight with. Every one of these is a real registered weapon out of the add-ons, and a bot
+	fires it the way Support_Weapons.lua fires it for a player: the same round at the same speed with the
+	same drop, spread and pellets, tagged with the weapon's own name, so the add-on's own ProjectileHit
+	listener gives every shot its real flash, crack, dust and hole in the brick.
+
+	fireMS is how long a bot waits between shots, which isn't the weapon's own fireDelayMS: a bot has all
+	day to aim and never reloads, so what a gun can do and what looks right coming from one aren't the same
+	thing. burst is how many shots in a row an automatic gets before it waits restMS instead
+]]
+local BOT_ARSENAL = {
+	{ weapon = "gun",           fireMS = 520,  jitterMS = 250 },
+	{ weapon = "pistol",        fireMS = 400,  jitterMS = 200 },
+	{ weapon = "submachinegun", fireMS = 110,  jitterMS = 40, burst = 5, restMS = 1000 },
+	{ weapon = "bow",           fireMS = 1000, jitterMS = 400 },
+	{ weapon = "pumpShotgun",   fireMS = 950,  jitterMS = 300 },
+}
+
+--How far a bot's own aim wanders, in radians, before the weapon's spread goes on top of it per pellet.
+--Nobody in the demo is a crack shot, and near misses cracking off the bricks are half the point
+local BOT_AIM_CONE = 0.035
+
+--Radians either way for each 1 of a weapon's spread field, the same conversion Support_Weapons.lua makes
+local SPREAD_TO_RADIANS = 5 * math.pi
+
+--A hitscan weapon's tracer is only something to watch, so it's tagged with something Weapons has no entry
+--for: nothing is meant to happen where it lands
+local DEMO_TRACER_TAG = "demoTracer"
+local DEMO_TRACER_SPEED = 320
+
+--From NetTypes/NetType.h's SimObjectType enum
+local DYNAMIC_TYPE_ID = 1
+
+--[[
+	The bots keep their own health, because Damage.lua's lives on clients' players and a bot is not a
+	client. The weapons' real damage numbers are used as they are, so this one number is the whole of how
+	often somebody dies, and eight players is a lot of gunfire: at a real player's 100 health two or three
+	of them were lying on the floor at any moment. This is about nine rounds of the Gun, or three shotgun
+	shells from close up, which leaves one body on the ground most of the time and none of it for seconds
+	at a stretch
+]]
+local BOT_HEALTH = 280
+
+--How long a body lies there before that bot is back on its feet where it started
+local BOT_RESPAWN_MS = 5000
+
+--[[
+	How often one bot can show being hurt. Every round that lands would be the honest thing, which is what a
+	player gets, but a submachinegun puts eight of them a second into somebody and there are eight players
+	fighting at once: the whole screen behind the menu fills up with OUCH! and the air with grunting. One
+	every so often reads as someone taking fire just as well, and the shots themselves still land where they
+	land
+]]
+local BOT_HURT_SHOW_MS = 700
+
+--How a body is thrown as it goes over, in studs per second, and how fast it tips, in radians per second
+local CORPSE_PUSH_SPEED = 6
+local CORPSE_LIFT_SPEED = 8
+local CORPSE_TIP_SPEED = 6
 
 --[[
 	How far off an enemy a bot is happy to be. Further than BOT_HOLD_FAR it carries on to wherever it was
@@ -352,8 +411,8 @@ local function randomFrom(list)
 	return list[math.random(#list)]
 end
 
---A player-looking bot of one team, standing where it's put
-local function makeBot(team, x, z)
+--A player-looking bot of one team, standing where it's put, fighting with the weapon it was dealt
+local function makeBot(team, x, z, kit)
 	local bot = createDynamic(brickhead, x, FLOOR_TOP + 1, z)
 	if not bot then
 		return nil
@@ -379,10 +438,20 @@ local function makeBot(team, x, z)
 	bot:setMeshColor("Left_Foot", 0.1, 0.1, 0.1, 1)
 	bot:setMeshDecal("Face1", randomFrom(FACES))
 
-	--Hats, which the demo's own gunfire can knock off again, see Hats.lua
-	bot:setPart("hat", randomFrom(HATS), 0, 0, 0, 0, 1)
+	--Hats, which the demo's own gunfire can knock off again, see Hats.lua. Which one it wears is kept, so
+	--that one shot off its head is back on when it respawns
+	bot.hat = randomFrom(HATS)
+	bot:setPart("hat", bot.hat, 0, 0, 0, 0, 1)
 
 	bot.team = team
+	--Which of the demo's weapons it fights with, and how its trigger goes, see BOT_ARSENAL
+	bot.kit = kit
+	bot.burstLeft = 0
+	--What everything that hurts a bot looks for, since nothing else in the world is one
+	bot.demoBot = true
+	bot.health = BOT_HEALTH
+	bot.dead = false
+	bot.deaths = 0
 	bot.nextFireMS = 0
 	bot.waypoint = nil
 	bot.jetUntilMS = 0
@@ -395,11 +464,31 @@ local function makeBot(team, x, z)
 	return bot
 end
 
+--[[
+	Weapons are dealt out of a shuffled arsenal rather than picked at random for each bot, so that all five
+	of them turn up among eight rather than three bots happening to draw the same gun
+]]
+local dealt = {}
+
+local function dealKit()
+	if #dealt == 0 then
+		for i, kit in ipairs(BOT_ARSENAL) do
+			dealt[i] = kit
+		end
+		for i = #dealt, 2, -1 do
+			local j = math.random(i)
+			dealt[i], dealt[j] = dealt[j], dealt[i]
+		end
+	end
+
+	return table.remove(dealt)
+end
+
 --Spread along opposite sides so they don't spawn inside each other and meet somewhere in the middle
 local function spawnTeams()
 	for i = 1, 4 do
-		makeBot("red", -30 + i * 6, -30)
-		makeBot("blue", 30 - i * 6, 30)
+		makeBot("red", -30 + i * 6, -30, dealKit())
+		makeBot("blue", 30 - i * 6, 30, dealKit())
 	end
 end
 
@@ -412,7 +501,8 @@ local function enemyInSight(bot)
 
 	local best, bestDistance = nil, BOT_RANGE
 	for _, other in ipairs(demoBots) do
-		if other.team ~= bot.team then
+		--Nobody shoots at a body: it's lying there until it respawns, see demoKillBot
+		if other.team ~= bot.team and not other.dead then
 			local ox, oy, oz = other:getPosition()
 			local toY = oy + BOT_MUZZLE_HEIGHT
 			local distance = math.sqrt((ox - x) ^ 2 + (oy - y) ^ 2 + (oz - z) ^ 2)
@@ -430,9 +520,291 @@ local function enemyInSight(bot)
 	return best
 end
 
---A round from the demo's own guns. Tagged "gun" so the weapon add-on's own ProjectileHit listener gives
---it the real thing: the dust and flash where it lands, the crack of it hitting, and a hole in the brick
-local function botFire(bot, target)
+--[[
+	Getting shot
+
+	Damage.lua keeps health on clients' players and a bot is not a client, so the demo keeps its own: the
+	weapons' real damage numbers off BOT_HEALTH, and a body that falls over where it died.
+
+	A body is the same dynamic the bot was, rather than a new one. Damage.lua has to swap a player for a
+	corpse because its client is still controlling that player; nothing controls a bot, so letting go of
+	its keys and letting it tip over is the whole of it, and everything else in the demo that holds onto a
+	bot - the camera's star, the crowd the shots are framed on - carries on without knowing anyone died
+]]
+
+--Takes health off a bot, showing it being hurt, and kills it if that was the last of it. x, y, z is where
+--it was hit, or nothing
+function demoDamageBot(bot, amount, x, y, z)
+	if bot.dead or amount == nil or amount <= 0 then
+		return
+	end
+
+	bot.health = bot.health - amount
+
+	--serverstart.lua's: the ouch particles and the grunt, but not for every round that lands, see
+	--BOT_HURT_SHOW_MS. The red vignette in there is for a client, and is quietly skipped for a bot
+	if demoClockMS >= (bot.nextHurtShowMS or 0) then
+		bot.nextHurtShowMS = demoClockMS + BOT_HURT_SHOW_MS
+		hurtPlayer(bot, x, y, z)
+	end
+
+	if bot.health <= 0 then
+		demoKillBot(bot, x, y, z)
+	end
+end
+
+--[[
+	A bot's body goes over where it died and lies there until it respawns. Damage.lua's corpseSettle
+	watches it fall and stops it turning once it's down, the same as it does for a player's body, and
+	bot.removed is the flag it reads to know a body it was watching has gone
+]]
+function demoKillBot(bot, fromX, fromY, fromZ)
+	if bot.dead then
+		return
+	end
+
+	bot.dead = true
+	bot.health = 0
+	bot.deaths = bot.deaths + 1
+	bot.fighting = false
+	--It stops walking, and its walk cycle stops with it, leaving an ordinary object to fall over
+	bot:clearBotInput()
+
+	local x, y, z = bot:getPosition()
+
+	--Which way it goes over, level: away from whatever hit it, or any way at all
+	local awayX, awayZ = 0, 0
+	if fromX ~= nil then
+		awayX, awayZ = x - fromX, z - fromZ
+	end
+	local length = math.sqrt(awayX * awayX + awayZ * awayZ)
+	if length < 0.05 then
+		local angle = math.random() * math.pi * 2
+		awayX, awayZ, length = math.cos(angle), math.sin(angle), 1
+	end
+	awayX, awayZ = awayX / length, awayZ / length
+
+	--[[
+		A body is a box, and one that fell cornerways would come to rest on an edge, so it goes over
+		forwards, backwards or to one side, whichever of those is nearest to the way it was pushed. A bot
+		is only ever turned about its up, so those four are the way it's facing and the two ways across it
+	]]
+	local lookX, lookZ = bot.lookX or 1, bot.lookZ or 0
+	local best = -2
+	for _, axis in ipairs({{lookX, lookZ}, {lookZ, -lookX}}) do
+		for sign = -1, 1, 2 do
+			local along = (axis[1] * awayX + axis[2] * awayZ) * sign
+			if along > best then
+				best, awayX, awayZ = along, axis[1] * sign, axis[2] * sign
+			end
+		end
+	end
+
+	local velX, velY, velZ = bot:getVelocity()
+	--Nothing tips a bot over while it's on its feet, so this is where it's let go of
+	bot:setAngularFactor(1, 1, 1)
+	bot:setVelocity(velX + awayX * CORPSE_PUSH_SPEED, velY + CORPSE_LIFT_SPEED, velZ + awayZ * CORPSE_PUSH_SPEED)
+	--Turning around the level axis square to the way it falls tips its head that way
+	bot:setAngularVelocity(awayZ * CORPSE_TIP_SPEED, 0, -awayX * CORPSE_TIP_SPEED)
+	bot:playSound("Death")
+
+	--Damage.lua's, which stops it turning once it's lying down: a look every 50 ms, 60 of them at most
+	bot.removed = false
+	schedule(50, "corpseSettle", bot, 60, 0)
+
+	schedule(BOT_RESPAWN_MS, "demoRespawnBot", bot, bot.deaths)
+end
+
+--Back on its feet where it started, its body going in the same puff of smoke a player's leaves in
+function demoRespawnBot(bot, deaths)
+	--Put back some other way since this was scheduled
+	if not bot.dead or bot.deaths ~= deaths then
+		return
+	end
+
+	local x, y, z = bot:getPosition()
+	addEmitter("bodyRemoveEmitter", x, y + 1, z)
+	playSound("BodyRemove", x, y, z)
+
+	--Nothing left for corpseSettle to do to it, whether or not it had finished watching it fall
+	bot.removed = true
+
+	bot:setPosition(bot.homeX, FLOOR_TOP + 2, bot.homeZ)
+	bot:setRotation(1, 0, 0, 0)
+	bot:setVelocity(0, 0, 0)
+	bot:setAngularVelocity(0, 0, 0)
+	--Back on its feet, and upright for good again
+	bot:setAngularFactor(0, 0, 0)
+	--And wearing its hat, in case a shot took that off, see Hats.lua
+	bot:setPart("hat", bot.hat, 0, 0, 0, 0, 1)
+	bot:playSound("Spawn")
+
+	bot.health = BOT_HEALTH
+	bot.dead = false
+	bot.waypoint = nil
+	bot.burstLeft = 0
+	bot.nextFireMS = 0
+end
+
+--[[
+	Rounds of the bots' still in the air that have a lifetime, by ID, so that one whose time runs out is
+	only taken away if it hasn't already hit something and been removed by the engine
+]]
+local demoFlyingShots = {}
+
+function demoShotExpired(shotID)
+	local shot = demoFlyingShots[shotID]
+	if shot ~= nil then
+		demoFlyingShots[shotID] = nil
+		shot:destroy()
+	end
+end
+
+--[[
+	Where a bot's round lands. Support_Weapons.lua's own listener has already done everything a shot does
+	to the world - the hole, the dust, the crack - and everything it does to a player; this is the one part
+	it can't do, since its hurtIfPlayer only knows how to hurt a client's player
+]]
+function demoProjectileHit(projectile, hit, x, y, z, tag, normalX, normalY, normalZ)
+	demoFlyingShots[projectile.id] = nil
+
+	local weapon = Weapons[tag]
+	if weapon ~= nil and hit ~= nil and hit.type == DYNAMIC_TYPE_ID and hit.demoBot then
+		demoDamageBot(hit, weapon.damage, x, y, z)
+	end
+
+	return projectile, hit, x, y, z, tag, normalX, normalY, normalZ
+end
+registerEventListener("ProjectileHit", "demoProjectileHit")
+
+--[[
+	And the same for a blast, which is how a launcher shell does its damage: Damage.lua's damageByImpulse
+	hurts every player a radiusImpulse pushed, by the square of the push that reached them, so the bots take
+	the same off the same push. impulseHarmless is set around a blast that does its own damage and only
+	wants the shove
+]]
+function demoImpulseHit(dynamic, x, y, z, strength)
+	if strength > 0 and not impulseHarmless and dynamic.demoBot then
+		demoDamageBot(dynamic, strength * strength * IMPULSE_DAMAGE_SCALE)
+	end
+
+	return dynamic, x, y, z, strength
+end
+registerEventListener("RadiusImpulseHit", "demoImpulseHit")
+
+--A direction knocked off course by up to angle radians, the way a shotgun throws its pellets apart
+local function wobble(dirX, dirY, dirZ, angle)
+	if angle <= 0 then
+		return dirX, dirY, dirZ
+	end
+
+	--Two axes across the shot to push it around in. Any pair at right angles to it will do
+	local sideX, sideY, sideZ = -dirZ, 0, dirX
+	local sideLength = math.sqrt(sideX * sideX + sideZ * sideZ)
+	if sideLength < 0.0001 then
+		sideX, sideY, sideZ, sideLength = 1, 0, 0, 1
+	end
+	sideX, sideZ = sideX / sideLength, sideZ / sideLength
+
+	local upX = dirY * sideZ - dirZ * sideY
+	local upY = dirZ * sideX - dirX * sideZ
+	local upZ = dirX * sideY - dirY * sideX
+
+	local across = (math.random() * 2 - 1) * angle
+	local over = (math.random() * 2 - 1) * angle
+
+	local outX = dirX + sideX * across + upX * over
+	local outY = dirY + sideY * across + upY * over
+	local outZ = dirZ + sideZ * across + upZ * over
+
+	local outLength = math.sqrt(outX * outX + outY * outY + outZ * outZ)
+	if outLength < 0.0001 then
+		return dirX, dirY, dirZ
+	end
+
+	return outX / outLength, outY / outLength, outZ / outLength
+end
+
+--[[
+	One round out of the barrel, the way Support_Weapons.lua's fireOneShot puts one there for a player: a
+	real projectile for most of them, tagged with the weapon's name so everything that happens where it
+	lands is the add-on's own, and a hitscan shot with a tracer to watch for the pistol, which is how that
+	one was written
+]]
+local function botFireOne(bot, weapon, fromX, fromY, fromZ, dirX, dirY, dirZ)
+	if weapon.projectile ~= nil then
+		local projectileType = getDynamicType(weapon.projectile)
+		if projectileType == nil then
+			return
+		end
+
+		local speed = weapon.projectileSpeed or 200
+		local shot = addProjectile(projectileType, fromX, fromY, fromZ,
+			dirX * speed, dirY * speed, dirZ * speed, weapon.name, bot)
+		if shot == nil then
+			return
+		end
+
+		--gravityMod in the originals, how much of normal gravity the round feels on its way out
+		shot:setGravity(0, WORLD_GRAVITY * (weapon.gravityScale or 0), 0)
+
+		--What streams out behind it, like the bow's arrow trail
+		if weapon.trailEmitter ~= nil then
+			local trail = addEmitter(weapon.trailEmitter, fromX, fromY, fromZ)
+			if trail ~= nil then
+				trail:attachToDynamic(shot)
+			end
+		end
+
+		--A round that hits nothing is cleared away rather than flying on out over the sea forever
+		if weapon.projectileLifetimeMS ~= nil then
+			demoFlyingShots[shot.id] = shot
+			schedule(weapon.projectileLifetimeMS, "demoShotExpired", shot.id)
+		end
+
+		return
+	end
+
+	--Hitscan: where the shot lands is worked out right away, and the tracer is only there to be seen
+	local range = weapon.range or 200
+	local hit, hitX, hitY, hitZ, normalX, normalY, normalZ = raycast(fromX, fromY, fromZ,
+		fromX + dirX * range, fromY + dirY * range, fromZ + dirZ * range, bot)
+
+	if hitX == nil then
+		hitX, hitY, hitZ = fromX + dirX * range, fromY + dirY * range, fromZ + dirZ * range
+	else
+		weaponImpactEffect(weapon, hitX, hitY, hitZ, hit, normalX, normalY, normalZ)
+		if hit ~= nil and hit.type == DYNAMIC_TYPE_ID and hit.demoBot then
+			demoDamageBot(hit, weapon.damage, hitX, hitY, hitZ)
+		end
+	end
+
+	local tracerType = weapon.tracer ~= nil and getDynamicType(weapon.tracer) or nil
+	if tracerType ~= nil then
+		local toX, toY, toZ = hitX - fromX, hitY - fromY, hitZ - fromZ
+		local distance = math.sqrt(toX * toX + toY * toY + toZ * toZ)
+		if distance < 0.001 then
+			toX, toY, toZ, distance = dirX, dirY, dirZ, 1
+		end
+
+		addProjectile(tracerType, fromX, fromY, fromZ, toX / distance * DEMO_TRACER_SPEED,
+			toY / distance * DEMO_TRACER_SPEED, toZ / distance * DEMO_TRACER_SPEED, DEMO_TRACER_TAG, bot)
+	end
+end
+
+--[[
+	One pull of a bot's trigger with whatever it's carrying: the shot's sound and the flash off the barrel,
+	then a round for each pellet, thrown apart by the weapon's own spread around wherever the bot was aiming
+
+	They have no hands to hold a gun in - items belong to clients - so a shot leaves from in front of their
+	chest rather than from the muzzle of a model
+]]
+local function botShoot(bot, target)
+	local weapon = Weapons[bot.kit.weapon]
+	if weapon == nil then
+		return
+	end
+
 	local x, y, z = bot:getPosition()
 	local tx, ty, tz = target:getPosition()
 
@@ -445,31 +817,41 @@ local function botFire(bot, target)
 		return
 	end
 
-	--Nobody in the demo is a crack shot, and near misses cracking off the bricks are half the point
-	local spread = 0.035
-	dx = dx / length + (math.random() - 0.5) * spread
-	dy = dy / length + (math.random() - 0.5) * spread
-	dz = dz / length + (math.random() - 0.5) * spread
-
-	local gun = Weapons["gun"]
-	local speed = gun and gun.projectileSpeed or 180
+	--Where this one is really aiming, which the pellets of a shotgun shell then scatter around
+	dx, dy, dz = wobble(dx / length, dy / length, dz / length, BOT_AIM_CONE)
 
 	--Out in front of them rather than out of their middle, so the round doesn't start inside their own box
 	local muzzleX = x + dx * 1.6
 	local muzzleY = fromY + dy * 1.6
 	local muzzleZ = z + dz * 1.6
 
-	local round = addProjectile(gunBullet, muzzleX, muzzleY, muzzleZ, dx * speed, dy * speed, dz * speed, "gun", bot)
-	if round then
-		round:setGravity(0, 0, 0)
+	if weapon.sounds ~= nil and weapon.sounds.fire ~= nil then
+		playSound(weapon.sounds.fire, muzzleX, muzzleY, muzzleZ)
 	end
 
-	local flash = addEmitter("GunFlashEmitter", muzzleX, muzzleY, muzzleZ)
-	if flash then
-		schedule(50, "weaponRemoveEmitter", flash)
+	if weapon.muzzleEmitter ~= nil then
+		local flash = addEmitter(weapon.muzzleEmitter, muzzleX, muzzleY, muzzleZ)
+		if flash ~= nil then
+			schedule(weapon.muzzleEmitterMS or 60, "weaponRemoveEmitter", flash)
+		end
 	end
 
-	playSound("GunShot1", muzzleX, muzzleY, muzzleZ)
+	--The demo opens at night, so what a gun lights up around itself as it goes off is worth having
+	if weapon.muzzleLight ~= nil then
+		local color = weapon.muzzleLight.color
+		local light = createLight(muzzleX, muzzleY, muzzleZ, color[1], color[2], color[3],
+			weapon.muzzleLight.brightness, 0, weapon.muzzleLight.coronaWidth or 0)
+
+		if light ~= nil then
+			schedule(weapon.muzzleLight.forMS or 50, "weaponRemoveLight", light)
+		end
+	end
+
+	local spread = (weapon.spread or 0) * SPREAD_TO_RADIANS
+	for pellet = 1, (weapon.pellets or 1) do
+		local pelletX, pelletY, pelletZ = wobble(dx, dy, dz, spread)
+		botFireOne(bot, weapon, muzzleX, muzzleY, muzzleZ, pelletX, pelletY, pelletZ)
+	end
 end
 
 --[[
@@ -508,6 +890,11 @@ end
 
 --Once every brain tick: pick somewhere to be, shoot at whoever is in the way of getting there
 local function thinkBot(bot, nowMS)
+	--Nothing to think about while it's lying there, see demoKillBot
+	if bot.dead then
+		return
+	end
+
 	local x, y, z = bot:getPosition()
 
 	--Fell in the sea, or was thrown off the island by a blast: put them back where they started
@@ -580,8 +967,22 @@ local function thinkBot(bot, nowMS)
 				bot.nextFireMS = nowMS + 1200
 			end
 		elseif nowMS >= bot.nextFireMS then
-			botFire(bot, target)
-			bot.nextFireMS = nowMS + BOT_FIRE_MS + math.random(0, 250)
+			botShoot(bot, target)
+
+			--[[
+				An automatic fires a run of shots at its own rate and then waits, which is most of what
+				makes a submachinegun sound like one. Everything else has a burst of one and so waits
+				after every shot
+			]]
+			local kit = bot.kit
+			if bot.burstLeft > 0 then
+				bot.burstLeft = bot.burstLeft - 1
+			else
+				bot.burstLeft = (kit.burst or 1) - 1
+			end
+
+			local wait = bot.burstLeft > 0 and kit.fireMS or (kit.restMS or kit.fireMS)
+			bot.nextFireMS = nowMS + wait + math.random(0, kit.jitterMS)
 		end
 	end
 
@@ -874,7 +1275,8 @@ local function pushClear(x, y, z, minimum, except)
 	--Twice, since being shoved clear of one of them can put it inside the next
 	for pass = 1, 2 do
 		for _, bot in ipairs(demoBots) do
-			if bot ~= except then
+			--A body lying on the floor is nothing for the camera to dodge
+			if bot ~= except and not bot.dead then
 			local bx, _, bz = bot:getPosition()
 			local dx, dz = x - bx, z - bz
 			local distance = math.sqrt(dx * dx + dz * dz)
@@ -910,18 +1312,25 @@ local function easeAngle(current, target, k)
 	return current + difference * k
 end
 
---One of the bots in a fight if any of them are, otherwise any of them at all
+--One of the bots in a fight if any of them are, otherwise any of them still on their feet
 local function pickStar()
 	local fighting = {}
+	local living = {}
 	for _, bot in ipairs(demoBots) do
-		if bot.fighting then
-			table.insert(fighting, bot)
+		if not bot.dead then
+			table.insert(living, bot)
+			if bot.fighting then
+				table.insert(fighting, bot)
+			end
 		end
 	end
 	if #fighting > 0 then
 		demoStar = fighting[math.random(#fighting)]
-	elseif #demoBots > 0 then
-		demoStar = demoBots[math.random(#demoBots)]
+	elseif #living > 0 then
+		demoStar = living[math.random(#living)]
+	else
+		--Everyone on the floor at once, which the shot falls back to the wide one for
+		demoStar = nil
 	end
 
 	--The shot opens behind whoever it picked, rather than turning to get there
@@ -957,8 +1366,10 @@ local crowdKnown = false
 local function updateCrowdCenter(msPerTick)
 	local x, y, z, count = 0, 0, 0, 0
 	for _, bot in ipairs(demoBots) do
-		local bx, by, bz = bot:getPosition()
-		x, y, z, count = x + bx, y + by, z + bz, count + 1
+		if not bot.dead then
+			local bx, by, bz = bot:getPosition()
+			x, y, z, count = x + bx, y + by, z + bz, count + 1
+		end
 	end
 
 	if count == 0 then
@@ -1179,6 +1590,16 @@ function demoTick()
 		for _, bot in ipairs(demoBots) do
 			thinkBot(bot, demoClockMS)
 		end
+	end
+
+	--[[
+		The over-the-shoulder shot follows one player, and a body lying on the floor for the rest of the
+		shot is a shot of nothing, so somebody else is picked the moment the one being followed dies. It's
+		a cut rather than a swing: easing across the island to the next one would take the whole shot
+	]]
+	if demoStar ~= nil and demoStar.dead then
+		pickStar()
+		camSnap = true
 	end
 
 	driveJeep(msPerTick)

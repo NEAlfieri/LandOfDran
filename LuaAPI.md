@@ -288,11 +288,26 @@ only the picture behind the menu. The one client connected to it is a camera.
 
 It runs `serverstart.lua` first, so it has the whole real game (every model, sound, emitter, weapon and add-on) and picks
 up new work for free, then unregisters every `ClientJoin` listener so nobody is given a player. What it adds is its own:
-an island built out of about 200 bricks, eight [bots](#bots) fighting over it with the Gun add-on's rounds (tagged
-`"gun"`, so `Support_Weapons.lua`'s own listener gives them their real bullet holes, dust and crack) and the launcher's
-shells every so often, a jeep driving itself round a circle with `vehicle:drive` with a bot sat at the wheel
+an island built out of about 200 bricks, eight [bots](#bots) fighting over it, a launcher shell lobbed into the middle
+of them every so often, a jeep driving itself round a circle with `vehicle:drive` with a bot sat at the wheel
 (`vehicle:setDriver`) wearing whatever the person at the menu picked in their own appearance editor
 (`client:applyAppearance`), and five camera shots cut between on a timer.
+
+The bots really fight. Each is dealt one of the real weapons (the Gun, and Tier 1's pistol, submachinegun and pump
+shotgun, and the Bow) out of a shuffled list, so all five are on the island at once, and fires it the way
+`Support_Weapons.lua` fires it for a player: the same round at the same speed with the same drop, spread and pellets,
+its own muzzle flash, light and sound, and the round tagged with the weapon's name so that add-on's own `ProjectileHit`
+listener gives every shot its real hole, dust and crack where it lands. The pistol is hitscan with a tracer, as it is
+in anyone's hands.
+
+They also take the weapons' real damage and die of it, which `Damage.lua` can't do for them: its health lives on
+clients' players and a bot is not a client, so the demo keeps health on the bots themselves and listens to
+`ProjectileHit` and `RadiusImpulseHit` for what lands on one. A bot that runs out drops its keys, tips over where it
+stood (`corpseSettle` out of `Damage.lua` stops the body turning once it's down) and lies there for five seconds, then
+goes in the same puff of smoke a player's body does and is back on its feet where its team started. The body is the
+same dynamic the bot was, rather than a new one the way a player's is, since nothing was controlling it; that's what
+lets the camera and the bots' own targeting simply skip whoever is dead. One number, `BOT_HEALTH`, is how often anyone
+dies.
 
 Two things in it are worth copying for any script that has to move a camera:
 
