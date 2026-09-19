@@ -348,11 +348,13 @@ void LoopServer::updateVehicles(float deltaT)
 
 		std::shared_ptr<ClientData> driver = vehicle->driver.lock();
 
-		//A driver whose client left, or whose player was destroyed or swapped out, gets out
+		//A driver whose client left, or whose player was destroyed or swapped out, gets out. One Lua sat
+		//there has no client to lose and only leaves when its dynamic is gone, see vehicle:setDriver
 		if (vehicle->driverID != NO_ID)
 		{
 			std::shared_ptr<Dynamic> player = pd.dynamics->find(vehicle->driverID);
-			bool stillDriving = driver && player && !driver->controllers.empty() && driver->controllers[0].target.lock() == player;
+			bool stillDriving = vehicle->luaSeatedDriver ? (player != nullptr)
+				: (driver && player && !driver->controllers.empty() && driver->controllers[0].target.lock() == player);
 			if (!stillDriving)
 			{
 				if (driver)
@@ -360,6 +362,7 @@ void LoopServer::updateVehicles(float deltaT)
 				else
 				{
 					vehicle->driverID = NO_ID;
+					vehicle->luaSeatedDriver = false;
 					server->broadcast(vehicle->makeDriverPacket(), OtherReliable);
 				}
 				driver = nullptr;

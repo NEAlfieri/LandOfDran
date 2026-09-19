@@ -373,6 +373,7 @@ local function makeBot(team, x, z)
 	bot:setMeshColor("Face1", 0.90, 0.75, 0.55, 1)
 	bot:setMeshColor("Lower_Body", 0.15, 0.15, 0.18, 1)
 	bot:setMeshColor("Right_Leg", 0.15, 0.15, 0.18, 1)
+	bot:setMeshColor("Wedge", 0.15, 0.15, 0.18, 1)
 	bot:setMeshColor("Left_Leg", 0.15, 0.15, 0.18, 1)
 	bot:setMeshColor("Right_Foot", 0.1, 0.1, 0.1, 1)
 	bot:setMeshColor("Left_Foot", 0.1, 0.1, 0.1, 1)
@@ -694,7 +695,35 @@ end
 startJeep()
 
 --[[
-	Nobody is in it, so it drives itself: vehicle:drive holds the same keys a driver would and the vehicle
+	Somebody behind the wheel. A vehicle's driver is a dynamic rather than a client as far as everything
+	that draws one is concerned, so a bot sat there with vehicle:setDriver is drawn in the seat, holding
+	the jeep's sit pose, for nothing more than saying so
+
+	It's dressed as whoever is at the menu: demoJoin puts their own appearance editor's colors, face,
+	shirt and hat on it, so the player driving past is them
+]]
+demoDriver = nil
+
+local function seatDriver()
+	if not demoJeep then
+		return
+	end
+
+	local x, y, z = demoJeep:getPosition()
+	demoDriver = createDynamic(brickhead, x, y + 4, z)
+	if not demoDriver then
+		return
+	end
+
+	--It never walks anywhere, but a player that can be tipped over looks wrong the moment it's let out
+	demoDriver:setAngularFactor(0, 0, 0)
+	demoJeep:setDriver(demoDriver)
+end
+
+seatDriver()
+
+--[[
+	Nobody is walking it, so it drives itself: vehicle:drive holds the same keys a driver would and the vehicle
 	steers, leans on its suspension and throws dirt off its wheels on its own.
 
 	It chases a point a fixed way round the circle ahead of wherever it is now, rather than a list of
@@ -1203,6 +1232,12 @@ function demoJoin(client)
 	client:setJetsEnabled(false)
 	client:setFlashlightEnabled(false)
 	client:setFreeCameraEnabled(false)
+
+	--The one at the wheel is dressed as whoever is looking at the menu, hat and all. Their game sends
+	--their appearance as it connects, so this is the first moment there's anything to put on
+	if demoDriver then
+		client:applyAppearance(demoDriver)
+	end
 
 	shotIndex = 1
 	shotStartedMS = demoClockMS

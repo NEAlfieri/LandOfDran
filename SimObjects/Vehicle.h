@@ -112,6 +112,14 @@ class Vehicle : public SimObject
 	bool luaDriving = false;
 	bool luaForward = false, luaBackward = false, luaLeft = false, luaRight = false, luaBrake = false;
 
+	/*
+		Server: the dynamic in the driver's seat was put there by vehicle:setDriver rather than by a client
+		getting in, so it has no ClientData behind it. Everything that draws a driver already goes by
+		driverID, which is a dynamic's net ID; this is only so that the check throwing out a driver whose
+		client has gone leaves it alone. See LoopServer::updateVehicles
+	*/
+	bool luaSeatedDriver = false;
+
 	//Like the old game
 	static constexpr size_t maxBricks = 10000;
 	static constexpr size_t maxWheels = 24;

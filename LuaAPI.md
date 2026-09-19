@@ -290,8 +290,9 @@ It runs `serverstart.lua` first, so it has the whole real game (every model, sou
 up new work for free, then unregisters every `ClientJoin` listener so nobody is given a player. What it adds is its own:
 an island built out of about 200 bricks, eight [bots](#bots) fighting over it with the Gun add-on's rounds (tagged
 `"gun"`, so `Support_Weapons.lua`'s own listener gives them their real bullet holes, dust and crack) and the launcher's
-shells every so often, a jeep driving itself round a circle with `vehicle:drive`, and five camera shots cut between on
-a timer.
+shells every so often, a jeep driving itself round a circle with `vehicle:drive` with a bot sat at the wheel
+(`vehicle:setDriver`) wearing whatever the person at the menu picked in their own appearance editor
+(`client:applyAppearance`), and five camera shots cut between on a timer.
 
 Two things in it are worth copying for any script that has to move a camera:
 
@@ -1161,6 +1162,8 @@ anything; use the events to limit that.
 | `vehicle:drive(forward, backward, left, right, brake)` | the driver's keys, each `false` by default | none | Holds a set of a driver's keys down on a vehicle nobody is in, the same call their own keys make every tick, so it accelerates, steers, leans on its suspension and throws dirt off its wheels exactly like a driven one. The keys stay held until this is called again. Logs an error and does nothing for a vehicle that has a driver, whose keys would overwrite these next tick; a driver getting in takes it back over, and letting them out leaves the script driving again. Steering is a key rather than a wheel, so `left` throws the wheels to full lock: something following a path wants a dead zone it holds its last choice through, or it flips lock to lock every tick and scrubs off all its speed. See `menudemo.lua`'s `driveJeep`. |
 | `vehicle:stopDriving()` | none | none | Lets go of every key, leaving it to roll to a stop and park like any other empty vehicle. |
 | `vehicle:isDriving()` | none | bool | Whether Lua is holding its keys down. |
+| `vehicle:setDriver(dynamic)` | a Dynamic nobody is playing | none | Sits a dynamic in the driver's seat, the way a client getting in seats their player: it comes out of the physics world and rides on the seat from then on, and everyone sees it sitting there with a model vehicle's `sit` animation playing, since what draws a driver goes by the seated dynamic rather than by whose it is. `PlayerMount` plays from it. Logs an error and does nothing if the seat is taken, if the dynamic is an item, a projectile, or already riding something, or if a client controls it (use `client:enterVehicle` for those). It stays there until `clearDriver`, or until its dynamic is destroyed. `vehicle:getDriver()` is still about clients, so it gives `nil` for one of these. |
+| `vehicle:clearDriver()` | none | none | Lets a dynamic `setDriver` sat there back out, standing above the seat like a player getting out, and parks the vehicle. Logs an error if nothing Lua sat there is driving. |
 | `vehicle:setDestructable(bool)` / `vehicle:isDestructable()` | bool | none / bool | Whether `radiusImpulse` breaks its bricks off. Off for a new vehicle until a script turns it on, like `serverstart.lua` does from `VehicleCreated`. |
 | `vehicle:getNumSeats()` | none | count | How many passenger seats (seat bricks, or the ones `spawnModelVehicle` was given) it has, not counting the driver's, including seats that were broken off. |
 | `vehicle:getPassenger(seat)` | 0 to `getNumSeats() - 1` | Client or `nil` | Who's riding on that seat. Use `client:exitVehicle` to get them off. |

@@ -2185,6 +2185,109 @@ static int LUA_vehicleDrive(lua_State* L)
 	return 0;
 }
 
+/*
+	vehicle:setDriver(dynamic)
+
+	Sits a dynamic nobody is playing in the driver's seat, the way a client getting in seats their player:
+	it comes out of the physics world and rides on the seat from then on. Everything that draws a driver
+	already goes by the seated dynamic rather than by whose it is, so it's drawn sitting there, with a
+	model vehicle's "sit" animation, for everyone
+*/
+static int LUA_vehicleSetDriver(lua_State* L)
+{
+	scope("(LUA) vehicle:setDriver");
+
+	if (lua_gettop(L) != 2)
+	{
+		error("Expected 1 argument vehicle:setDriver(dynamic)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	lua_pushvalue(L, 2);
+	std::shared_ptr<Dynamic> rider = LUA_pd->dynamics->popLua(L);
+	std::shared_ptr<Vehicle> vehicle = vehicleArgument(L, "vehicle:setDriver(dynamic)");
+	lua_settop(L, 0);
+
+	if (!vehicle || !vehicle->body)
+		return 0;
+
+	if (!rider)
+	{
+		error("Invalid dynamic passed to vehicle:setDriver, was it deleted already?");
+		return 0;
+	}
+
+	if (vehicle->driverID != NO_ID)
+	{
+		error("That vehicle already has a driver");
+		return 0;
+	}
+
+	//An item or a round in the air has no business in a driver's seat, and one already riding something is busy
+	if (rider->getKind() != DynamicKind_Plain || !rider->isInWorld())
+	{
+		error("That dynamic can't drive: it's an item or a projectile, or it isn't standing in the world");
+		return 0;
+	}
+
+	//A client's player is walked by their own game, which would go on doing it while it sits here
+	for (const std::shared_ptr<ClientData>& client : LUA_pd->clients)
+	{
+		for (const std::shared_ptr<Dynamic>& controlled : client->controlledObjects)
+		{
+			if (controlled->getID() == rider->getID())
+			{
+				error("That dynamic is controlled by a client, use client:enterVehicle instead");
+				return 0;
+			}
+		}
+	}
+
+	rider->removeFromWorld();
+	rider->body->setWorldTransform(vehicle->getSeatTransform(false));
+	vehicle->driverID = rider->getID();
+	vehicle->luaSeatedDriver = true;
+	vehicle->body->activate();
+
+	if (LUA_server)
+		LUA_server->broadcast(vehicle->makeDriverPacket(), OtherReliable);
+
+	playSoundOn("PlayerMount", rider, 1.0f, 1.0f);
+	return 0;
+}
+
+//vehicle:clearDriver(): lets a dynamic Lua sat there back out, standing above the seat like a player getting out
+static int LUA_vehicleClearDriver(lua_State* L)
+{
+	scope("(LUA) vehicle:clearDriver");
+
+	std::shared_ptr<Vehicle> vehicle = plainVehicleMethod(L, "vehicle:clearDriver()");
+	lua_settop(L, 0);
+	if (!vehicle)
+		return 0;
+
+	if (!vehicle->luaSeatedDriver)
+	{
+		error("Nothing Lua sat there is driving that vehicle");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> rider = vehicle->driverID != NO_ID ? LUA_pd->dynamics->find(vehicle->driverID) : nullptr;
+
+	vehicle->driverID = NO_ID;
+	vehicle->luaSeatedDriver = false;
+	vehicle->park();
+
+	if (rider)
+		letOut(*vehicle, rider, Vehicle::driverSeat);
+
+	if (LUA_server)
+		LUA_server->broadcast(vehicle->makeDriverPacket(), OtherReliable);
+
+	return 0;
+}
+
 //vehicle:stopDriving(): lets go of every key, leaving it to roll to a stop and park like any empty vehicle
 static int LUA_vehicleStopDriving(lua_State* L)
 {
@@ -2650,6 +2753,8 @@ luaL_Reg* getVehicleFunctions(lua_State* L)
 		{ "ejectDriver", LUA_vehicleEjectDriver },
 		{ "drive", LUA_vehicleDrive },
 		{ "stopDriving", LUA_vehicleStopDriving },
+		{ "setDriver", LUA_vehicleSetDriver },
+		{ "clearDriver", LUA_vehicleClearDriver },
 		{ "isDriving", LUA_vehicleIsDriving },
 		{ "getBuilder", LUA_vehicleGetBuilder },
 		{ "getBuilderID", LUA_vehicleGetBuilderID },
