@@ -62,6 +62,12 @@ else()
 	find_package(Opus CONFIG REQUIRED)
 endif()
 
+# MSVC compiles the source files of a single target one at a time by default; /MP lets it
+# use all available cores, which matters a lot given how many .cpp files this project has.
+if(MSVC)
+	add_compile_options(/MP)
+endif()
+
 find_package(ZLIB REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(Bullet CONFIG REQUIRED)
