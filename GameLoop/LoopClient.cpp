@@ -70,6 +70,7 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 		simulation.vehicles = nullptr;
 	}
 	simulation.camera->alsoIgnore = nullptr;
+	simulation.camera->vehicleDistance = 0.0f;
 	vehicleDraws.clear();
 	pd.selectionBox.cancel();
 	jetSuppressed = false;
@@ -960,6 +961,7 @@ std::shared_ptr<Vehicle> LoopClient::getRiddenVehicle() const
 void LoopClient::placeVehicleDrivers(float deltaT)
 {
 	simulation.camera->alsoIgnore = nullptr;
+	simulation.camera->vehicleDistance = 0.0f;
 
 	if (!simulation.vehicles || !simulation.dynamics)
 		return;
@@ -1011,9 +1013,13 @@ void LoopClient::placeVehicleDrivers(float deltaT)
 
 			rider->turnHead(deltaT);
 
-			//A third person camera sees through the vehicle it rides in
+			//A third person camera sees through the vehicle it rides in, and sits back far enough to see a plane
 			if (rider == followed)
+			{
 				simulation.camera->alsoIgnore = vehicle->body;
+				if (vehicle->fliesForDriver)
+					simulation.camera->vehicleDistance = vehicle->getCameraDistance();
+			}
 		};
 
 		if (driver)

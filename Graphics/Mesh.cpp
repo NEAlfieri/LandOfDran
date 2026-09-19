@@ -1297,6 +1297,26 @@ int Model::getMeshAtPoint(const glm::vec3& point) const
 
 void Model::calculateCollisionBox(const aiScene* scene)
 {
+	/*
+		How big the thing actually looks, whatever it collides as. A Blockland shape's collision detail is
+		often only its body (the stunt plane's leaves out its wings entirely), so anything that wants to
+		know how much room the model takes up on screen, like where a plane's camera sits, asks for this
+		rather than for the collision box. Hidden meshes are left out the same way
+	*/
+	{
+		std::set<unsigned int> hidden;
+		for (unsigned int a = 0; a < allMeshes.size() && a < scene->mNumMeshes; a++)
+			if (allMeshes[a]->nonRenderingMesh)
+				hidden.insert(a);
+
+		aiVector3D high = aiVector3D(-9999, -9999, -9999);
+		aiVector3D low = aiVector3D(9999, 9999, 9999);
+		growToMeshes(scene, scene->mRootNode, aiMatrix4x4(), low, high, hidden);
+
+		if (high.x >= low.x)
+			drawnHalfExtents = glm::vec3(high.x - low.x, high.y - low.y, high.z - low.z) * 0.5f;
+	}
+
 	//Find the collision mesh, kinda redundant since we do it in getCollisionTransformMatrix
 	aiMesh* colMesh = nullptr;
 	for (unsigned int a = 0; a < scene->mNumMeshes; a++)

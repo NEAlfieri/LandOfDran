@@ -66,6 +66,14 @@ class Camera
 
 	float maxThirdPersonDistance = 30.0;
 
+	/*
+		How far back the camera goes instead while the target is flying something, which a server's own
+		follow distance is no use for: it's picked for a player on foot, and a plane is twenty studs of
+		wing that would hang off both sides of the screen from there. 0 while they aren't, see
+		LoopClient::placeVehicleDrivers and Vehicle::getCameraDistance
+	*/
+	float vehicleDistance = 0.0f;
+
 	//A body the third person camera sees through besides its target's, like the vehicle the target is driving, nullptr for none
 	const btRigidBody* alsoIgnore = nullptr;
 

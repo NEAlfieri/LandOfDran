@@ -1397,6 +1397,13 @@ steering wheels still steer, and space still brakes, which is how it gets down a
 the end of one. Nothing else changes either - passengers, the wrench dialog, its horn and headlight, being
 flipped upright, `radiusImpulse` - so a plane is a vehicle in every other way.
 
+Anyone in a plane also gets a **third person camera further back**, since the follow distance a server sets
+with `client:bindCamera` is picked for a player on foot and a wing would hang off both sides of the screen
+from there. It's worked out from how wide and long the plane is *as it's drawn* rather than as it collides
+(a Blockland shape's collision detail often leaves the wings out entirely, as the stunt plane's does), which
+comes to about 35 studs for the biplane and 26 for the stunt plane. Nothing else changes: on foot, in a car,
+or in first person the camera is exactly where it was.
+
 A plane nobody is flying still has wings: it glides, noses over into its own dive and comes down, with none of
 the throttle or control a driver brings. A script driving one with `vehicle:drive` gets the throttle and the
 roll keys but no look, since a script never looks anywhere, so it flies straight ahead.

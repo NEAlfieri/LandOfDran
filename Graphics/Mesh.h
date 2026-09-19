@@ -546,6 +546,9 @@ class Model
 
 	//For use with creating a btRigidBody box shape, calculated in calculateCollisionBox
 	glm::vec3 collisionHalfExtents = glm::vec3(1, 1, 1);
+
+	//Half the size of a box around everything it draws, see calculateCollisionBox and getDrawnHalfExtents
+	glm::vec3 drawnHalfExtents = glm::vec3(1, 1, 1);
 	//The offset the visual mesh should have from the collision box, calculated in calculateCollisionBox
 	glm::vec3 collisionOffset = glm::vec3(0, 0, 0);
 
@@ -635,6 +638,9 @@ class Model
 
 	glm::vec3 getColOffset() const { return collisionOffset * baseScale; }
 	glm::vec3 getColHalfExtents() const { return collisionHalfExtents * baseScale; }
+
+	//Half the size of a box around everything the model actually draws, which is not the box it collides as, see calculateCollisionBox
+	glm::vec3 getDrawnHalfExtents() const { return drawnHalfExtents * baseScale; }
 
 	std::string loadedPath = "";
 

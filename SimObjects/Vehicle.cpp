@@ -764,6 +764,7 @@ void Vehicle::finishClient(const BrickTypes* types, InstancedBrickRenderer* _ren
 		if (Model* bodyModel = modelOfType(bodyTypeID))
 		{
 			bodyInstance = new ModelInstance(bodyModel);
+			bodyDrawnHalfExtents = bodyModel->getDrawnHalfExtents();
 
 			//Whatever the server had looping on it before this client ever heard of it, like a plane's propeller
 			for (unsigned char id : loopingAnimations)
@@ -914,6 +915,23 @@ void Vehicle::updateSnapshot(float deltaT)
 	float seconds = deltaT / 1000.0f;
 	for (VehicleWheel& wheel : wheels)
 		wheel.spin = std::fmod(wheel.spin - speed / std::max(wheel.radius, 0.01f) * seconds, glm::two_pi<float>());
+}
+
+float Vehicle::getCameraDistance() const
+{
+	//What it's drawn as for a model vehicle, and the box its bricks fill for one made of those
+	glm::vec3 half(1.0f);
+	if (bodyInstance && bodyDrawnHalfExtents.x > 0.0f)
+		half = bodyDrawnHalfExtents;
+	else if (shape)
+	{
+		btVector3 low, high;
+		shape->getAabb(btTransform::getIdentity(), low, high);
+		half = (b2g3(high) - b2g3(low)) * 0.5f;
+	}
+
+	//Only how wide and long it is: how tall it is has nothing to do with how far back it has to be seen from
+	return glm::length(glm::vec2(half.x, half.z)) * cameraDistanceScale;
 }
 
 glm::mat4 Vehicle::getDrawnTransform() const

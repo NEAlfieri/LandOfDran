@@ -304,8 +304,9 @@ void Camera::render(std::shared_ptr<ShaderManager> graphics,float deltaT,const s
         if (!firstPerson)
         {
             //Bit of a zoom out effect
+            float reach = std::max(maxThirdPersonDistance, vehicleDistance);
             thirdPersonDistance += deltaT * 0.1f;
-            thirdPersonDistance = std::min(thirdPersonDistance, maxThirdPersonDistance);
+            thirdPersonDistance = std::min(thirdPersonDistance, reach);
 
             btVector3 hitPos, hitNormal;
             if (world)

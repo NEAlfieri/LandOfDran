@@ -304,6 +304,20 @@ class Vehicle : public SimObject
 	//Client: the model drawn as a model vehicle's body, moved to getDrawnTransform every frame
 	ModelInstance* bodyInstance = nullptr;
 
+	//Client: half the size of a box around everything that model draws, from finishClient, see getCameraDistance
+	glm::vec3 bodyDrawnHalfExtents = glm::vec3(0);
+
+	/*
+		Client: how far behind its driver the camera wants to sit to keep the whole of it on screen, which
+		a plane asks for instead of the follow distance the server picked for someone on foot, see
+		PlayerCamera::vehicleDistance. Worked out from how wide and long it is, as it's drawn rather than
+		as it collides, since a Blockland shape's collision detail often leaves the wings out
+	*/
+	float getCameraDistance() const;
+
+	//How many times its own size back that camera sits
+	static constexpr float cameraDistanceScale = 2.2f;
+
 	/*
 		Animations of a model vehicle's own shape playing on its body, like a plane's propeller: on the
 		server what vehicle:playAnimation has looping, in the order they started, and on a client what the
