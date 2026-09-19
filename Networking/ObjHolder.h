@@ -741,6 +741,10 @@ class ObjHolder
 		if (!client || pendingUpdates.empty())
 			return;
 
+		//They're still answering the add-on files they were offered, so they have nothing to apply an update to yet
+		if (!client->sentJoinData)
+			return;
+
 		int budget = client->updateByteBudget;
 		if (budget <= 0)
 			return;

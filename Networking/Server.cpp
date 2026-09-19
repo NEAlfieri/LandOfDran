@@ -32,12 +32,36 @@ void Server::broadcast(const char* data, unsigned int len, PacketChannel channel
 		error("enet_packet_create failed");
 		return;
 	}
-	enet_host_broadcast(server, channel, packet);
+	broadcast(packet, channel);
 }
 
 void Server::broadcast(ENetPacket* packet, PacketChannel channel) const
 {
-	enet_host_broadcast(server, channel, packet);
+	/*
+		A client that hasn't answered the add-on files it was offered yet is left out of all of this: its game
+		has nothing to apply any of it to, so every packet would sit in its held list until it expired, and
+		what bandwidth there is belongs to the files it's downloading. It's sent the whole world as it finishes
+		loading anyway, see clientFinishedLoading
+	*/
+	bool everyoneJoined = true;
+	for (size_t a = 0; a < clients.size() && everyoneJoined; a++)
+		everyoneJoined = clients[a]->sentJoinData;
+
+	if (everyoneJoined)
+	{
+		enet_host_broadcast(server, channel, packet);
+		return;
+	}
+
+	for (size_t a = 0; a < clients.size(); a++)
+	{
+		if (clients[a]->sentJoinData)
+			clients[a]->send(packet, channel);
+	}
+
+	//Nobody took it, which is what enet_host_broadcast does with a packet that reached no peer either
+	if (packet->referenceCount == 0)
+		enet_packet_destroy(packet);
 }
 
 void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const void* pd)
@@ -49,6 +73,16 @@ void Server::switchPacketType(JoinedClient * source, ENetPacket* packet, const v
 		case ConnectionRequest:
 		{
 			applyConnectionRequest(source,this,packet,pd);
+			return;
+		}
+		case ServerFileRequest:
+		{
+			serverFileRequest(source, this, packet, pd);
+			return;
+		}
+		case ServerFileResume:
+		{
+			serverFileResume(source, this, packet, pd);
 			return;
 		}
 		case LoadingFinished:

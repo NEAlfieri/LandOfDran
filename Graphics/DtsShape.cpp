@@ -1,5 +1,6 @@
 #include <functional>
 #include "DtsShape.h"
+#include "../Utility/ContentFiles.h"
 #include "../Utility/FileFunctions.h"
 #include "../Utility/StringFunctions.h"
 
@@ -377,7 +378,7 @@ namespace
 
 	bool readShape(const std::string& filePath, DtsShapeData& shape)
 	{
-		std::ifstream file(filePath.c_str(), std::ios::binary);
+		std::ifstream file(contentPath(filePath).c_str(), std::ios::binary);
 		if (!file.is_open())
 		{
 			error("Could not open DTS file " + filePath);
@@ -860,6 +861,8 @@ aiScene * loadDtsScene(const std::string &filePath, std::vector<DtsSequence> * s
 	}
 
 	std::string folder = getFolderFromPath(filePath);
+	//A shape the server sent us has whatever textures came with it beside it in the download folder
+	std::string downloadedFolder = contentFiles().resolveFolder(folder);
 
 	/*
 		A shape can hold the same thing at several levels of detail. The game has no use for the
@@ -893,6 +896,8 @@ aiScene * loadDtsScene(const std::string &filePath, std::vector<DtsSequence> * s
 			material->AddProperty(&name, AI_MATKEY_NAME);
 
 			std::string texture = findTexture(folder, shape.materials[a]);
+			if (texture.length() < 1 && downloadedFolder != folder)
+				texture = findTexture(downloadedFolder, shape.materials[a]);
 			if (texture.length() > 0)
 			{
 				//Model looks textures up next to the model file, so only the file name goes in

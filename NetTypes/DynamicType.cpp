@@ -48,13 +48,21 @@ bool DynamicType::loadFromPacket(ENetPacket const* const packet, const ClientPro
 
 	model = std::make_shared<Model>(filePath,pd.textures,baseScale);
 
+	/*
+		A model we haven't got - one of a server's add-on files we didn't download, or a broken install -
+		is drawn as a plain cube rather than as nothing at all, so whatever it was is at least there to see
+		and to walk into. The type has to come out of here with a collision shape either way: everything
+		made from it goes into the physics world, and a body with no shape crashes Bullet the moment
+		anything asks for its bounds, see Dynamic::applyWaterForces
+	*/
 	if (!model->isValid())
 	{
-		pd.gui->popupErrorMessage = "Failed to load model: " + filePath + " check error log.";
-		return true;
+		pd.gui->popupErrorMessage = "Failed to load model: " + filePath + ", showing a cube in its place. Check error log.";
+		model = std::make_shared<Model>(placeholderModelPath, pd.textures, baseScale);
 	}
 
-	glm::vec3 halfExtents = model->getColHalfExtents();
+	//Not even the placeholder loaded, so it collides as a box its own size
+	glm::vec3 halfExtents = model->isValid() ? model->getColHalfExtents() : glm::max(glm::abs(baseScale) * 0.5f, glm::vec3(0.05f));
 	collisionBox = new btBoxShape(g2b3(halfExtents));
 
 	collisionShape = new btCompoundShape();
@@ -162,7 +170,15 @@ void DynamicType::serverSideLoad(const std::string &filePath,netIDType typeID,gl
 
 	model = std::make_shared<Model>(filePath, true, baseScale);
 
-	glm::vec3 halfExtents = model->getColHalfExtents();
+	//Same as the client side: a type whose model file is missing falls back to a cube, so both sides
+	//agree on what it collides as instead of the server giving it no size at all
+	if (!model->isValid())
+	{
+		error("Falling back to a cube for " + filePath);
+		model = std::make_shared<Model>(placeholderModelPath, true, baseScale);
+	}
+
+	glm::vec3 halfExtents = model->isValid() ? model->getColHalfExtents() : glm::max(glm::abs(baseScale) * 0.5f, glm::vec3(0.05f));
 	collisionBox = new btBoxShape(g2b3(halfExtents));
 
 	collisionShape = new btCompoundShape();

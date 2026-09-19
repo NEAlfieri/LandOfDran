@@ -61,6 +61,10 @@ public:
 
 void handleDisconnect(JoinedClient * client,Server * server, const void* pdv, lua_State* L, EventManager* eventManager);
 void applyConnectionRequest(JoinedClient *  source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+void serverFileRequest(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+void serverFileResume(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
+//Sounds, types, and everything else a client is sent as it joins, once it has answered the add-on files it was offered
+void sendJoinData(const void* pdv, JoinedClient* source);
 void clientFinishedLoading(JoinedClient* source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void chatMessageSent(JoinedClient * source, Server const* const server, ENetPacket const* const packet, const void* pdv);
 void attemptEvalLogin(JoinedClient * source, Server const* const server, ENetPacket const* const packet, const void* pdv);

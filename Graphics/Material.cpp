@@ -1,4 +1,5 @@
 #include "Material.h"
+#include "../Utility/ContentFiles.h"
 
 #include <filesystem>
 
@@ -164,7 +165,9 @@ Material::Material(const std::string &filePath, std::shared_ptr<TextureManager> 
 	name = getFileFromPath(filePath.c_str());
 	std::string pathToTextures = getFolderFromPath(filePath.c_str());
 
-	std::ifstream materialDescriptor(filePath.c_str());
+	//A descriptor a server sent us is read out of the download folder, while the textures it names are
+	//still looked for where it says they are, each going through contentPath itself, see Utility/ContentFiles.h
+	std::ifstream materialDescriptor(contentPath(filePath).c_str());
 
 	if (!materialDescriptor.is_open())
 	{

@@ -43,7 +43,14 @@ class PrintTypes
 
 	public:
 
-	void load(const std::string& printsFolder);
+	/*
+		Every print in the game's own folder and in the add-ons folder, which is how a server adds prints:
+		a print pack dropped in Add-ons works the same as one in Assets, named the same way by its folders,
+		and goes out to clients that haven't got it with addServerFolder
+
+		Ours win over an add-on's where both have a name, and both win over a copy a server sent us
+	*/
+	void load(const std::string& printsFolder, const std::string& addOnsFolder = "Add-ons");
 
 	size_t size() const { return prints.size(); }
 

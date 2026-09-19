@@ -1,4 +1,5 @@
 #include "Skybox.h"
+#include "../Utility/ContentFiles.h"
 
 #include "../External/stb_image.h"
 #include "../Utility/FileFunctions.h"
@@ -29,8 +30,11 @@ namespace
 		int height = 0;
 		std::vector<float> pixels;
 
-		bool load(const std::string& path)
+		bool load(const std::string& wantedPath)
 		{
+			//A skybox image a server sent us is loaded out of the download folder, see Utility/ContentFiles.h
+			const std::string path = contentPath(wantedPath);
+
 			int channels = 0;
 			float* data = stbi_loadf(path.c_str(), &width, &height, &channels, 3);
 			if (!data)

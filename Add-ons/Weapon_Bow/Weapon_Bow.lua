@@ -34,6 +34,9 @@
 
 local folder = "Add-ons/Weapon_Bow/"
 
+--Offer this add-on's models, textures and sounds to anyone joining who hasn't got them, see LuaAPI.md
+addServerFolder(folder)
+
 --A Blockland unit is two studs, and a stud is one world unit, so a DTS model is true to size at 2
 local scale = 2
 

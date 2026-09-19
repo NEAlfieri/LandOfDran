@@ -323,6 +323,57 @@ Two things in it are worth copying for any script that has to move a camera:
 
 ---
 
+## Sending add-on files to clients
+
+Someone joining a server hasn't usually got the add-ons that server runs, so the models, textures and sounds
+those add-ons name aren't on their computer to load. A server can offer them the files it uses:
+
+| Function | Arguments | Description |
+|---|---|---|
+| `addServerFile(path)` | file path | Offers one file to clients as they join. Returns `true` if it's on offer. |
+| `addServerFolder(folder)` | folder path | The same for every file in a folder, and the folders inside it, that clients take. Anything else in there, its scripts above all, is passed over. Returns how many files of it are on offer. |
+
+```lua
+--Everything in this add-on a client could need, which is its models, textures and sounds
+addServerFolder("Add-ons/Weapon_Gun")
+```
+
+How it goes as someone joins:
+
+- **The list comes first.** Before the server sends a single type, it sends the client every file it offers with
+  that file's size and CRC32, and waits for the client to say which ones it wants. Nothing that could name one of
+  those files goes out until it has answered.
+- **Files they already have are never mentioned.** A client compares each one against its own copy and against
+  anything it downloaded from a server before; identical size and checksum means it keeps loading its own, and the
+  file isn't listed. A server whose add-ons a player already has puts nothing on their screen at all.
+- **What's left is put to them.** They get a window listing each file's kind, path and size, with a tick per file,
+  a total, and Join or Cancel. Cancel leaves the server rather than downloading anything.
+- **They arrive a batch at a time.** The server sends half a megabyte, the client says it took it, and the
+  next batch goes out, so a server offering a hundred megabytes holds a megabyte of it in memory per joining
+  client instead of the lot. It measured about 3 Mb a second on a local connection, a little quicker than sending
+  everything at once did, since the client asks for the next batch half way through the one it's taking.
+- **Downloads are kept apart.** A file arrives into `Downloads/` under the same path the server named
+  (`Downloads/Add-ons/Weapon_Gun/pistol.dts`) and is loaded from there for as long as they're on that server. The
+  player's own `Add-ons/` is never written to, so a server whose copy of a file differs from theirs can't overwrite
+  it. A file that doesn't match the checksum it was listed with is thrown away.
+- **Anything skipped simply isn't there.** A model that didn't arrive doesn't draw and a sound that didn't arrive
+  doesn't play, the same as any missing file, and the client logs which one it couldn't open.
+- **Only assets are ever sent.** `.wav` `.ogg` `.mp3` (music tracks and sound effects alike), `.dts` `.fbx` `.obj`
+  `.dae` `.blend`, `.png` `.jpg` `.jpeg` `.bmp`, `.webm` for a print that plays, and the `.txt` model and material
+  descriptors a model needs to load at all. Both sides check, so a server cannot hand a client a script, and paths
+  have to stay inside the game's folder.
+- **Prints, faces and shirts come too.** Those aren't loaded by a path a packet names: the client goes through
+  `Assets/brick/prints`, `Assets/faces` and `Assets/shirts` looking for them, so it goes through the download folder
+  the same way and builds its decal array again once the files are in, before any brick that could wear one arrives.
+  A print keeps the name its folders give it, so `Downloads/Assets/brick/prints/Print_Videos/prints/rickchan.webm`
+  is `Videos/rickchan` exactly as the server's own copy is, and a client's own print wins where both have a name.
+  A `.webm` starts playing in its decal layer like any other video print.
+- **A file is read when it's registered.** Its size and checksum are taken then, so a file changed while the server
+  runs has to be registered again for joining clients to hear about the change. Up to 4096 files, 16 Mb each, which
+  a music track or a short video print fits inside with room to spare.
+
+---
+
 ## DTS models
 
 Anywhere a model file path is taken (`newDynamicType` and `newItemType`, which statics and vehicles reuse) the path can point at a `.dts` instead of a `.txt` descriptor. DTS is the shape format Torque and Blockland use, so the models an add-on folder ships can be used as they are:
@@ -973,9 +1024,15 @@ like `1x1 Print` or `2x2F Print`. Prints load from Blockland style folders under
 Each brick wears one print, on every printed face it has. Players pick one in the print menu the print gun
 opens, Lua with `brick:setPrint`, and a print's see-through parts show the brick's own color.
 
+Prints are also loaded from the same kind of folder inside `Add-ons`, so a print pack dropped in there
+(`Add-ons/Print_MyPack/prints/whatever.png`, named `MyPack/whatever`) works exactly like one under `Assets`
+and can be handed to players with `addServerFolder`, see [Sending add-on files to clients](#sending-add-on-files-to-clients).
+A print this game has of its own wins over an add-on's of the same name, and both win over a server's copy.
+
 Clients load their own copy of the folder and match the server's prints by name as they join, so a print a
-client doesn't have leaves that brick plain for them. Prints come along in `saveBuild` files and are read
-back from the old game's saves and from Blockland `.bls` saves by name.
+client doesn't have leaves that brick plain for them. One that arrives as a download is matched up again once
+the files are in, so it draws in the same session it was downloaded. Prints come along in `saveBuild` files and
+are read back from the old game's saves and from Blockland `.bls` saves by name.
 
 A print can also be a **`.webm` video** in the same folders, named the same way (`Print_Screens/prints/news.webm`
 is `Screens/news`), which plays on the brick and loops. Everything else treats it as an ordinary print: the

@@ -1,6 +1,7 @@
 #include "PrintTypes.h"
 
 #include "../Networking/Server.h"
+#include "../Utility/ContentFiles.h"
 
 #include <filesystem>
 
@@ -39,7 +40,7 @@ static std::string printIconPath(const std::filesystem::path& file)
 	return std::filesystem::is_regular_file(icon, errorCode) ? icon.generic_string() : "";
 }
 
-void PrintTypes::load(const std::string& printsFolder)
+void PrintTypes::load(const std::string& printsFolder, const std::string& addOnsFolder)
 {
 	scope("PrintTypes::load");
 
@@ -49,24 +50,50 @@ void PrintTypes::load(const std::string& printsFolder)
 	byName.clear();
 
 	std::error_code errorCode;
-	if (!std::filesystem::is_directory(printsFolder, errorCode))
+
+	//Names we already have, so a print of our own isn't listed twice by a server's copy of it
+	std::set<std::string> found;
+
+	auto lookThrough = [&](const std::string& folder)
+	{
+		if (!std::filesystem::is_directory(folder, errorCode))
+			return;
+
+		for (std::filesystem::recursive_directory_iterator iterator(folder, errorCode), end; iterator != end; iterator.increment(errorCode))
+		{
+			const std::filesystem::path& file = iterator->path();
+			std::string extension = lowercase(file.extension().string());
+			if (!iterator->is_regular_file(errorCode) || (extension != ".png" && extension != ".webm"))
+				continue;
+
+			//Each add-on keeps the prints themselves in a prints folder and their icons in an icons folder next to it
+			if (lowercase(file.parent_path().filename().string()) != "prints")
+				continue;
+
+			std::string name = printName(file);
+			if (!found.insert(lowercase(name)).second)
+				continue;
+
+			prints.push_back({ name, file.generic_string(), printIconPath(file), extension == ".webm", -1 });
+		}
+	};
+
+	/*
+		The game's own prints, then any an add-on brought - a print pack folder dropped in Add-ons is found
+		here the same way, since what makes a print is a prints folder with images in it, whatever sits above
+
+		Then the same two out of the download folder, for prints a server sent us: those are looked for
+		rather than loaded by a path a packet names, so that folder has to be gone through the same way
+	*/
+	lookThrough(printsFolder);
+	lookThrough(addOnsFolder);
+	lookThrough(contentDownloadFolder + printsFolder);
+	lookThrough(contentDownloadFolder + addOnsFolder);
+
+	if (prints.empty() && !std::filesystem::is_directory(printsFolder, errorCode))
 	{
 		info("No prints folder at " + printsFolder);
 		return;
-	}
-
-	for (std::filesystem::recursive_directory_iterator iterator(printsFolder, errorCode), end; iterator != end; iterator.increment(errorCode))
-	{
-		const std::filesystem::path& file = iterator->path();
-		std::string extension = lowercase(file.extension().string());
-		if (!iterator->is_regular_file(errorCode) || (extension != ".png" && extension != ".webm"))
-			continue;
-
-		//Each add-on keeps the prints themselves in a prints folder and their icons in an icons folder next to it
-		if (lowercase(file.parent_path().filename().string()) != "prints")
-			continue;
-
-		prints.push_back({ printName(file), file.generic_string(), printIconPath(file), extension == ".webm", -1 });
 	}
 
 	std::sort(prints.begin(), prints.end(), [](const PrintType& a, const PrintType& b) { return lowercase(a.name) < lowercase(b.name); });
@@ -79,7 +106,7 @@ void PrintTypes::load(const std::string& printsFolder)
 		videoCount += print.video ? 1 : 0;
 
 	info("Loaded " + std::to_string(prints.size()) + " print names (" + std::to_string(videoCount) + " of them videos) from " +
-		printsFolder + " in " + std::to_string(SDL_GetTicks() - startMS) + "ms");
+		printsFolder + " and " + addOnsFolder + " in " + std::to_string(SDL_GetTicks() - startMS) + "ms");
 }
 
 int PrintTypes::find(const std::string& name) const

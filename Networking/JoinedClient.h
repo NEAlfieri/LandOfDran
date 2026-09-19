@@ -45,6 +45,13 @@ public:
 	//Did they log in with the eval password?
 	bool isAdmin = false;
 
+	/*
+		Have they been sent the sounds, types, and everything else that comes with joining
+		That waits until they've answered the list of add-on files the server offered them, since a type
+		can name a file they're about to be sent, see Networking/PacketsFromClient/ServerFileRequest.cpp
+	*/
+	bool sentJoinData = false;
+
 	std::string name = "";
 
 	std::string getIP() const { return ip; }

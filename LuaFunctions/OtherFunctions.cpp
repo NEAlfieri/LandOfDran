@@ -1,5 +1,6 @@
 #include "OtherFunctions.h"
 #include "../GameLoop/ServerProgramData.h"
+#include "../Networking/ServerFiles.h"
 
 extern ServerProgramData* LUA_pd;
 
@@ -621,6 +622,104 @@ static int LUA_resetDayCycle(lua_State* L)
 	return 0;
 }
 
+/*
+	addServerFile("Add-ons/Weapon_Gun/gun.dts")
+
+	Offers a file to clients that join: one that doesn't have a copy of its own is asked whether it wants
+	the server to send it, see Networking/ServerFiles.h. Returns true if it's on offer
+
+	Only sounds, models, textures, and the .txt descriptors that go with a model can be offered, so an
+	add-on's scripts stay on the server where they are
+*/
+static int LUA_addServerFile(lua_State* L)
+{
+	scope("LUA_addServerFile");
+
+	int args = lua_gettop(L);
+
+	if (args != 1 || !lua_isstring(L, 1))
+	{
+		error("Expected 1 string argument, a file path");
+		lua_pop(L, args);
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	std::string path = std::string(lua_tostring(L, 1));
+	lua_pop(L, args);
+
+	std::string problem = "";
+	if (!addServerFile(LUA_pd, path, problem))
+	{
+		error("Can't offer " + path + " to clients: " + problem);
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	lua_pushboolean(L, true);
+	return 1;
+}
+
+/*
+	addServerFolder("Add-ons/Weapon_Gun")
+
+	The same for every file in a folder that clients can be sent, which is what an add-on that wants to
+	send all of its own content uses instead of a line per file. Returns how many are on offer from it
+	Files of any other kind, its scripts above all, are passed over rather than complained about
+*/
+static int LUA_addServerFolder(lua_State* L)
+{
+	scope("LUA_addServerFolder");
+
+	int args = lua_gettop(L);
+
+	if (args != 1 || !lua_isstring(L, 1))
+	{
+		error("Expected 1 string argument, a folder");
+		lua_pop(L, args);
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	std::string folder = std::string(lua_tostring(L, 1));
+	lua_pop(L, args);
+
+	if (!isPathInsideGameFolder(folder))
+	{
+		error("Can't offer " + folder + " to clients: folder has to be inside the game's folder");
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	std::error_code trouble;
+	if (!std::filesystem::is_directory(folder, trouble))
+	{
+		error("Can't offer " + folder + " to clients: no such folder");
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	int offered = 0;
+	for (const std::filesystem::directory_entry& file : std::filesystem::recursive_directory_iterator(folder, trouble))
+	{
+		if (!file.is_regular_file())
+			continue;
+
+		std::string path = file.path().generic_string();
+		if (contentFileKind(path) == ContentFileUnknown)
+			continue;
+
+		std::string problem = "";
+		if (addServerFile(LUA_pd, path, problem))
+			offered++;
+		else
+			error("Can't offer " + path + " to clients: " + problem);
+	}
+
+	lua_pushinteger(L, offered);
+	return 1;
+}
+
 void registerOtherFunctions(lua_State* L)
 {
 	lua_register(L, "info", LUA_info);
@@ -648,4 +747,6 @@ void registerOtherFunctions(lua_State* L)
 	lua_register(L, "setFogHeight", LUA_setFogHeight);
 	lua_register(L, "getFogHeight", LUA_getFogHeight);
 	lua_register(L, "resetDayCycle", LUA_resetDayCycle);
+	lua_register(L, "addServerFile", LUA_addServerFile);
+	lua_register(L, "addServerFolder", LUA_addServerFolder);
 }

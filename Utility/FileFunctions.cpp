@@ -103,6 +103,14 @@ unsigned int getFileChecksum(const char* filePath)
     return ret;
 }
 
+unsigned int getBufferChecksum(const char* data, size_t length)
+{
+    if (!data || length < 1)
+        return 0;
+
+    return CRC::Calculate(data, length, CRC::CRC_32());
+}
+
 long GetFileSize(const std::string &filename)
 {
     if (!doesFileExist(filename))

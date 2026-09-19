@@ -50,6 +50,8 @@
 #include "PacketsFromServer/BrickSaveData.h"
 #include "PacketsFromServer/PlayerList.h"
 #include "PacketsFromServer/VehicleBricksBroken.h"
+#include "PacketsFromServer/ServerFileList.h"
+#include "PacketsFromServer/ServerFileData.h"
 #include "../GameLoop/ClientProgramData.h"
 #include "../GameLoop/Simulation.h"
 

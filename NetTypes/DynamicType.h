@@ -34,6 +34,9 @@ class DynamicType : public NetType
 
 	public:
 
+	//Drawn and collided with in place of a model file this game hasn't got, see loadFromPacket
+	static constexpr const char* placeholderModelPath = "Assets/cube/cube.txt";
+
 	std::string scriptName = "";
 
 	//Types from Lua's newItemType, which items are made of, and what shows for them in the item bar

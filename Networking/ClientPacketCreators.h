@@ -36,6 +36,40 @@ inline ENetPacket* makeMouseClickPacket(glm::vec3 pos, glm::vec3 dir, unsigned c
 
 /*
 	1 byte		-	packet type
+	2 bytes		-	how many file IDs follow
+	2 bytes each	-	the IDs of the offered files we want
+
+	Our answer to the add-on files a server offered as we joined, sent even when we want none of them:
+	the server waits for it before sending anything that could name one, see Networking/ServerFiles.h
+*/
+inline ENetPacket* makeServerFileRequest(const std::vector<uint16_t>& ids)
+{
+	uint16_t count = (uint16_t)ids.size();
+
+	ENetPacket* ret = enet_packet_create(NULL, 1 + sizeof(uint16_t) * (1 + (size_t)count), getFlagsFromChannel(JoinNegotiation));
+	ret->data[0] = (unsigned char)ServerFileRequest;
+	memcpy(ret->data + 1, &count, sizeof(uint16_t));
+
+	for (uint16_t a = 0; a < count; a++)
+		memcpy(ret->data + 1 + sizeof(uint16_t) * (1 + (size_t)a), &ids[a], sizeof(uint16_t));
+
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
+
+	We took the last batch of add-on files, so the server can send the next one, see Networking/ServerFiles.h
+*/
+inline ENetPacket* makeServerFileResume()
+{
+	ENetPacket* ret = enet_packet_create(NULL, 1, getFlagsFromChannel(JoinNegotiation));
+	ret->data[0] = (unsigned char)ServerFileResume;
+	return ret;
+}
+
+/*
+	1 byte		-	packet type
 	1 byte		-	1 if the item bar is out
 	1 byte		-	picked slot
 */

@@ -5,6 +5,7 @@
 #include "../../LuaFunctions/EmitterLua.h"
 #include "../../LuaFunctions/ClientLua.h"
 #include "../../LuaFunctions/DecalLua.h"
+#include "../ServerFiles.h"
 
 /*	
 	Do not attempt to assign a handle to JoinedClient to other objects directly
@@ -83,6 +84,27 @@ void applyConnectionRequest(JoinedClient * source,Server const * const server, E
 	info("Client joined as guest with name " + desiredName);
 	server->broadcastChat(desiredName + " connected.");
 
+	pd->makeClient(source->me);
+
+	/*
+		What add-on files we can send them, which they answer with a ServerFileRequest saying which ones
+		they want. Nothing that could name one of those files goes out until they have, see sendJoinData
+	*/
+	sendServerFileList(pd, source);
+}
+
+/*
+	Everything a client is sent as it joins, once the add-on files it asked for are on their way to it
+	Only ever called once per client, see JoinedClient::sentJoinData
+*/
+void sendJoinData(const void* pdv, JoinedClient* source)
+{
+	const ServerProgramData* pd = (const ServerProgramData*)pdv;
+
+	if (source->sentJoinData)
+		return;
+	source->sentJoinData = true;
+
 	//Sounds, particles, and emitters first, they don't count toward the types the loading bar waits for
 	sendSoundTypes(pd, source);
 	sendChatSuggestions(pd, source);
@@ -94,8 +116,6 @@ void applyConnectionRequest(JoinedClient * source,Server const * const server, E
 	//Send types to client:
 	for (size_t a = 0; a < pd->allNetTypes.size(); a++)
 		source->send(pd->allNetTypes[a]->createTypePacket(), JoinNegotiation);
-
-	pd->makeClient(source->me);
 }
  
 

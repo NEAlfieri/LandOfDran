@@ -126,6 +126,10 @@ struct Simulation
 	//Every print name the server offers, in its own order, for the wrench dialog to pick from
 	std::vector<std::string> serverPrintNames;
 
+	//The ID the server knows each of those by, in the same order, so they can be matched up again if the
+	//prints this game has change while joining, see LoopClient::run and Networking/ServerFiles.h
+	std::vector<uint16_t> serverPrintIDs;
+
 	//A vehicle save we asked for from its wrench dialog, where it goes and as much of it as has arrived, see VehicleSaveDataPacket
 	struct PendingVehicleSave
 	{

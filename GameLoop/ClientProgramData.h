@@ -41,6 +41,7 @@
 #include "../Interface/VehicleLoader.h"
 #include "../Interface/BrickSaveMenu.h"
 #include "../Interface/PlayerListWindow.h"
+#include "../Interface/ContentDownloadWindow.h"
 #include "../Audio/AudioSystem.h"
 #include "../Audio/AcousticProbe.h"
 #include "../Audio/VoiceChat.h"
@@ -236,6 +237,7 @@ struct ClientProgramData
 	std::shared_ptr<VehicleLoader>	vehicleLoader = nullptr;
 	std::shared_ptr<BrickSaveMenu>	brickSaveMenu = nullptr;
 	std::shared_ptr<PlayerListWindow>	playerList = nullptr;
+	std::shared_ptr<ContentDownloadWindow>	contentDownload = nullptr;
 
 	//File names of the images in Assets/faces, each one's index is its layer in the decal array, see LoopClient's constructor
 	std::vector<std::string> faceNames;

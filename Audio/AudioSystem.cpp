@@ -1,4 +1,5 @@
 #include "AudioSystem.h"
+#include "../Utility/ContentFiles.h"
 #include "ReverbPresets.h"
 #include "SoundFile.h"
 #include "../SimObjects/Dynamic.h"
@@ -514,7 +515,8 @@ void AudioSystem::addSoundType(int id, const std::string& name, const std::strin
 
 	std::vector<int16_t> samples;
 	int channels = 0, sampleRate = 0;
-	if (!decodeSoundFile(filePath, samples, channels, sampleRate))
+	//One the server sent us is read out of the download folder, see Utility/ContentFiles.h
+	if (!decodeSoundFile(contentPath(filePath), samples, channels, sampleRate))
 		return;
 
 	alGenBuffers(1, &sound.buffer);

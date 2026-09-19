@@ -1,4 +1,5 @@
 #include "VideoPlayer.h"
+#include "../Utility/ContentFiles.h"
 
 #ifdef HAVE_LIBVPX
 #include "vpx/vpx_decoder.h"
@@ -150,7 +151,8 @@ bool VideoPlayer::readFile(const std::string& filePath)
 {
 	scope("VideoPlayer::readFile");
 
-	std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+	//A .webm a server sent us is read out of the download folder, see Utility/ContentFiles.h
+	std::ifstream file(contentPath(filePath), std::ios::binary | std::ios::ate);
 	if (!file.is_open())
 	{
 		error("Could not open " + filePath);

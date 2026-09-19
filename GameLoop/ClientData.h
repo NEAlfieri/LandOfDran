@@ -115,6 +115,24 @@ struct ClientData
 	std::string vehicleUpload;
 	uint32_t vehicleUploadID = 0;
 
+	/*
+		The add-on files they asked for as they joined, and how far through sending them we are
+
+		They go out a batch at a time, with the client asking for the next batch once it has taken the last,
+		so a server offering a hundred megabytes doesn't queue a hundred megabytes of packets per joining
+		client, see Networking/ServerFiles.h
+	*/
+	struct ServerFileSend
+	{
+		//What they asked for, in the order it goes out
+		std::vector<uint16_t> ids;
+		//Which of those is going out and how much of it has already gone
+		size_t at = 0;
+		uint32_t offset = 0;
+		//There's a transfer in progress, so a resume from them is worth acting on
+		bool sending = false;
+	} fileSend;
+
 	//The same for a save of bricks they're uploading to load, see Networking/PacketsFromClient/BrickSaveFiles.cpp
 	std::string brickUpload;
 	uint32_t brickUploadID = 0;

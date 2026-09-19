@@ -44,6 +44,7 @@ bool BrickPrintTypesPacket::applyPacket(const ClientProgramData& pd, Simulation&
 
 		//The wrench dialog offers what the server has, whether or not we have the image for it
 		simulation.serverPrintNames.push_back(name);
+		simulation.serverPrintIDs.push_back(serverID);
 
 		if (local < 0)
 		{
@@ -53,7 +54,11 @@ bool BrickPrintTypesPacket::applyPacket(const ClientProgramData& pd, Simulation&
 		}
 	}
 
-	if (missing > 0)
+	/*
+		Files from this server may still be on their way, and a print among them is matched up once they're
+		all here, so there's nothing to complain about yet, see LoopClient::run
+	*/
+	if (missing > 0 && !contentFiles().downloadsPending())
 		error("The server has " + std::to_string(missing) + " prints we don't, bricks wearing them will look plain: " + missingNames);
 
 	return true;

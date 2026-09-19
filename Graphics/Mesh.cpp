@@ -1,6 +1,7 @@
 #include <set>
 #include <limits>
 #include "Mesh.h"
+#include "../Utility/ContentFiles.h"
 #include "DtsShape.h"
 
 #include <tuple>
@@ -1417,7 +1418,7 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 
 	std::ifstream descriptorFile;
 	if (!isDtsPath(filePath))
-		descriptorFile.open(filePath.c_str());
+		descriptorFile.open(contentPath(filePath).c_str());
 
 	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
 
@@ -1554,7 +1555,7 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		scene = dtsScene.get();
 	}
 	else
-		scene = importer.ReadFile(modelPath, desiredImporterFlags);
+		scene = importer.ReadFile(contentPath(modelPath), desiredImporterFlags);
 
 	if (!scene)
 	{
@@ -1603,6 +1604,10 @@ Model::Model(std::string filePath, bool _serverSide, glm::vec3 _baseScale) : loa
 		animation.defaultSpeed = sequence.defaultSpeed;
 		addAnimation(animation);
 	}
+
+	//The file was read, which is all a server needs of it. Every way out above this leaves valid false,
+	//so isValid means the same thing here as it does on the client, see DynamicType::serverSideLoad
+	valid = true;
 }
 
 //Full constructor for client-side loading, includes materials and animations
@@ -1619,7 +1624,7 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 
 	std::ifstream descriptorFile;
 	if (!isDtsPath(filePath))
-		descriptorFile.open(filePath.c_str());
+		descriptorFile.open(contentPath(filePath).c_str());
 
 	std::istream& descriptor = isDtsPath(filePath) ? (std::istream&)selfDescriptor : (std::istream&)descriptorFile;
 
@@ -1797,7 +1802,7 @@ Model::Model(std::string filePath, std::shared_ptr<TextureManager> textures,glm:
 		scene = dtsScene.get();
 	}
 	else
-		scene = importer.ReadFile(modelPath, desiredImporterFlags);
+		scene = importer.ReadFile(contentPath(modelPath), desiredImporterFlags);
 
 	if (!scene)
 	{

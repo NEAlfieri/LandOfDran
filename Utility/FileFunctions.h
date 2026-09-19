@@ -21,6 +21,12 @@ bool isPathInsideGameFolder(const std::string &path);
 unsigned int getFileChecksum(const char* filePath);
 
 /*
+	The same CRC32 of a file already read into memory, for one that arrived over the network
+	before anything writes it out, see ContentFiles::takeChunk
+*/
+unsigned int getBufferChecksum(const char* data, size_t length);
+
+/*
 	Gets filesize in bytes, 0 if file invalid
 */
 long GetFileSize(const std::string &filename);

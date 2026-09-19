@@ -30,6 +30,9 @@
 
 local folder = "Add-ons/Tool_GrappleRope/"
 
+--Offer this add-on's models, textures and sounds to anyone joining who hasn't got them, see LuaAPI.md
+addServerFolder(folder)
+
 --[[
 	How the rope is made once the hook lands. By default it's one of the engine's own ropes, see
 	createRope in LuaAPI.md: tied between the anchor and the player, drawn from the barrel of the

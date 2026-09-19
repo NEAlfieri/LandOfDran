@@ -33,6 +33,10 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 
 	pd.serverBrowser->open();
 
+	//Whatever this server offered to send us, and where its files ended up being loaded from, goes with it
+	pd.contentDownload->reset();
+	contentFiles().clear();
+
 	if (!client)
 		return;
 
@@ -120,6 +124,7 @@ void LoopClient::leaveServer(ExecutableArguments& cmdArgs)
 	simulation.brickTypeToServer.clear();
 	simulation.printFromServer.clear();
 	simulation.serverPrintNames.clear();
+	simulation.serverPrintIDs.clear();
 
 	delete client;
 	client = nullptr;
@@ -181,6 +186,7 @@ void LoopClient::connectToServer(std::string ip, unsigned int port, std::string 
 	info("Attempting connection to " + ip + ":" + std::to_string(port));
 
 	joinedName = userName;
+	joinedAddress = ip + ":" + std::to_string(port);
 	pd.playerList->setOwnName(joinedName);
 
 	//The demo is nobody's choice of server, so it doesn't become the name and address the browser comes back to
@@ -3660,6 +3666,85 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	//Progress loading SimObject types. The demo loads in the background behind the menu, so it shows no bar at all
 	pd.serverBrowser->passLoadProgress(pd.menuDemo ? 0 : pd.signals.typesToLoad, simulation.dynamicTypes.size());
 
+	/*
+		The server listed the add-on files it can send us, and it holds off on sending anything that could
+		name one of them until we answer. Files we already have an identical copy of are never listed, so
+		joining a server whose add-ons we have answers this without anything showing up on screen
+	*/
+	if (client && contentFiles().listComplete() && !contentFiles().isChecked())
+	{
+		bool anythingMissing = contentFiles().checkList();
+
+		//The demo behind the menu is nobody's choice of server, so it never puts a window in front of the menu
+		if (anythingMissing && !pd.menuDemo)
+			pd.contentDownload->show(joinedAddress, contentFiles().getMissing());
+		else
+		{
+			if (anythingMissing)
+				info("Not downloading the menu demo's files, it's only the picture behind the menu");
+			client->send(makeServerFileRequest(std::vector<uint16_t>()), JoinNegotiation);
+		}
+	}
+
+	//They picked which of those files they want, so the server can send them and get on with the join
+	std::vector<uint16_t> wantedFiles;
+	if (pd.contentDownload->takeChoice(wantedFiles) && client)
+	{
+		contentFiles().beginDownload(wantedFiles);
+		client->send(makeServerFileRequest(wantedFiles), JoinNegotiation);
+	}
+
+	//A batch of the files we asked for arrived, and the server is holding the next one until we say so
+	if (contentFiles().takeWantsMore() && client)
+		client->send(makeServerFileResume(), JoinNegotiation);
+
+	/*
+		Everything we asked for is here. A print, face or shirt among them is something this client finds by
+		looking through folders rather than by a path a packet names, so those are gone through again and the
+		decal array is built once more - still before any brick that could wear one arrives
+	*/
+	if (contentFiles().takeDownloadsFinished())
+	{
+		pd.prints.load("Assets/brick/prints");
+		loadDecalArray(settings);
+
+		/*
+			The server's prints were matched against the ones this game had a moment ago, and a file that
+			just arrived may well be one of them, so they're matched up again by name. Each one is put back
+			under the ID the server knows it by rather than where it sits in the list, see BrickPrintTypesPacket
+		*/
+		int stillMissing = 0;
+		std::string missingNames = "";
+		for (size_t a = 0; a < simulation.serverPrintNames.size() && a < simulation.serverPrintIDs.size(); a++)
+		{
+			uint16_t serverID = simulation.serverPrintIDs[a];
+			int local = pd.prints.find(simulation.serverPrintNames[a]);
+
+			if (simulation.printFromServer.size() <= serverID)
+				simulation.printFromServer.resize((size_t)serverID + 1, 0);
+			simulation.printFromServer[serverID] = local < 0 ? 0 : (uint16_t)(local + 1);
+
+			if (local < 0)
+			{
+				stillMissing++;
+				if (stillMissing <= 10)
+					missingNames += (missingNames.empty() ? "" : ", ") + simulation.serverPrintNames[a];
+			}
+		}
+
+		//What it has that we haven't got even now, which BrickPrintTypesPacket left to us to say
+		if (stillMissing > 0)
+			error("The server has " + std::to_string(stillMissing) + " prints we don't, bricks wearing them will look plain: " + missingNames);
+	}
+
+	//Or they'd rather not have them, which means not joining: the server is waiting on an answer
+	if (pd.contentDownload->takeCancel())
+	{
+		info("Left rather than downloading the server's add-on files");
+		leaveServer(cmdArgs);
+		pd.serverBrowser->setConnectionNote("Didn't download the server's files");
+	}
+
 	// --- State changes requested from packets ---
 
 	//Phase one loading started
@@ -3832,6 +3917,96 @@ void LoopClient::run(float deltaT,ExecutableArguments& cmdArgs, std::shared_ptr<
 	}
 }
 
+/*
+	Faces, shirts and brick prints, each loaded into its own layer of the decal array
+
+	Called once on start-up and again when a server has sent us files, since a print, face or shirt of its
+	own is something this client finds by looking through folders rather than by a path a packet names
+*/
+void LoopClient::loadDecalArray(std::shared_ptr<SettingManager> settings)
+{
+	scope("LoopClient::loadDecalArray");
+
+	//Everything below fills these in again, and the array itself is thrown away by allocateForDecals
+	pd.faceNames.clear();
+	pd.shirtNames.clear();
+	pd.printVideos.clear();
+
+	//Faces and shirts players pick in the appearance editor, each on its own decal array layer, servers send them by file name
+	auto listImages = [](const std::string& folder)
+	{
+		std::vector<std::filesystem::path> paths;
+		//Names we have already, so one of ours isn't listed twice by a server's copy of it
+		std::set<std::string> found;
+
+		//Ours first, then any a server sent us, which land in a folder of the same shape, see Utility/ContentFiles.h
+		for (const std::string& look : { folder, contentDownloadFolder + folder })
+		{
+			if (!std::filesystem::is_directory(look))
+				continue;
+
+			for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(look))
+			{
+				std::string extension = lowercase(entry.path().extension().string());
+				if (!entry.is_regular_file() || (extension != ".png" && extension != ".jpg"))
+					continue;
+
+				if (found.insert(lowercase(entry.path().filename().string())).second)
+					paths.push_back(entry.path());
+			}
+		}
+
+		//By file name, so ours and a server's sort into the same order on every machine
+		std::sort(paths.begin(), paths.end(), [](const std::filesystem::path& a, const std::filesystem::path& b)
+			{ return lowercase(a.filename().string()) < lowercase(b.filename().string()); });
+		return paths;
+	};
+	std::vector<std::filesystem::path> facePaths = listImages("Assets/faces");
+	std::vector<std::filesystem::path> shirtPaths = listImages("Assets/shirts");
+
+	//Decal IDs get 8 bits of a mesh's instance flags, faces come first
+	if (facePaths.size() > 256)
+		facePaths.resize(256);
+	if (facePaths.size() + shirtPaths.size() > 256)
+		shirtPaths.resize(256 - facePaths.size());
+
+	//Brick prints share the decal array with them, see PrintTypes
+	size_t printCount = std::min<size_t>(pd.prints.size(), 256 - facePaths.size() - shirtPaths.size());
+	if (printCount < pd.prints.size())
+		error("Only " + std::to_string(printCount) + " of " + std::to_string(pd.prints.size()) + " prints fit in the decal array, the rest will look plain");
+
+	pd.textures->allocateForDecals(256, std::max<unsigned int>(1, (unsigned int)(facePaths.size() + shirtPaths.size() + printCount)));
+	for (const std::filesystem::path& facePath : facePaths)
+	{
+		if (pd.textures->addDecal(facePath.generic_string(), (int)pd.faceNames.size()))
+			pd.faceNames.push_back(facePath.filename().string());
+	}
+	for (const std::filesystem::path& shirtPath : shirtPaths)
+	{
+		if (pd.textures->addDecal(shirtPath.generic_string(), (int)(pd.faceNames.size() + pd.shirtNames.size())))
+			pd.shirtNames.push_back(shirtPath.filename().string());
+	}
+	bool skippedVideos = false;
+	for (size_t print = 0; print < printCount; print++)
+	{
+		const PrintType* type = pd.prints.get((int)print);
+		int layer = (int)(facePaths.size() + shirtPaths.size() + print);
+
+		//A .webm plays into its layer instead of being loaded once, see Graphics/PrintVideos.h
+		bool loaded = type->video ? pd.printVideos.add((int)print, *type, layer, pd.textures) : pd.textures->addDecal(type->filePath, layer);
+		skippedVideos |= type->video && !loaded;
+
+		if (loaded)
+			pd.prints.setDecalLayer((int)print, layer);
+	}
+
+	if (skippedVideos && !VideoPlayer::isSupported())
+		error("This build has no libvpx, so .webm prints are skipped, see the video prints line from CMake when it was built");
+
+	pd.printVideos.setMaxPlaying(settings->getInt("graphics/maxvideoprints"));
+	pd.textures->finalizeDecals();
+}
+
 LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingManager> settings)
 {
 	//This will also populate key-bind specific defaults, so we reexport after
@@ -3914,6 +4089,7 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	pd.vehicleLoader = pd.gui->createWindow<VehicleLoader>();
 	pd.brickSaveMenu = pd.gui->createWindow<BrickSaveMenu>(&pd.brickTypes, &pd.prints);
 	pd.playerList = pd.gui->createWindow<PlayerListWindow>();
+	pd.contentDownload = pd.gui->createWindow<ContentDownloadWindow>();
 	//Builds from before the state file kept the hot bar in settings.txt
 	std::shared_ptr<SettingManager> hotbarSource = pd.state;
 	if (!pd.state->getPreference("hotbar/slot1/filled") && settings->getPreference("hotbar/slot1/filled"))
@@ -3952,66 +4128,8 @@ LoopClient::LoopClient(ExecutableArguments& cmdArgs, std::shared_ptr<SettingMana
 	simulation.camera = std::make_shared<Camera>(pd.context->getResolution().x / pd.context->getResolution().y);
 	simulation.camera->updateSettings(settings);
 
-	//Faces and shirts players pick in the appearance editor, each on its own decal array layer, servers send them by file name
-	auto listImages = [](const char* folder)
-	{
-		std::vector<std::filesystem::path> paths;
-		if (std::filesystem::is_directory(folder))
-		{
-			for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder))
-			{
-				std::string extension = lowercase(entry.path().extension().string());
-				if (entry.is_regular_file() && (extension == ".png" || extension == ".jpg"))
-					paths.push_back(entry.path());
-			}
-		}
-		std::sort(paths.begin(), paths.end());
-		return paths;
-	};
-	std::vector<std::filesystem::path> facePaths = listImages("Assets/faces");
-	std::vector<std::filesystem::path> shirtPaths = listImages("Assets/shirts");
-
-	//Decal IDs get 8 bits of a mesh's instance flags, faces come first
-	if (facePaths.size() > 256)
-		facePaths.resize(256);
-	if (facePaths.size() + shirtPaths.size() > 256)
-		shirtPaths.resize(256 - facePaths.size());
-
-	//Brick prints share the decal array with them, see PrintTypes
-	size_t printCount = std::min<size_t>(pd.prints.size(), 256 - facePaths.size() - shirtPaths.size());
-	if (printCount < pd.prints.size())
-		error("Only " + std::to_string(printCount) + " of " + std::to_string(pd.prints.size()) + " prints fit in the decal array, the rest will look plain");
-
-	pd.textures->allocateForDecals(256, std::max<unsigned int>(1, (unsigned int)(facePaths.size() + shirtPaths.size() + printCount)));
-	for (const std::filesystem::path& facePath : facePaths)
-	{
-		if (pd.textures->addDecal(facePath.generic_string(), (int)pd.faceNames.size()))
-			pd.faceNames.push_back(facePath.filename().string());
-	}
-	for (const std::filesystem::path& shirtPath : shirtPaths)
-	{
-		if (pd.textures->addDecal(shirtPath.generic_string(), (int)(pd.faceNames.size() + pd.shirtNames.size())))
-			pd.shirtNames.push_back(shirtPath.filename().string());
-	}
-	bool skippedVideos = false;
-	for (size_t print = 0; print < printCount; print++)
-	{
-		const PrintType* type = pd.prints.get((int)print);
-		int layer = (int)(facePaths.size() + shirtPaths.size() + print);
-
-		//A .webm plays into its layer instead of being loaded once, see Graphics/PrintVideos.h
-		bool loaded = type->video ? pd.printVideos.add((int)print, *type, layer, pd.textures) : pd.textures->addDecal(type->filePath, layer);
-		skippedVideos |= type->video && !loaded;
-
-		if (loaded)
-			pd.prints.setDecalLayer((int)print, layer);
-	}
-
-	if (skippedVideos && !VideoPlayer::isSupported())
-		error("This build has no libvpx, so .webm prints are skipped, see the video prints line from CMake when it was built");
-
-	pd.printVideos.setMaxPlaying(settings->getInt("graphics/maxvideoprints"));
-	pd.textures->finalizeDecals();
+	//Faces, shirts and prints, each on its own layer of the decal array, see loadDecalArray
+	loadDecalArray(settings);
 
 	pd.grassMaterial = new Material("Assets/ground/grass.txt", pd.textures);
 

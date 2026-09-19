@@ -60,6 +60,9 @@ class PrintVideos
 
 	void setMaxPlaying(int count) { maxPlaying = std::max(0, count); }
 
+	//Forget every video, for a decal array that's being built again, see LoopClient::loadDecalArray
+	void clear() { videos.clear(); loadedBytes = 0; playingCount = 0; wantedCount = 0; }
+
 	size_t size() const { return videos.size(); }
 
 	//"2/3 video prints playing" for the debug menu, "" if there are no video prints

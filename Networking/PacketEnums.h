@@ -93,6 +93,8 @@ enum FromClientPacketType : unsigned char
 	SeatCycleRequest = 28,	//The client pressed their next seat key in a vehicle, so they move to its next free seat, see Networking/PacketsFromClient/SeatCycle.cpp
 	BrickSaveRequest = 29,	//Send the client a save of every brick to write to their own computer, see Networking/PacketsFromClient/BrickSaveFiles.cpp
 	BrickUpload = 30,		//Part of a save from the client's computer to load, admins only, in pieces like VehicleUpload
+	ServerFileRequest = 31,	//Which of the files the server offered as we joined we want sent to us, see Networking/PacketsFromClient/ServerFileRequest.cpp
+	ServerFileResume = 32,	//We took everything in the last batch of those files, send the next one
 };
 
 //Flags byte of a BrickUpload packet
@@ -207,7 +209,12 @@ enum FromServerPacketType : unsigned char
 	BrickSaveData = 46,		//Part of a save of every brick the client asked for, see BrickSaveDataPacket
 	PlayerList = 47,		//Everyone on the server with their ping and score text, whenever any of it changes and every couple of seconds, see PlayerListPacket
 	DecalUpdate = 48,		//A decal type, new decals like bullet holes, or all of them cleared away, see DecalUpdateKind and Graphics/WorldDecals.h
+	ServerFileList = 49,	//The add-on files this server can send us, which we answer before it sends any type, see Networking/ServerFiles.h
+	ServerFileData = 50,	//Part of one of those files, on the join channel so it's all here before the types that use it
 };
+
+//Flags byte of a ServerFileData packet
+#define ServerFileFlag_BatchEnd 1	//The last part of a batch: the client asks for the next one when it has taken this, see Networking/ServerFiles.h
 
 //Second byte of a DecalUpdate packet
 enum DecalUpdateKind : unsigned char

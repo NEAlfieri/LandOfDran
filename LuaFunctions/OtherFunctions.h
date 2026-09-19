@@ -53,5 +53,9 @@ static int LUA_setFogDistance(lua_State* L);
 static int LUA_getFogDistance(lua_State* L);
 static int LUA_resetDayCycle(lua_State* L);
 
+//Add-on files clients that don't have them can be sent, see Networking/ServerFiles.h
+static int LUA_addServerFile(lua_State* L);
+static int LUA_addServerFolder(lua_State* L);
+
 //Register all funcs in this file
 void registerOtherFunctions(lua_State* L);

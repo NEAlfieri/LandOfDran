@@ -290,6 +290,14 @@ KickReason Client::handleEvent(ENetEvent& event)
 					packets.push_back(new VehicleBricksBrokenPacket(packetHoldTime, event.packet));
 					return NotKicked;
 
+				case ServerFileList:
+					packets.push_back(new ServerFileListPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
+				case ServerFileData:
+					packets.push_back(new ServerFileDataPacket(packetHoldTime, event.packet));
+					return NotKicked;
+
 				//Can't process packet
 				case InvalidServer:
 				default:

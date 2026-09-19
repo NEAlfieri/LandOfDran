@@ -17,6 +17,7 @@
 #include "../Bricks/PrintTypes.h"
 #include "../Graphics/DayCycle.h"
 #include "../Graphics/WorldDecals.h"
+#include "../Utility/ContentFiles.h"
 #include "ClientData.h"
 
 /*
@@ -90,6 +91,12 @@ struct ServerProgramData
 		std::string text = "";
 	};
 	std::vector<ChatSuggestion> chatSuggestions;
+
+	/*
+		Add-on files Lua's addServerFile offered to send joining clients that don't have them, a file's
+		index is the ID clients ask for it by, see Networking/ServerFiles.h
+	*/
+	std::vector<ContentFile> serverFiles;
 
 	//Lua's addDecalType: a name and the material descriptor clients load for it, a type's index is the ID clients know it by
 	struct DecalType

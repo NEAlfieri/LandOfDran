@@ -49,6 +49,9 @@ class LoopClient
 
 	void renderEverything(float deltaT);
 
+	//Faces, shirts and prints into the decal array, on start-up and again after a server sends us files
+	void loadDecalArray(std::shared_ptr<SettingManager> settings);
+
 	//Last window of timings written to the log by -profile, so each is only written once
 	unsigned int loggedProfilerWindow = 0;
 
@@ -95,6 +98,9 @@ class LoopClient
 
 	//The name we joined the current server with, written into saves made without the server's help
 	std::string joinedName;
+
+	//Where the current server is, for the window that asks about downloading its add-on files
+	std::string joinedAddress;
 
 	/*
 		Writes every brick we can see to a save in our own Saves folder, with the picture from renderSavePreview

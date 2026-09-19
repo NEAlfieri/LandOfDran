@@ -1,4 +1,5 @@
 #include "Texture.h"
+#include "../Utility/ContentFiles.h"
 
 //Man, one include only header only libraries make me want to just compile it into a static library
 #define STB_IMAGE_IMPLEMENTATION
@@ -99,9 +100,12 @@ Texture::~Texture()
 	glDeleteTextures(1, &handle);
 }
 
-Texture* TextureManager::createTexture(const std::string &filePath, bool makeMipmaps)
+Texture* TextureManager::createTexture(const std::string &wantedPath, bool makeMipmaps)
 {
 	scope("TextureManager::createTexture (non-array)");
+
+	//An image a server sent us is loaded out of the download folder instead, see Utility/ContentFiles.h
+	const std::string filePath = contentPath(wantedPath);
 
 	//Do a check to see if this texture was already loaded
 	std::string textureName = getFileFromPath(filePath);
@@ -323,6 +327,9 @@ void Texture::addLayer(std::string filePath, bool flattenAlphaOntoWhite)
 {
 	scope("Texture::addLayer");
 
+	//An image a server sent us is loaded out of the download folder instead, see Utility/ContentFiles.h
+	filePath = contentPath(filePath);
+
 	if (textureType != GL_TEXTURE_2D_ARRAY)
 	{
 		error("This is not an array texture!");
@@ -530,8 +537,11 @@ void TextureManager::finishLayer(Texture * target)
 	}
 }
 
-bool TextureManager::flatColor(const std::string& filePath, bool flattenAlphaOntoWhite, glm::vec4& color) const
+bool TextureManager::flatColor(const std::string& wantedPath, bool flattenAlphaOntoWhite, glm::vec4& color) const
 {
+	//An image a server sent us is loaded out of the download folder instead, see Utility/ContentFiles.h
+	const std::string filePath = contentPath(wantedPath);
+
 	int width, height, channels;
 	stbi_uc* data = stbi_load(filePath.c_str(), &width, &height, &channels, 4);
 
@@ -659,6 +669,9 @@ void Texture::markForCleanup()
 void TextureManager::addComponent(Texture* target, std::string filePath, int desiredTotalChannels)
 {
 	scope("TextureManager::addComponent");
+
+	//An image a server sent us is loaded out of the download folder instead, see Utility/ContentFiles.h
+	filePath = contentPath(filePath);
 
 	if (!target)
 	{
@@ -968,9 +981,12 @@ bool TextureManager::setDecalPixels(const unsigned char* rgba, int width, int he
 	return true;
 }
 
-bool TextureManager::addDecal(const std::string &filePath,int id)
+bool TextureManager::addDecal(const std::string &wantedPath,int id)
 {
 	scope("TextureManager::addDecal");
+
+	//An image a server sent us is loaded out of the download folder instead, see Utility/ContentFiles.h
+	const std::string filePath = contentPath(wantedPath);
 
 	//Last parameter is 4 to force an alpha channel, if there wasn't one the image will be opaque
 	int readWidth, readHeight, readChannels;
