@@ -45,12 +45,16 @@ Item::Item(std::shared_ptr<DynamicType> _type, const btVector3& initialPos, cons
 bool Item::isHeld() const
 {
 	if (type->getModel()->isServerSide())
-		return !owner.expired();
+		return !owner.expired() || !botHolder.expired();
 	return held;
 }
 
 std::shared_ptr<Dynamic> Item::getHolder() const
 {
+	//A bot holds an item itself: there's no client to look through for the player carrying it
+	if (std::shared_ptr<Dynamic> bot = botHolder.lock())
+		return bot;
+
 	std::shared_ptr<ClientData> carrier = owner.lock();
 	if (!carrier || carrier->controllers.empty())
 		return nullptr;
@@ -89,6 +93,10 @@ void Item::applyDisplayBody()
 
 bool Item::isEquipped() const
 {
+	//A bot has no item bar to put one away into, so what it holds is always in its hand
+	if (!botHolder.expired())
+		return true;
+
 	std::shared_ptr<ClientData> carrier = owner.lock();
 	if (!carrier)
 		return false;

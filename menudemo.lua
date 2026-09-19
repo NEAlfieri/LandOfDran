@@ -411,6 +411,25 @@ local function randomFrom(list)
 	return list[math.random(#list)]
 end
 
+--[[
+	The weapon a bot carries is a real item in its hand, the same one a player would be given: everyone draws a
+	held item at the middle of its holder's Right_Hand, turned the way that body faces, and dynamic:setHeldItem
+	is what puts one there for a dynamic nobody plays. So the bots are seen carrying what they shoot with, their
+	guns kick and work as they fire, and a dead one's weapon falls out of its hands
+]]
+function giveBotWeapon(bot)
+	local typeID = getDynamicType(bot.kit.weapon)
+	if typeID == nil then
+		return
+	end
+
+	local x, y, z = bot:getPosition()
+	bot.item = createItem(typeID, x, y + 2, z)
+	if bot.item ~= nil then
+		bot:setHeldItem(bot.item)
+	end
+end
+
 --A player-looking bot of one team, standing where it's put, fighting with the weapon it was dealt
 local function makeBot(team, x, z, kit)
 	local bot = createDynamic(brickhead, x, FLOOR_TOP + 1, z)
@@ -446,6 +465,8 @@ local function makeBot(team, x, z, kit)
 	bot.team = team
 	--Which of the demo's weapons it fights with, and how its trigger goes, see BOT_ARSENAL
 	bot.kit = kit
+	--And the weapon itself, really in its hand: an item is drawn on whatever dynamic holds it, client or not
+	giveBotWeapon(bot)
 	bot.burstLeft = 0
 	--What everything that hurts a bot looks for, since nothing else in the world is one
 	bot.demoBot = true
@@ -570,6 +591,9 @@ function demoKillBot(bot, fromX, fromY, fromZ)
 	--It stops walking, and its walk cycle stops with it, leaving an ordinary object to fall over
 	bot:clearBotInput()
 
+	--Its weapon falls out of its hands where it stood, the way Inventory.lua drops what a player was carrying
+	bot:setHeldItem()
+
 	local x, y, z = bot:getPosition()
 
 	--Which way it goes over, level: away from whatever hit it, or any way at all
@@ -638,6 +662,13 @@ function demoRespawnBot(bot, deaths)
 	--And wearing its hat, in case a shot took that off, see Hats.lua
 	bot:setPart("hat", bot.hat, 0, 0, 0, 0, 1)
 	bot:playSound("Spawn")
+
+	--The weapon it dropped as it died is cleared away with its body, and it comes back holding a new one
+	if bot.item ~= nil then
+		bot.item:destroy()
+		bot.item = nil
+	end
+	giveBotWeapon(bot)
 
 	bot.health = BOT_HEALTH
 	bot.dead = false
@@ -793,11 +824,40 @@ local function botFireOne(bot, weapon, fromX, fromY, fromZ, dirX, dirY, dirZ)
 end
 
 --[[
+	Where the middle of a bot's right hand is in its own space, which is where everyone draws what it holds.
+	The model's -Z is its front, so the z of it is how far ahead of the bot its hand is
+]]
+local HAND_RIGHT, HAND_UP, HAND_AHEAD = 0.9, 3.0, 1.6
+local handLowX, handLowY, handLowZ, handHighX, handHighY, handHighZ = getTypeMeshBounds(brickhead, "Right_Hand")
+if handLowX ~= nil then
+	HAND_RIGHT = (handLowX + handHighX) / 2
+	HAND_UP = (handLowY + handHighY) / 2
+	HAND_AHEAD = -(handLowZ + handHighZ) / 2
+end
+
+--[[
+	The end of the barrel of the gun a bot is holding: its hand, plus the weapon's own muzzlePoint measured
+	from where the hand holds it (muzzleFromHand, in the item's own space with the barrel down -Z, the same
+	numbers Support_Weapons.lua uses to find it in a player's hands).
+
+	fx, fz is the way the bot faces, level, since that's how games draw what it's holding whatever it aims at
+]]
+local function botMuzzle(bot, weapon, fx, fz)
+	local x, y, z = bot:getPosition()
+	--The body's right, across its facing
+	local rx, rz = -fz, fx
+
+	local offset = weapon.muzzleFromHand or {0, 0, 0}
+	local right = HAND_RIGHT + offset[1]
+	local up = HAND_UP + offset[2]
+	local ahead = HAND_AHEAD - offset[3]
+
+	return x + rx * right + fx * ahead, y + up, z + rz * right + fz * ahead
+end
+
+--[[
 	One pull of a bot's trigger with whatever it's carrying: the shot's sound and the flash off the barrel,
 	then a round for each pellet, thrown apart by the weapon's own spread around wherever the bot was aiming
-
-	They have no hands to hold a gun in - items belong to clients - so a shot leaves from in front of their
-	chest rather than from the muzzle of a model
 ]]
 local function botShoot(bot, target)
 	local weapon = Weapons[bot.kit.weapon]
@@ -820,13 +880,24 @@ local function botShoot(bot, target)
 	--Where this one is really aiming, which the pellets of a shotgun shell then scatter around
 	dx, dy, dz = wobble(dx / length, dy / length, dz / length, BOT_AIM_CONE)
 
-	--Out in front of them rather than out of their middle, so the round doesn't start inside their own box
-	local muzzleX = x + dx * 1.6
-	local muzzleY = fromY + dy * 1.6
-	local muzzleZ = z + dz * 1.6
+	--Out of the barrel of the gun in its hand, which is what everyone can see it firing
+	local levelX, levelZ = dx, dz
+	local levelLength = math.sqrt(levelX * levelX + levelZ * levelZ)
+	if levelLength > 0.001 then
+		levelX, levelZ = levelX / levelLength, levelZ / levelLength
+	else
+		levelX, levelZ = 1, 0
+	end
+
+	local muzzleX, muzzleY, muzzleZ = botMuzzle(bot, weapon, levelX, levelZ)
 
 	if weapon.sounds ~= nil and weapon.sounds.fire ~= nil then
 		playSound(weapon.sounds.fire, muzzleX, muzzleY, muzzleZ)
+	end
+
+	--The gun working: its own fire sequence, or the kick every item has, see item:playAnimation
+	if bot.item ~= nil and weapon.fireAnimation ~= nil then
+		bot.item:playAnimation(weapon.fireAnimation)
 	end
 
 	if weapon.muzzleEmitter ~= nil then

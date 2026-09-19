@@ -917,6 +917,9 @@ registerChatSuggestion("setwaterlevel", "/setWaterLevel <height|off> - admins: p
 registerChatSuggestion("fetch", "/fetch <player> - admins: bring a player to you")
 registerChatSuggestion("find", "/find <player> - admins: go to a player")
 
+--The Falling Tiles gamemode and its /fallingTiles admin command, after adminCommands, spawnPlayer, Inventory.lua and Damage.lua
+dofile("FallingTiles.lua")
+
 --Who's sitting down by /sit, by client ID. Riders of a model vehicle sit on their own, see LuaAPI.md's Model vehicles
 sittingClients = {}
 

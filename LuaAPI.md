@@ -239,6 +239,8 @@ Dynamics are physics-simulated objects (players, projectiles, pickups, etc).
 | `dynamic:isProjectile()` | none | bool | Whether `addProjectile` made it. |
 | `dynamic:setBotInput(dirX, dirY, dirZ[, forward, backward, left, right, jump, jet, crawl])` | where it's looking, which needn't be normalized; the movement keys, each `false` by default | none | Holds a set of movement keys down on a dynamic nobody is playing, so the server walks it with the same code a client's player gets: it walks at the same speed, steps onto ledges, jumps, jets, swims, lies down, plays the walk cycle, and turns to face where it's going. The keys stay held until this is called again, so a script only has to call it when something changes, and the look direction is where its head turns and where anything aiming from it should aim. Logs an error and does nothing for a dynamic a client controls, since that client's own game is already walking it. See [Bots](#bots). |
 | `dynamic:clearBotInput()` | none | none | Stops walking it and stops its walk cycle, leaving it an ordinary object again. Does nothing to one that wasn't being walked. A bot's keys are also forgotten when it's destroyed. |
+| `dynamic:setHeldItem([item])` | an item on the ground, or nothing/`nil` to empty its hand | the item it was holding, or `nil` | Puts one item in the hand of a dynamic nobody is playing, the way `client:setHandItem` puts one in a player's: it comes out of the physics world, goes along wherever the dynamic walks, and everyone draws it in that model's `Right_Hand` (or in front of its middle for a model without one), since what draws a held item goes by the dynamic holding it rather than by whose it is. Its animations (`item:playAnimation`) work as they do in anyone's hands. Nothing, or `nil`, drops what it was holding back into the world where it stands, which also happens by itself when its holder is destroyed. There is no inventory behind it: a bot has one hand and no slots, so this replaces whatever was in it. Logs an error and does nothing for a dynamic a client controls (use `client:addItem` or `client:setHandItem`), for an item somebody else is already holding, or for a display item. |
+| `dynamic:getHeldItem()` | none | Item or `nil` | The item `setHeldItem` put in its hand. |
 
 ---
 
@@ -268,8 +270,10 @@ Things worth knowing:
   a player holding the key. For a single jump, set it for one call and clear it on the next.
 - **It's a normal dynamic otherwise.** It collides, floats, takes `radiusImpulse`, can be shot, wears hats
   (`dynamic:setPart`), is painted with `setMeshColor`, and shows a face with `setMeshDecal`. What it is not is a client,
-  so nothing that takes a Client works on it: it can't carry items, drive a vehicle, or be damaged by `Damage.lua`, whose
-  health lives on clients' players. A script that wants bots to be hurt keeps that itself.
+  so nothing that takes a Client works on it: it has no inventory, no item bar and no slots, and `Damage.lua` can't hurt
+  it, whose health lives on clients' players. A script that wants bots to be hurt keeps that itself. What draws a held
+  item or a driver goes by the dynamic rather than by whose it is, so one item can still be put in its hand with
+  `dynamic:setHeldItem` and it can be sat at a wheel with `vehicle:setDriver`.
 - **Nothing moves it for free.** There's no path finding and no avoiding each other or anything else: a bot walks the way
   it was last told to until it's told otherwise, so the script decides where to and when to give up.
 - `menudemo.lua` is the worked example, eight of them fighting over an island behind the main menu.
@@ -361,6 +365,12 @@ and `snapToCursor` do nothing. `getPosition` gives the position of the player ca
 friction, and buoyancy are kept for when it's back on the ground. Items a leaving client still carries go back into the
 world where they were, after `ClientLeave` listeners run.
 
+A dynamic nobody plays can hold one item too, with `dynamic:setHeldItem`: no inventory, no slots and no item bar, just
+the one in its hand until something takes it back. Everyone draws it the same way they draw a player's, in the holder's
+`Right_Hand`, because what an item is drawn on is the dynamic holding it rather than the client behind it. That is how
+`menudemo.lua`'s [bots](#bots) carry the weapons they fight with. `item:getHolder` is about clients, so it gives `nil`
+for one of these; the dynamic's own `getHeldItem` is what finds it.
+
 Players press Q (the "Show/Hide Items" key) to slide their items out on the right of the screen, which puts the item in
 the picked slot in their player's right hand for everyone to see, or in front of their camera in first person. The mouse
 wheel picks another slot while their items are out. Pressing Q again, a brick hot bar slot's key, or the paint palette's
@@ -413,8 +423,8 @@ Along with every `dynamic:` method.
 
 | Method | Arguments | Returns | Description |
 |---|---|---|---|
-| `item:isHeld()` | none | bool | Whether it's in someone's inventory. |
-| `item:getHolder()` | none | Client or `nil` | The client carrying it. |
+| `item:isHeld()` | none | bool | Whether it's in someone's inventory, or in the hand of a dynamic `dynamic:setHeldItem` gave it to. |
+| `item:getHolder()` | none | Client or `nil` | The client carrying it, `nil` for one held by a dynamic nobody plays. |
 | `item:getSlot()` | none | slot or `nil` | Which of its carrier's slots it's in, 0-4. |
 | `item:isEquipped()` | none | bool | Whether it's in its carrier's hand: their items are out with its slot picked. |
 | `item:playAnimation(name[, loop])` | `"swing"`, `"kick"`, or the name of an animation `addAnimation` gave its type; `loop` defaults to false | none | Plays the animation for everyone, once or over and over. Every item can `"swing"`, tipping forward around its grip until its top points 90 degrees further toward the ground and back, a bit over a fifth of a second each time, and `"kick"`, the jolt of a gun going off: shoved 0.3 studs back toward its holder with its barrel tipped 7 degrees up in under 20 ms, then easing home, 90 ms in all, for a gun whose model has no fire animation of its own. A kick played again starts over, so an automatic weapon kicks once a shot. Games from before the kick ignore it. Only one animation loops at a time, starting a loop replaces the last. Logs an error for an animation it doesn't have. |
@@ -508,6 +518,50 @@ where it landed, a round is one every 25 ms and a last one up to what it hit; `s
 
 `knockHatOff(player, dirX, dirY, dirZ)` does it from Lua, returning `false` for a bare head, and `removeDroppedHat(id)` clears
 one away by its dynamic's net ID.
+
+---
+
+## Falling Tiles
+
+`FallingTiles.lua`, run from `serverstart.lua` after its admin commands, is a gamemode an admin switches the whole server
+into by typing `/fallingTiles` in chat, and back out of the same way (`/fallingTiles on` and `off` say which, and
+`/fallingTiles next` skips to a new round). Nothing about it is in the engine: the stage is bricks, and the rest is the
+events and methods in this file.
+
+- **The stage** is about 48 brick platforms hanging in the air, made new every round: mostly 4 to 5 studs a side, which
+  four players can just about cram onto, with a few of 7 to 9 and some of 2 to 3 (`FT_SIZES`), in four colors, a few plates
+  higher or lower than each other. Each is placed off one already there, so the stage can always be crossed: most gaps are
+  `FT_MIN_GAP` to `FT_MAX_GAP` (2 to 5) studs, but `FT_HARD_GAP_CHANCE` (0.25) of the platforms are islands as far off as a
+  running jump just makes it, with nothing else any nearer: 8 studs on the level and less going up (`hardGap`; a player jumps 8.5 far and 6.4 high). Its low corner is
+  `FT_X, FT_Z` (100, -48) at `FT_BASE_Y` (75) plates, `FT_SIZE` (96) studs each way. `ftStart()` refuses, and says
+  so, if something is already built where the booth goes.
+- **The controller** is shut in a glass booth hanging over the stage's low x edge, with a row of 2x2 button bricks along the
+  inside of its window. Looking at a button center prints what it does, left clicking pushes it: Drop Left and Drop Right
+  (as the controller sees the stage), Keep Red / Yellow / Green / Blue (everything that *isn't* that color goes), Drop
+  Large / Medium / Small, Low and High Gravity (`dynamic:setGravity` on the contestants for `FT_GRAVITY_MS`), Give Weapons
+  (a random one of `FT_WEAPONS` each), Clear Weapons, and Wind Gust (every contestant shoved the same random way).
+  Platforms blink (the `Blink` material) for `FT_WARN_MS` before they're removed, and are added back `FT_GONE_MS` later.
+- **Everyone else is a contestant**, put on a platform as the round starts. Falling `6` studs below the lowest platform, or
+  dying, puts them out, and they watch from a glass box over the far edge. The last one standing wins `FT_WIN_SCORE` and is
+  the next round's controller. From `FT_SUDDEN_DEATH_MS` on a platform goes for good every `FT_SUDDEN_DEATH_EVERY_MS`.
+- A controller who pushes nothing for `FT_IDLE_MS` (60 seconds, warned at 45) loses the booth to a spectator, or to a
+  contestant if nobody is out yet, and watches the rest of the round.
+- Alone on the server you're the controller of an empty stage, to try the buttons on, and a round starts when someone
+  joins. A single contestant wins by lasting `FT_SOLO_SURVIVE_MS`.
+- While it runs nobody has jets (`client:setJetsEnabled`) or starting tools, since a hammer would take the stage apart:
+  `ftStart` swaps the globals `giveStartingItems` and `pickSpawnPosition` for its own, the way `Item_Ammo.lua` hangs itself
+  off `Damage.lua`, so everyone who joins or respawns lands in the spectator box empty handed, and `ftStop` puts both back,
+  hands the tools out again, and sends everyone to a spawn point. Bricks planted around the stage are taken straight back
+  out (`ftPlantBrick`, a `ClientPlantBrick` listener).
+- It moves a player by destroying them and calling `spawnPlayer` with `pickSpawnPosition` swapped for the spot, never with
+  `dynamic:setPosition`: from scheduled Lua a `setPosition` on a client's player is often undone before it's sent (the next
+  tick reads that client's own position update first), and the one update that carries it can be lost, so with everyone
+  moved at once as a round starts somebody was left behind every few rounds. See `place` in `FallingTiles.lua`.
+
+Its state is the global `FallingTiles` table (`active`, `state`, `controller`, `platforms`, `buttons`, and so on), each
+client's part in it is `client.ftRole` (`"controller"`, `"contestant"`, `"spectator"`, or `nil` while it's off), and every
+number above is a global at the top of the file for a script run after it to change. `ftStart()` and `ftStop()` switch it
+from Lua, returning `true`, or `false` and why not.
 
 ---
 

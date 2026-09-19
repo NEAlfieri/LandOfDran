@@ -241,6 +241,38 @@ void LoopServer::updateItems()
 		}
 	}
 
+	/*
+		And the items bots are holding, which have no inventory to be found through. Each goes along with the dynamic
+		holding it exactly as a client's does with their player, and one whose holder has been destroyed falls back
+		into the world where that holder last stood, see dynamic:setHeldItem
+	*/
+	for (unsigned int a = 0; a < pd.botHeldItems.size();)
+	{
+		std::shared_ptr<Item> item = pd.botHeldItems[a].lock();
+		if (!item)
+		{
+			pd.botHeldItems.erase(pd.botHeldItems.begin() + a);
+			continue;
+		}
+
+		std::shared_ptr<Dynamic> holder = item->botHolder.lock();
+		if (!holder)
+		{
+			//This takes it out of the list, so nothing has to move past it
+			pd.dropBotItem(item);
+			continue;
+		}
+
+		btTransform transform = item->body->getWorldTransform();
+		transform.setOrigin(holder->getPosition());
+		item->body->setWorldTransform(transform);
+
+		if (holder->getID() != item->sentHolderID || item->isEquipped() != item->sentEquipped)
+			pd.markItemChanged(item);
+
+		a++;
+	}
+
 	for (std::weak_ptr<Item>& changed : pd.changedItems)
 	{
 		std::shared_ptr<Item> item = changed.lock();

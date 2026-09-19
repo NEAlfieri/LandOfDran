@@ -65,6 +65,14 @@ class Item : public Dynamic
 	//Server: the client carrying it, empty while it's on the ground
 	std::weak_ptr<ClientData> owner;
 
+	/*
+		Server: a dynamic nobody plays holding it, for a bot handed one with dynamic:setHeldItem. It's kept here
+		rather than in owner because there's no client to carry it: no inventory, no slot and no item bar to put
+		it away into, so it's simply in that dynamic's hand until something takes it back.
+		ServerProgramData::botHeldItems is what carries it along, the way botControllers walk the bots themselves
+	*/
+	std::weak_ptr<Dynamic> botHolder;
+
 	//Which of its carrier's slots it's in, -1 on the ground
 	int slot = -1;
 

@@ -235,6 +235,65 @@ struct ServerProgramData
 		changedItems.push_back(item);
 	}
 
+	/*
+		Items in the hands of dynamics nobody plays, see dynamic:setHeldItem. A client's items are found through
+		their inventory, and a bot has none, so they're kept here for LoopServer::updateItems to carry along with
+		their holders and to drop when a holder is gone
+	*/
+	std::vector<std::weak_ptr<Item>> botHeldItems;
+
+	//What a dynamic nobody plays is holding, or nullptr
+	std::shared_ptr<Item> getBotHeldItem(const std::shared_ptr<Dynamic>& holder) const
+	{
+		if (!holder)
+			return nullptr;
+
+		for (const std::weak_ptr<Item>& held : botHeldItems)
+		{
+			std::shared_ptr<Item> item = held.lock();
+			if (item && item->botHolder.lock() == holder)
+				return item;
+		}
+
+		return nullptr;
+	}
+
+	//Takes an item out of the world and puts it in the hand of a dynamic nobody plays, like ClientData::setHandItem does for a client
+	void giveBotItem(const std::shared_ptr<Dynamic>& holder, const std::shared_ptr<Item>& item)
+	{
+		item->removeFromWorld();
+		item->botHolder = holder;
+		item->slot = -1;
+		botHeldItems.push_back(item);
+		markItemChanged(item);
+	}
+
+	/*
+		Drops an item a bot was holding back into the world where its holder stands, which is where updateItems has
+		been keeping it. A client's is thrown out in front of them instead, but a bot has no camera to throw it along
+	*/
+	void dropBotItem(const std::shared_ptr<Item>& item)
+	{
+		//Whether it was in a bot's hand at all, which is what this list says: its holder may have been destroyed
+		bool wasHeld = false;
+		for (unsigned int a = 0; a < botHeldItems.size(); a++)
+		{
+			if (botHeldItems[a].lock() == item)
+			{
+				botHeldItems.erase(botHeldItems.begin() + a);
+				wasHeld = true;
+				break;
+			}
+		}
+
+		if (!wasHeld)
+			return;
+
+		item->botHolder.reset();
+		item->returnToWorld(item->body->getWorldTransform());
+		markItemChanged(item);
+	}
+
 	//Basically JoinedClient is lower level and used by the server for networking, ClientData is passed to server-side packet functions
 	//ClientData contains references to a JoinedClient but also anything else that client 'owns' like a player, a camera, bricks, etc.
 	//Called in Server::run

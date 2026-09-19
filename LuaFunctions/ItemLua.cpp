@@ -841,6 +841,120 @@ static int LUA_clientSetHandItem(lua_State* L)
 	return 1;
 }
 
+/*
+	dynamic:setHeldItem(item or nil)
+
+	Puts an item in the hand of a dynamic nobody plays, the way client:setHandItem puts one in a player's hand.
+	Everyone draws it in the holder's Right_Hand from then on and it goes along wherever that walks, since what
+	games draw an item on is the dynamic holding it, not the client, see LoopClient::placeHeldItems.
+
+	Nothing, or nil, drops whatever it was holding where it stands. Returns what it was holding before, or nil.
+	A bot has no item bar and no slots, so an item it holds is simply in its hand until something takes it back
+*/
+static int LUA_dynamicSetHeldItem(lua_State* L)
+{
+	scope("(LUA) dynamic:setHeldItem");
+
+	int args = lua_gettop(L);
+	if (args != 1 && args != 2)
+	{
+		error("Expected dynamic:setHeldItem(item or nil)");
+		lua_settop(L, 0);
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = nullptr;
+	if (args == 2 && !lua_isnil(L, 2))
+	{
+		item = popItem(L, "dynamic:setHeldItem(item or nil)");
+		if (!item)
+			return 0;
+	}
+	lua_settop(L, 1);
+
+	std::shared_ptr<Dynamic> holder = LUA_pd->dynamics->popLua(L);
+	if (!holder)
+	{
+		error("Invalid dynamic object passed to dynamic:setHeldItem, was it deleted already?");
+		return 0;
+	}
+
+	//A client's player has an item bar of its own deciding what's in its hand, and the two would fight over it
+	for (const std::shared_ptr<ClientData>& other : LUA_pd->clients)
+	{
+		for (const std::shared_ptr<Dynamic>& controlled : other->controlledObjects)
+		{
+			if (controlled->getID() == holder->getID())
+			{
+				error("That dynamic is controlled by a client, give them the item with client:addItem or client:setHandItem instead");
+				lua_pushnil(L);
+				return 1;
+			}
+		}
+	}
+
+	if (item && item->display)
+	{
+		error("dynamic:setHeldItem was given a display item, which stays over its brick");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	std::shared_ptr<Item> previous = LUA_pd->getBotHeldItem(holder);
+
+	if (item && item->isHeld() && item != previous)
+	{
+		error("dynamic:setHeldItem was given an item somebody is already holding, take it out of their hands first");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	//Already holding that one, so there's nothing to take out of its hand and nothing to give back
+	if (item == previous)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+
+	if (previous)
+		LUA_pd->dropBotItem(previous);
+
+	if (item)
+		LUA_pd->giveBotItem(holder, item);
+
+	if (previous)
+		LUA_pd->dynamics->pushLua(L, previous);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
+//dynamic:getHeldItem(): the item in its hand, see dynamic:setHeldItem, or nil for one holding nothing
+static int LUA_dynamicGetHeldItem(lua_State* L)
+{
+	scope("(LUA) dynamic:getHeldItem");
+
+	if (lua_gettop(L) != 1)
+	{
+		error("Expected 1 argument dynamic:getHeldItem()");
+		return 0;
+	}
+
+	std::shared_ptr<Dynamic> holder = LUA_pd->dynamics->popLua(L);
+	if (!holder)
+	{
+		error("Invalid dynamic object passed to dynamic:getHeldItem, was it deleted already?");
+		return 0;
+	}
+
+	std::shared_ptr<Item> item = LUA_pd->getBotHeldItem(holder);
+	if (item)
+		LUA_pd->dynamics->pushLua(L, item);
+	else
+		lua_pushnil(L);
+	return 1;
+}
+
 static int LUA_clientGetHandItem(lua_State* L)
 {
 	scope("(LUA) client:getHandItem");
@@ -1012,5 +1126,19 @@ void registerItemFunctions(lua_State* L)
 
 	lua_getglobal(L, "metatable_client");
 	luaL_setfuncs(L, clientRegs, 0);
+	lua_pop(L, 1);
+
+	/*
+		Holding an item is a dynamic's business rather than a client's: it's what games draw one in the hand of.
+		Added after the copy above, so these are on plain dynamics only, an item having no use for them
+	*/
+	luaL_Reg dynamicRegs[] = {
+		{ "setHeldItem", LUA_dynamicSetHeldItem },
+		{ "getHeldItem", LUA_dynamicGetHeldItem },
+		{ NULL, NULL }
+	};
+
+	lua_getglobal(L, "metatable_dynamic");
+	luaL_setfuncs(L, dynamicRegs, 0);
 	lua_pop(L, 1);
 }
