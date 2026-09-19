@@ -292,9 +292,12 @@ buildCover()
 
 setWaterLevel(WATER_LEVEL)
 
---Starts just after sunrise and runs a whole day in about eight minutes, so the menu is never the same
---picture twice: morning, noon, a long gold evening, then the towers' lights against a dark sea
-setTimeOfDay(0.30)
+--[[
+	Opens at night, a while after dark: the towers' beacons and the spire are the only light, so the first
+	thing the menu shows off is the point light shadows they throw. A whole day runs in about eight minutes
+	from there, so it's never the same picture twice - dawn, noon, a long gold evening, and back to this
+]]
+setTimeOfDay(0.82)
 setTimeScale(2)
 
 setFogDistance(260, 620)
